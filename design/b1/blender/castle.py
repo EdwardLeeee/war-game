@@ -196,6 +196,14 @@ def _banquette(name, P, parent, side, c):
             parent=parent, segs=6)
 
 
+def _reach(side):
+    """How far across the picture a unit on a plain wall reaches (front_only): on a north or south wall the whole cell
+    (his bow and arms), on an east or west one, edge-on to the square camera, his own width. art-v7.6: on the diamond
+    camera every side lies alike (the client draws the east and west renders as its north and south walls,
+    common/castle.DIAMOND_TURN), the whole cell."""
+    return 1.0 if side in ("n", "s") or abs(lib.CAM_AZ + 45.0) < 1e-6 else 0.4
+
+
 def _pal_side(root, c, side, state, front):
     """One cell of palisade on `side` (D-096): the art-v4 stakes and, on the town side, the fighting platform."""
     P = kit.palette(c)
@@ -206,7 +214,7 @@ def _pal_side(root, c, side, state, front):
     if state == "ruin":
         _soot(root)
     if front:
-        front_only(root, stand, PAL_WALK[c], reach=1.0 if side in ("n", "s") else 0.4)
+        front_only(root, stand, PAL_WALK[c], reach=_reach(side))
 
 
 def pal_n(root, c, variant=0, state="intact", front=False):
@@ -410,7 +418,7 @@ def _sw_side(root, c, side, state, front):
         _stones("ws_st", P, root, (_at(side, -0.6, -1.0)[:2], _at(side, 0.5, -0.95)[:2], _at(side, 0.1, 1.0)[:2]), seed=3)
         _soot(root)
     if front:
-        front_only(root, stand, WALL_H[c] + 0.12, reach=1.0 if side in ("n", "s") else 0.4)
+        front_only(root, stand, WALL_H[c] + 0.12, reach=_reach(side))
 
 
 def sw_n(root, c, variant=0, state="intact", front=False):

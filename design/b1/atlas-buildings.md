@@ -646,3 +646,17 @@ art-v6 所有建築、城牆、資源點、地形換成 R8 寫實的圖（使用
 - client 已經照 `client/src/art/ground.ts` 讀。art-v6 的層：`grass`、`grass_dry`、`dirt`、`gravel`、`bank`、`yard`。
 - `rules.water`：水的畫法（方向不同的幾組正弦波，不跟格子對齊）。
 - `rules.town`：上面的城鎮土路。
+
+## 14. art-v7.6：菱形鏡頭的城堡照 client 的投影（使用者 2026-11-06：「圖裡面的城門方向不太對」）
+
+- 原因：菱形的算圖鏡頭看向東北（地圖 (0, n) 角在下面，edge-format.md），client 的投影看向西北（(n, n) 角在下面，`client/src/camera/projection.ts`），差 90 度。和 art-v7.3 的地形同一個問題。
+- 格式沒變，client 不用改程式。`castle_<c>.json` 每一件的 `frames` 改指向轉 90 度那件的算圖（`common/castle.py` 的 `DIAMOND_TURN`）：
+  - x 城門用 y 城門的圖，y 用 x 的（`pal_gate`、`sw_gate`、`sw_gate_*3`，每一種樣子和前片）。
+  - 直牆：北牆用東牆的圖、東用南、南用西、西用北（`pal_*`、`sw_*`）。東西兩面的前片以前沒算，art-v7.6 補算。
+  - 角落（`pal_corner`、`sw_ctower`）是方的，圖不換。
+  - 擺設：`hut_a`、`hut_b` 對調（兩種小屋本來就是彼此轉 90 度）；`shed`、`stack`、`cart` 用轉過的算圖 `decor_<k>_<c>_turned`（和 `_ruin`）；`well` 是圓的，不換。
+- 點換到 client 的投影：算圖的 (x, y) 是 client 的 (y, −x)（`atlas_b1.turn_point`）。
+  - 城堡的 `stand_m`、`shoot_at_m`；`stand_m` 的格子編號跟著轉。art-v7.5 的 `sw_gate_y` 把 1 × 4 的南墩寫成 `"3,0"`，現在是 `"0,3"`。
+  - 建築的 `shoot_at_m`（`MainCity`、`ArrowTower`、`Keep`、`Outpost`）、哨所的 `stand_m`（順序不變）。
+  - `walk_m`、`stand_in_m` 不受方向影響，不變。
+- 這些點只給 client 畫圖用，sim 沒有讀（`sim/` 裡沒有 `stand_m`、`shoot_at_m`、`stand_in_m`、`walk_m`）。

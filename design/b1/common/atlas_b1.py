@@ -45,7 +45,9 @@ PLAYER = {"MainCity": (0, "main_city", 4), "House": (1, "house", 2), "LumberCamp
 NODE_KINDS = {"Tree": 0, "GoldMine": 1, "Berries": 2, "CrystalVein": 3}
 
 
-def building_table(c):
+def building_table(c, turn=False):
+    """buildings_<c>.json's "buildings". turn (art-v7.6, the renders of the diamond camera): their points (shoot_at_m,
+    stand_m) turned to the client's projection (turn_point); the buildings themselves are square, drawn as rendered."""
     t = {}
     for name, (num, k, n) in PLAYER.items():
         t[name] = dict(type=num, footprint=[n, n], states={
@@ -76,12 +78,13 @@ def building_table(c):
     for name, e in t.items():
         m = _marks(e["states"].get("done", ""))
         shots = [m[n] for n in sorted(m) if n.startswith("shoot_at_")]
+        pt = (lambda x, y, z: [*turn_point(x, -y), round(z, 2)]) if turn else (lambda x, y, z: [round(x, 2), round(-y, 2), round(z, 2)])
         if shots:
-            e["shoot_at_m"] = [[round(x, 2), round(-y, 2), round(z, 2)] for x, y, z in shots]
+            e["shoot_at_m"] = [pt(x, y, z) for x, y, z in shots]
         stands = [m[n] for n in sorted(m, key=lambda n: int(n.split("_")[-1]) if n.split("_")[-1].isdigit() else 0)
                   if n.startswith("stand_at_") and n.split("_")[-1].isdigit()]
         if stands and "fronts" in e:              # (the client's name, as the castles': stand_m)
-            e["stand_m"] = [[round(x, 2), round(-y, 2), round(z, 2)] for x, y, z in stands]
+            e["stand_m"] = [pt(x, y, z) for x, y, z in stands]
     return dict(sorted(t.items(), key=lambda kv: kv[1]["type"]))
 
 
@@ -106,7 +109,27 @@ def _marks(name):
     return json.loads(p.read_text()).get("marks", {}) if p.exists() else {}
 
 
-def castle_table(c):
+def turn_point(x, y):
+    """art-v7.6 (common/castle.DIAMOND_TURN): a point of a diamond render, in the sim's axes as the render's camera sees
+    them (x east, y south, metres from the anchor), as the client's projection must have it to land on the same spot of
+    the picture. The render puts east up and to the right on the screen and south down and to the right; the client
+    east down and to the right, south down and to the left: the render's (x, y) is the client's (y, -x)."""
+    return round(y, 2) + 0.0, round(-x, 2) + 0.0
+
+
+def _turn_cell(dx, dy, foot):
+    """The cell (from the footprint's north-west one) of a diamond render's footprint `foot` (w, h) that the client
+    has where the render has (dx, dy), the footprint turned with turn_point: (dy, w - 1 - dx). A cell outside the
+    footprint whose transpose is in it is read transposed: castle.sw_gate_y on the diamond camera is sw_gate_x turned,
+    and its marks carry sw_gate_x's cells ((3, 0) for the south pier of a 1 x 4)."""
+    w, h = foot
+    if not (dx < w and dy < h) and dy < w and dx < h:
+        dx, dy = dy, dx
+    assert 0 <= dx < w and 0 <= dy < h, (dx, dy, foot)
+    return dy, w - 1 - dx
+
+
+def castle_table(c, turn=False):
     """castle_<c>.json's "pieces", "decor" and "layouts": every piece's frame in each look and the cells it stands
     on in each layout (CASTLE.placements); art-v6 ("war-game castle 2"): each layout's ground and decorative pieces
     (CASTLE.ground, CASTLE.decor) instead of the floor tiles. D-096: the gates' closed, damaged and
@@ -114,34 +137,48 @@ def castle_table(c):
     `walk_m` (the walk's height) and `stand_in_m` (where a unit stands, from the cell's middle toward the town); on the
     corners and the gates `stand_m` ({"dx,dy": [x, y, z]}: the cell from the footprint's north-west one, the spot on
     it); on the gates `shoot_at_m` (where the gate tower's arrows leave). Spots: x east, y south, z up, metres from the
-    piece's anchor."""
+    piece's anchor.
+    turn (art-v7.6, the renders of the diamond camera): each piece's frames are those of the piece rendered a quarter
+    turn from it (CASTLE.DIAMOND_TURN: a north wall drawn with castle_sw_e_*, an x gate with the y gate's), its points
+    turned to the client's projection (turn_point, _turn_cell); the decorative pieces likewise (decor_frames)."""
     pieces = {}
     used = {p["piece"] for L in (f() for f in CASTLE.LAYOUTS + CASTLE.D089) for p in CASTLE.placements(L)}
     for k, f in CASTLE.PIECE_FOOT.items():
         if k not in used:
             continue
+        r = CASTLE.DIAMOND_TURN.get(k, k) if turn else k          # the piece whose renders draw it
         looks = ("intact", "ruin") + (CASTLE.GATE_STATES if k in CASTLE.GATE_PIECES else ())
-        e = dict(footprint=list(f), frames={s: f"castle_{k}_{c}_{s}" for s in looks})
-        if k in CASTLE.FRONTS:                   # intact_front for every look of a held town, ruin_front for the ruins
-            e["frames"]["intact_front"] = f"castle_{k}_{c}_intact_front"
-            e["frames"]["ruin_front"] = f"castle_{k}_{c}_ruin_front"
-        m = _marks(f"castle_{k}_{c}_intact")
+        e = dict(footprint=list(f), frames={s: f"castle_{r}_{c}_{s}" for s in looks})
+        if r in (CASTLE.DIAMOND_FRONTS if turn else CASTLE.FRONTS):   # intact_front for every look of a held town,
+            e["frames"]["intact_front"] = f"castle_{r}_{c}_intact_front"   # ruin_front for the ruins
+            e["frames"]["ruin_front"] = f"castle_{r}_{c}_ruin_front"
+        m = _marks(f"castle_{r}_{c}_intact")
         if "stand_at" in m:
             x, y, z = m["stand_at"]
-            ix, iy = CASTLE.INWARD[k.split("_")[1]]
+            ix, iy = CASTLE.INWARD[r.split("_")[1]]
             e["walk_m"] = round(z, 2)
             e["stand_in_m"] = round(x * ix - y * iy, 2)          # the render's y is the sim's -y
         shots = [m[n] for n in sorted(m) if n.startswith("shoot_at_")]
-        if shots:
+        if shots and turn:
+            e["shoot_at_m"] = [[*turn_point(x, -y), round(z, 2)] for x, y, z in shots]
+        elif shots:
             e["shoot_at_m"] = [[round(x, 2), round(-y, 2), round(z, 2)] for x, y, z in shots]
         cells = {n[len("stand_at_"):].replace("_", ","): v for n, v in m.items() if n.startswith("stand_at_")}
-        if cells:                                # the corners and the gates' piers: a spot on each cell units stand on
+        if cells and turn:
+            foot = CASTLE.PIECE_FOOT[r]
+            at = {}
+            for k2, (x, y, z) in cells.items():
+                cx, cy = _turn_cell(*map(int, k2.split(",")), foot)
+                at[f"{cx},{cy}"] = [*turn_point(x, -y), round(z, 2)]
+            e["stand_m"] = dict(sorted(at.items()))
+            e["walk_m"] = round(max(z for _, _, z in cells.values()), 2)
+        elif cells:                              # the corners and the gates' piers: a spot on each cell units stand on
             e["stand_m"] = {k2: [round(x, 2), round(-y, 2), round(z, 2)] for k2, (x, y, z) in sorted(cells.items())}
             e["walk_m"] = round(max(z for _, _, z in cells.values()), 2)
         pieces[k] = e
     # art-v6 (R8-36 B, agreed with war-game-client 2026-10-23): no floor tiles; the ground inside the walls drawn by the
     # ground shader from each layout's `ground` (lane, trampled), and the decorative pieces of `decor` (castle.py)
-    decor = {k: f"decor_{k}_{c}" for k in CASTLE.DECOR_SIZE}
+    decor = decor_frames(c, turn)
     # art-v6.1 (ceo 2026-10-25): D-089's castles again under their old names (art-v5.2's pieces and cells, for KEEP off;
     # their ground from CASTLE.d089_ground, no decor), D-100's as "<name>_d100" (KEEP on)
     layouts = {}
@@ -153,15 +190,25 @@ def castle_table(c):
     return pieces, decor, layouts
 
 
-def decor_ruin(c):
+def decor_frames(c, turn=False):
+    """Each decorative piece's frame. turn (art-v7.6, the diamond renders): the render whose long side lies along the
+    piece's own cells in the client's projection: the other hut (CASTLE.DECOR_TURN), the turned render
+    (CASTLE.DECOR_TURNED: decor_<k>_<c>_turned); the well as it is."""
+    if not turn:
+        return {k: f"decor_{k}_{c}" for k in CASTLE.DECOR_SIZE}
+    return {k: f"decor_{k}_{c}_turned" if k in CASTLE.DECOR_TURNED else f"decor_{CASTLE.DECOR_TURN.get(k, k)}_{c}"
+            for k in CASTLE.DECOR_SIZE}
+
+
+def decor_ruin(c, turn=False):
     """art-v6.3 (the user approved R8-39 2026-10-25): each decorative piece burnt, drawn instead of it in a sacked town."""
-    return {k: f"decor_{k}_{c}_ruin" for k in CASTLE.DECOR_SIZE}
+    return {k: f"{n}_ruin" for k, n in decor_frames(c, turn).items()}
 
 
-def castle_frames(c):
-    pieces, decor, _ = castle_table(c)
+def castle_frames(c, turn=False):
+    pieces, decor, _ = castle_table(c, turn)
     return sorted([n for p in pieces.values() for n in p["frames"].values()] + list(decor.values())
-                  + list(decor_ruin(c).values()))
+                  + list(decor_ruin(c, turn).values()))
 
 
 # ---------------------------------------------------------------- the terrain (art-v5, R6-51, war-game-core #245)
@@ -446,6 +493,8 @@ def run(scale=3.0, page=2048):
         if missing:
             raise SystemExit(f"missing renders: {missing}")
         view = view_of(frames)
+        if view == "diamond":                    # art-v7.6: the points turned to the client's projection
+            table = building_table(c, turn=True)
         tables, pages, px, per = pack(frames, f"buildings_{c}", bdir, page, f)
         man = {"format": "war-game buildings 1", "culture": c, "scale": scale, "px_per_m": PX_PER_M * f, "cell_m": 2,
                **({"view": view} if view else {}),
@@ -474,13 +523,19 @@ def run(scale=3.0, page=2048):
         if missing:
             raise SystemExit(f"missing renders: {missing}")
         view = view_of(frames)
+        turn = view == "diamond"                 # art-v7.6: each piece drawn with the render a quarter turn from it
+        if turn:
+            frames = castle_frames(c, turn=True)
+            missing = [n for n in frames if not (SRC / f"{n}_x3.json").exists()]
+            if missing:
+                raise SystemExit(f"missing renders: {missing}")
         tables, pages, px, per = pack(frames, f"castle_{c}", cdir, page, f)
-        pieces, decor, layouts = castle_table(c)
+        pieces, decor, layouts = castle_table(c, turn)
         for pc in pieces.values():               # a front layer with nothing in it (pack skips it) is not listed
             pc["frames"] = {k: v for k, v in pc["frames"].items() if v in tables["color"]}
         man = {"format": "war-game castle 2", "culture": c, "scale": scale, "px_per_m": PX_PER_M * f, "cell_m": 2,
                **({"view": view} if view else {}), "team_gain": TEAM_GAIN, "pages": pages,
-               "pieces": pieces, "decor": decor, "decor_ruin": decor_ruin(c), "layouts": layouts,
+               "pieces": pieces, "decor": decor, "decor_ruin": decor_ruin(c, turn), "layouts": layouts,
                "frames": tables["color"], "team": tables["team"], "shadows": tables["shadow"]}
         (cdir / f"castle_{c}.json").write_text(json.dumps(man, separators=(",", ":")))
         mem_c[c] = memory(px, tables)

@@ -1,15 +1,15 @@
-// The PixiJS application: full-window WebGL canvas at the device's pixel ratio.
+// The PixiJS application: full-window WebGL canvas at the device's pixel ratio (a test page's ?res=2: battlefield-res.ts).
 
 import { Application } from "pixi.js";
 
-export async function createStage(host: HTMLElement): Promise<Application> {
+export async function createStage(host: HTMLElement, resolution = window.devicePixelRatio): Promise<Application> {
   const app = new Application();
   await app.init({
     resizeTo: window,
     antialias: false,
     backgroundColor: 0x1d2320,
     preference: "webgl",
-    resolution: window.devicePixelRatio,
+    resolution,
     autoDensity: true,
   });
   // PixiJS's accessibility layer adds an off-screen "select to enable accessibility" button

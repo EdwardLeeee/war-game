@@ -131,6 +131,11 @@ export interface GameOptions {
   map: MapMode;
   /** Test pages (`?test=1&watch=1`): the computer plays both sides, the page only watches. */
   watch: boolean;
+  /**
+   * A game that measures itself (量測: perf, perf200, perf360, art-v7 量測): nothing pops up over its
+   * panel and result (攻下城鎮's choice; 開局提示 is not shown either, main.ts). Absent: false.
+   */
+  measure?: boolean;
   env: () => Record<string, unknown>;
   /** A fresh simulation Worker for the determinism check, or null (the fake world has none). */
   checkPort: (() => SimPort) | null;
@@ -172,6 +177,11 @@ export interface GameOptions {
   astcSample?: AstcSample;
   /** art-v7 量測 (D-128, main.ts): its buttons and what the art costs, the ground apart (added here). */
   artMeasure?: { open(v: ArtVariant): void; cost(): Omit<ArtCost, "ground">; drawn(): string; gpuAstc(): boolean };
+  /**
+   * 戰場像素比 (?test=1&res=2, battlefield-res.ts): the device's pixel ratio, what the battlefield is
+   * drawn at now, and drawing it at 2 or at the device's; test pages only.
+   */
+  res?: { device: number; now(): number; set(two: boolean): void };
 }
 
 /** export_log's answer: the command log, the hash every HASH_EVERY ticks and the tick it got to (D-083). */
@@ -305,6 +315,15 @@ export class Game implements GestureHost {
   private readonly port: SimPort;
   private readonly overlays: Overlays;
   private readonly options: GameOptions;
+  /**
+   * 量測: a game that measures itself (GameOptions.measure), or the game on screen while the panel
+   * measures it (量測 N 人 in that perf scenario already, or the fake world): no dialog of the game's
+   * own over the panel.
+   */
+  get measuring(): boolean {
+    const phase = this.lab.lab.phase;
+    return this.options.measure === true || phase === "warmup" || phase === "measuring";
+  }
   private readonly recognizer: GestureRecognizer;
   private renderer: WorldRenderer | null = null;
   /** 浮空大陸's edge round the map (render/edge.ts), with the diamond and ui's edge pictures. */
@@ -342,6 +361,7 @@ export class Game implements GestureHost {
               else options.life.perf(scenario);
             },
         artAvailable: options.artAvailable === true,
+        res: options.res,
         ground:
           (options.ground ?? null) === null
             ? undefined

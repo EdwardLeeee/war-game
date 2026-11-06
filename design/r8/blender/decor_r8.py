@@ -279,10 +279,19 @@ def ruin(root, c, piece, seed=5):
         ob["no_bevel"] = True
 
 
-def r8_decor(root, c, piece="hut_a", ruined=False):
-    BUILD[piece](root, c)
+def r8_decor(root, c, piece="hut_a", ruined=False, turn=False):
+    """turn (art-v7.6, design/b1/common/castle.DECOR_TURNED): the piece, burnt or not, built as it is and then turned a
+    quarter (-90 degrees, as castle.sw_gate_y's gy_turn), so that on the diamond camera its long side lies along the
+    client's x as its cells do (the camera looks north-east, the client's projection north-west)."""
+    g = lib.empty("dr_turn", parent=root) if turn else root
+    BUILD[piece](g, c)
     if ruined:
-        ruin(root, c, piece)
+        ruin(g, c, piece)
+    if turn:
+        import bpy
+        from mathutils import Euler
+        g.rotation_euler = Euler((0.0, 0.0, -90.0 * lib.D2R))
+        bpy.context.view_layer.update()
 
 
 FOOTPRINT = {"r8_decor": (1, 1)}
