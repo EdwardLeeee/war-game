@@ -182,6 +182,10 @@ export interface GameOptions {
    * drawn at now, and drawing it at 2 or at the device's; test pages only.
    */
   res?: { device: number; now(): number; set(two: boolean): void };
+  /** 地面快取 (render/ground-cache.ts): on (absent: on). */
+  groundCache?: boolean;
+  /** 地面快取 switched in the 量測 panel (test pages only: main.ts keeps it in the address); absent, the panel has no row. */
+  groundCacheSwitched?: (on: boolean) => void;
 }
 
 /** export_log's answer: the command log, the hash every HASH_EVERY ticks and the tick it got to (D-083). */
@@ -325,12 +329,15 @@ export class Game implements GestureHost {
   private edge: EdgeRenderer | null = null;
   private seq = 1;
   private lastFrame = performance.now();
+  /** 地面快取 (render/ground-cache.ts): on unless the page or the 量測 panel says off. */
+  private groundCacheOn: boolean;
   private readyWaiters: (() => void)[] = [];
 
   constructor(app: Application, port: SimPort, hud: HTMLElement, options: GameOptions) {
     this.app = app;
     this.port = port;
     this.options = options;
+    this.groundCacheOn = options.groundCache ?? true;
     // 電影色調 as this device has it (the canvas outlives a game).
     setFilmGrade(app, loadGradeOn());
     // The fake world trains nothing by itself (mock/): the screen's 自動訓練 only when a test turns it on.
@@ -357,6 +364,18 @@ export class Game implements GestureHost {
             },
         artAvailable: options.artAvailable === true,
         res: options.res,
+        groundCache:
+          options.groundCacheSwitched === undefined
+            ? undefined
+            : {
+                now: () => this.groundCacheOn,
+                set: (on: boolean) => {
+                  this.groundCacheOn = on;
+                  this.renderer?.setGroundCache(on);
+                  options.groundCacheSwitched?.(on);
+                },
+                mb: () => this.renderer?.groundCacheState.mb ?? 0,
+              },
         ground:
           (options.ground ?? null) === null
             ? undefined
@@ -654,6 +673,22 @@ export class Game implements GestureHost {
   /** 寫實地面 (D-093): drawn or not, and its quality; null before the first snapshot. */
   get groundForTest(): { real: boolean; quality: string | null; water: boolean; town: boolean; r9: boolean; r9water: boolean } | null {
     return this.renderer?.groundLook ?? null;
+  }
+
+  /** 地面快取 (render/ground-cache.ts): on, times taken, its MB; null before the battlefield (the test page). */
+  get groundCacheForTest(): { on: boolean; shown: boolean; taken: number; mb: number } | null {
+    return this.renderer?.groundCacheState ?? null;
+  }
+
+  /** 地面快取 on or off (the test page; the 量測 panel's row does the same). */
+  setGroundCacheForTest(on: boolean): void {
+    this.groundCacheOn = on;
+    this.renderer?.setGroundCache(on);
+  }
+
+  /** The battlefield's clock held still or running again (the test page: the same frame twice). */
+  freezeClockForTest(on: boolean): void {
+    this.frozenNow = on ? performance.now() : null;
   }
 
   /** Units with their owner's colour under their feet last frame (寫實地面), for the test page. */
@@ -2640,6 +2675,7 @@ export class Game implements GestureHost {
         const view = this.view;
         const mine = this.culture;
         this.renderer = new WorldRenderer(this.app, view, atlasFor(this.app.renderer), this.options.art ?? null, (owner) => cultureOf(mine, owner, view.me), projection);
+        this.renderer.setGroundCache(this.groundCacheOn);
         this.renderer.pending = this.pending;
         this.renderer.autoPaused = (id) => this.autoArmy.paused.has(id);
         if (this.options.ghost === "outline") this.renderer.ghostStyle = "outline";
@@ -2772,8 +2808,11 @@ export class Game implements GestureHost {
     }
   }
 
+  /** The test page's clock held still (freezeClockForTest): the same frame drawn again, to compare pictures. */
+  private frozenNow: number | null = null;
+
   private frame(): void {
-    const now = performance.now();
+    const now = this.frozenNow ?? performance.now();
     const dt = now - this.lastFrame;
     this.lastFrame = now;
     this.recognizer.update(now);
