@@ -1251,7 +1251,7 @@ export class CommandArea {
       }
       // 整理隊形 (D-095, the user: 「常常跑一跑法師就跑到前排」): the soldiers re-form where they
       // are, spearmen in front, mages behind, facing the nearest enemy seen (game.ts reform()).
-      if (soldiers.length > 1) button(this.el, "整理隊形", "槍兵在前", () => this.host.reform(), "secondary");
+      if (soldiers.length > 1) this.look(button(this.el, "整理隊形", "槍兵在前", () => this.host.reform(), "secondary"), "reform");
       if (types.has(UnitType.Farmer)) this.look(button(this.el, "建造", "", () => this.setPage("build")), "build", "pri");
       // No 晶砲 or 自動施放 (D-095: 「晶泡的按鈕可以拿掉了」): mages always fire on their own.
       // 進駐 (D-124, D-125): 駐軍, 躲進去 and 駐守 as one: then a tap on one of ours, which says who goes in (game/enter.ts).
@@ -1259,7 +1259,8 @@ export class CommandArea {
         const picking = mode === "enter";
         const enter = this.look(
           picking ? button(this.el, "取消", "進駐", () => this.host.setMode("normal"), "secondary") : button(this.el, "進駐", "點建築", () => this.host.setMode("enter"), "secondary"),
-          "home",
+          // A gate with the way in (ceo 2026-11-06: not 建造's house; ui's own icon later).
+          "enter",
         );
         if (picking) enter.classList.add("active");
       }
