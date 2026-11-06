@@ -301,6 +301,268 @@
   height: 15px;
 }
 
+/* --- 選取資訊 (R6-14 to R6-17) ------------------------------------------------------------ */
+
+/* 366 wide from x 162 and 4 above the bottom (spec section 2), narrower on a narrower screen. The ✕
+   column (56) with the body reaching under it, and the height kept under the top bar, are the
+   prototype's (#402). */
+:root[data-ui="r6"] #hud .sel-info {
+  left: calc(var(--safe-l) + 162px);
+  max-width: 366px;
+  margin: 0;
+  box-sizing: border-box;
+  padding: 6px 10px 8px;
+  padding-right: 56px;
+  font-size: 12px;
+}
+
+/* The title line: 44 tall, the name, its state, then ⌃ 收起 (63 × 44) left of the ✕ (44 × 44), 6 in from the corner. */
+:root[data-ui="r6"] .sel-info .sel-head {
+  flex-wrap: nowrap;
+  gap: 6px;
+  min-height: 44px;
+}
+
+:root[data-ui="r6"] .sel-info .sel-head > b {
+  flex: none;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+:root[data-ui="r6"] .sel-info .sel-status {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.9;
+}
+
+:root[data-ui="r6"] .sel-info .sel-fold.b {
+  flex: none;
+  margin-left: auto;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+:root[data-ui="r6"] .sel-info .sel-fold .ic {
+  width: 14px;
+  height: 14px;
+}
+
+:root[data-ui="r6"] .sel-info .sel-close.b {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 44px;
+  min-width: 44px;
+  padding: 0;
+}
+
+:root[data-ui="r6"] .sel-info .sel-close .ic {
+  width: 18px;
+  height: 18px;
+}
+
+/* Kept at the top while what is under it scrolls: its own ground then, nothing scrolled shows through. */
+:root[data-ui="r6"] .sel-info .sel-body > .sel-head {
+  background: none;
+}
+
+/* Life, shield, progress: 6 tall on a dark track, across under the ✕ too. */
+:root[data-ui="r6"] .sel-info .bar {
+  height: 6px;
+  margin: 7px -46px 3px 0;
+  border-radius: 3px;
+  background: rgba(20, 14, 8, 0.75);
+}
+
+:root[data-ui="r6"] .sel-info .bar .fill {
+  border-radius: 3px;
+  background: #78d05f;
+}
+
+:root[data-ui="r6"] .sel-info .bar.shield .fill {
+  background: #5fe3f0;
+}
+
+:root[data-ui="r6"] .sel-info .bar.prog .fill,
+:root[data-ui="r6"] .sel-info .bar.queue .fill {
+  background: #e7c35a;
+}
+
+/* The rows of buttons: 44 tall, 5 apart. */
+:root[data-ui="r6"] .sel-info .sel-chips,
+:root[data-ui="r6"] .sel-info .sel-queue,
+:root[data-ui="r6"] .sel-info .sel-choice,
+:root[data-ui="r6"] .sel-info .sel-garrison {
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+}
+
+:root[data-ui="r6"] .sel-info .chip.b {
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+/* 槍兵 ×6: the count apart, in bold (R6-14). */
+:root[data-ui="r6"] .sel-info .sel-chips .chip .label:has(b) {
+  display: inline-flex;
+  gap: 5px;
+}
+
+/* 已選 N 個單位: 「目前：待命 10」 at the end of the chips' line, under the ✕'s column. */
+:root[data-ui="r6"] .sel-info .sel-chips:has(.now) {
+  margin-right: -46px;
+}
+
+:root[data-ui="r6"] .sel-info .sel-chips .now {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--ink2);
+}
+
+:root[data-ui="r6"] .sel-info .step.b {
+  width: 44px;
+  min-width: 44px;
+  padding: 0;
+  font-size: 18px;
+}
+
+/* What the orders and the formation mean: the word, in its colour, then what it does (R6-14). */
+:root[data-ui="r6"] .sel-info .sel-note,
+:root[data-ui="r6"] .sel-info .sel-counters {
+  margin-top: 5px;
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--ink2);
+}
+
+:root[data-ui="r6"] .sel-info .sel-note .order-meaning,
+:root[data-ui="r6"] .sel-info .sel-note .formation-meaning,
+:root[data-ui="r6"] .sel-info .sel-note .formation-more {
+  opacity: 1;
+  padding-left: 32px;
+  text-indent: -32px;
+}
+
+:root[data-ui="r6"] .sel-info .sel-note .formation-more {
+  text-indent: 0;
+}
+
+:root[data-ui="r6"] .sel-info .sel-note .k {
+  display: inline-block;
+  min-width: 26px;
+  margin-right: 6px;
+  font-style: normal;
+  font-weight: 700;
+  text-indent: 0;
+}
+
+:root[data-ui="r6"] .sel-info .sel-note .k.atk {
+  color: #ff9a86;
+}
+
+:root[data-ui="r6"] .sel-info .sel-note .k.ret {
+  color: #9cc2ff;
+}
+
+:root[data-ui="r6"] .sel-info .sel-note .k.hold {
+  color: #f2cf73;
+}
+
+/* A town's income on a line of its own in green, a revolt coming in red (R6-16). */
+:root[data-ui="r6"] .sel-info .sel-num .good,
+:root[data-ui="r6"] .sel-info .sel-num .warn {
+  display: block;
+}
+
+:root[data-ui="r6"] .sel-info .sel-num .good {
+  color: #9fe08a;
+}
+
+:root[data-ui="r6"] .sel-info .sel-num .warn {
+  color: #ff9c86;
+  font-weight: 700;
+}
+
+/* The training queue: 52 × 44 each, the word over 訓練中／取消; the first one's progress a gold line at its foot. */
+:root[data-ui="r6"] .sel-info .queue-item.b {
+  flex-direction: column;
+  gap: 0;
+  width: 52px;
+  min-width: 52px;
+  padding: 0;
+  font-size: 11px;
+}
+
+:root[data-ui="r6"] .sel-info .queue-item.b.pending {
+  width: 64px;
+}
+
+:root[data-ui="r6"] .sel-info .queue-item .sub {
+  font-size: 10px;
+  font-weight: 400;
+}
+
+:root[data-ui="r6"] .sel-info .queue-item .bar.queue {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 5px;
+  height: 3px;
+  margin: 0;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+/* 市場: 買／賣 the words over the gold. */
+:root[data-ui="r6"] .sel-info .market-row .b {
+  flex: 1;
+  flex-direction: column;
+  gap: 0;
+  padding: 0 6px;
+}
+
+/* 治理 without its cost: what is missing, readable on the blue. */
+:root[data-ui="r6"] .sel-info .b .choice-short {
+  color: #ffe0d6;
+}
+
+/* 軍團畫面 (R6-17): the name, 現有 N, then − N + at the end of the line. */
+:root[data-ui="r6"] .sel-info .group-row .group-type {
+  width: auto;
+  min-width: 3.5em;
+}
+
+:root[data-ui="r6"] .sel-info .group-row .group-has {
+  flex: 1;
+  width: auto;
+  font-size: 12px;
+  opacity: 1;
+  color: var(--ink2);
+}
+
+:root[data-ui="r6"] .sel-info .group-row .group-want,
+:root[data-ui="r6"] .sel-info .sel-keep output {
+  min-width: 26px;
+  font-size: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+:root[data-ui="r6"] .sel-info .group-grid .group-label {
+  align-items: baseline;
+}
+
+:root[data-ui="r6"] .sel-info .group-grid .group-has {
+  flex: none;
+}
+
+:root[data-ui="r6"] .sel-info .group-grid .group-row {
+  justify-content: space-between;
+}
+
 /* =========================================================================== A 銅木 */
 
 :root[data-ui="r6"]:not([data-theme="b"]) {
@@ -401,6 +663,23 @@
   box-shadow:
     inset 0 0 0 1.5px #6f604a,
     0 2px 0 #1f140c;
+}
+
+/* 選取資訊: the title line's ground while what is under it scrolls; 搶 orange, 治理 blue (R6-16). */
+:root[data-ui="r6"]:not([data-theme="b"]) .sel-info.scrolled .sel-body > .sel-head {
+  background: #4b3422;
+}
+:root[data-ui="r6"]:not([data-theme="b"]) .sel-info .b.plunder {
+  background: linear-gradient(180deg, #d99a3d, #a86a1f);
+  color: #fff6e6;
+}
+:root[data-ui="r6"]:not([data-theme="b"]) .sel-info .b.govern {
+  background: linear-gradient(180deg, #5b9fd6, #2f6aa3);
+  color: #f3f8ff;
+}
+:root[data-ui="r6"]:not([data-theme="b"]) .sel-info .b:disabled {
+  opacity: 0.82;
+  color: #d9cba9;
 }
 
 /* =========================================================================== B 墨漆金線 */
@@ -534,6 +813,35 @@
 }
 :root[data-ui="r6"][data-theme="b"] .b:disabled .ic {
   color: #6f6a60;
+}
+
+/* 選取資訊 (R6-14 to R6-17): a gold line under the title line, its ground while what is under it scrolls. */
+:root[data-ui="r6"][data-theme="b"] .sel-info .sel-head {
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--gold-dim);
+}
+:root[data-ui="r6"][data-theme="b"] .sel-info.scrolled .sel-body > .sel-head {
+  background: #151a24;
+}
+:root[data-ui="r6"][data-theme="b"] .sel-info .sel-head > b {
+  color: #fbf4e2;
+}
+:root[data-ui="r6"][data-theme="b"] .sel-info .sel-note .k.hold {
+  color: var(--gold);
+}
+:root[data-ui="r6"][data-theme="b"] .sel-info .b.plunder::before {
+  background: linear-gradient(180deg, #c98a33, #8e5a16);
+}
+:root[data-ui="r6"][data-theme="b"] .sel-info .b.govern::before {
+  background: linear-gradient(180deg, #4f8fc8, #285a8a);
+}
+:root[data-ui="r6"][data-theme="b"] .sel-info .b.plunder,
+:root[data-ui="r6"][data-theme="b"] .sel-info .b.govern {
+  color: #fff6e6;
+}
+:root[data-ui="r6"][data-theme="b"] .sel-info .b:disabled {
+  opacity: 1;
+  color: #8c867a;
 }
 
 /* INV-16: no 原型介面 label in the formal interface. */
