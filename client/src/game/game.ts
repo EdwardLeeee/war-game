@@ -78,7 +78,7 @@ import {
 } from "../sim.ts";
 import { HIT_RADIUS_PT, START_ZOOM, TILE_PX, UNIT_CORE_HIT_PT } from "../tuning.ts";
 import { BUILDING_NAME, buildingName, NODE_NAME, UNIT_NAME } from "../ui/hud/names.ts";
-import { arrivedLine, cellStretch, type ShiftRow, shiftLine, shiftRows, type WallNames, type WallWords } from "../ui/hud/wall-shift.ts";
+import { arrivedLine, cellStretch, type ShiftRow, shiftLine, shiftRows, type WallView } from "../ui/hud/wall-shift.ts";
 import { KEEP_HINT_KEY, KEEP_HINT_TEXT, loadHintSeen, saveHintSeen } from "../hint-pref.ts";
 import { loadGradeOn, saveGradeOn } from "../grade-pref.ts";
 import { loadGroundOn, saveGroundOn } from "../ground-pref.ts";
@@ -253,11 +253,6 @@ const EDGE_FADE_M = 0.75;
 /** Orders that end a soldier's attack on a town (攻城打到底, assault.ts); 攻擊 starts one again. */
 const ASSAULT_ENDS: ReadonlySet<string> = new Set(["move", "retreat", "attack", "stop", "garrison", "guard", "post", "gather", "build", "repair", "release"]);
 
-/**
- * 牆上換邊's words (R14-07): the map's compass, as the board has them, until the user chooses
- * (ceo 2026-11-06 asks: the compass, or the screen's directions under the diamond).
- */
-const WALL_WORDS: WallWords = "compass";
 /** How long 到了 stays after a walk to fight is over (R14-07 2). */
 const ARRIVED_MS = 4000;
 
@@ -2205,7 +2200,8 @@ export class Game implements GestureHost {
     const view = this.view;
     const snap = view?.curr?.snap;
     if (view === null || snap === undefined) return [];
-    const names: WallNames = { words: WALL_WORDS, view: view.projection.kind === "diamond" ? "diamond" : "square" };
+    // The screen's directions (D-132): the diamond's, or north up.
+    const names: WallView = view.projection.kind === "diamond" ? "diamond" : "square";
     const rule = view.rules.wallShift;
     const odds = rule?.odds ?? 2;
     const back = Math.round((rule?.back ?? 10 * TICKS_PER_SECOND) / TICKS_PER_SECOND);

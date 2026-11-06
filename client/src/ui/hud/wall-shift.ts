@@ -4,12 +4,10 @@
 // stand on that stretch now. 敵人太多 and 城門破了 wait for core's field (the simulation's own
 // judgement: worked out here, it could say 不換邊 just as one set off).
 //
-// Words (ceo asks the user, 2026-11-06): the map's compass (北 is smaller y, as the minimap is drawn),
-// or the screen's directions under the camera (the diamond: 北牆 is the upper right edge).
+// Words (D-132, the user 2026-11-07: 照畫面寫): the screen's directions under the camera, not the
+// map's 東南西北 (the diamond: 北牆 is the upper right edge, 東牆 the lower right).
 
 import { WALL_SHIFT_STRIDE, WallPart, WallSide, WallShiftField as WS } from "../../sim.ts";
-
-export type WallWords = "compass" | "screen";
 
 /** Where each side of the map is on screen, by view (the camera never turns). */
 const SCREEN_SIDE: Record<"diamond" | "square", readonly [string, string, string, string]> = {
@@ -35,38 +33,26 @@ const SCREEN_HALF: Record<"diamond" | "square", readonly [readonly [string, stri
     ["靠上", "靠下"],
   ],
 };
-const COMPASS_SIDE = ["北", "東", "南", "西"] as const;
-const COMPASS_HALF = [
-  ["西", "東"],
-  ["北", "南"],
-  ["西", "東"],
-  ["北", "南"],
-] as const;
+/** The camera's view: anything but the diamond reads as north up. */
+export type WallView = "diamond" | "square";
 
-export interface WallNames {
-  words: WallWords;
-  /** The camera's: anything but the diamond reads as north up. */
-  view: "diamond" | "square";
+/** A gate's top: 右下門頂 (the diamond's 東門). */
+export function gateName(side: number, view: WallView): string {
+  return `${SCREEN_SIDE[view][side]}門頂`;
 }
 
-/** A gate's top: 東門頂, or 右下門頂. */
-export function gateName(side: number, names: WallNames): string {
-  return `${names.words === "compass" ? COMPASS_SIDE[side] : SCREEN_SIDE[names.view][side]}門頂`;
-}
-
-/** A stretch (`side * 3 + part`): 東門頂, 東牆南段; or 右下門頂, 右下牆靠下那段. */
-export function stretchName(stretch: number, names: WallNames): string {
+/** A stretch (`side * 3 + part`): 右下門頂, 右下牆靠下那段 (the diamond's 東門, 東牆南段). */
+export function stretchName(stretch: number, view: WallView): string {
   const side = Math.trunc(stretch / 3);
   const part = stretch % 3;
   if (side < 0 || side > 3) return "城牆";
-  if (part === WallPart.Gate) return gateName(side, names);
-  const half = part === WallPart.First ? 0 : 1;
-  return names.words === "compass" ? `${COMPASS_SIDE[side]}牆${COMPASS_HALF[side][half]}段` : `${SCREEN_SIDE[names.view][side]}牆${SCREEN_HALF[names.view][side][half]}那段`;
+  if (part === WallPart.Gate) return gateName(side, view);
+  return `${SCREEN_SIDE[view][side]}牆${SCREEN_HALF[view][side][part === WallPart.First ? 0 : 1]}那段`;
 }
 
 /** The gates a walk crosses (`via`: 1 north, 2 east, 4 south, 8 west), in that order. */
-export function viaGates(via: number, names: WallNames): string[] {
-  return [WallSide.North, WallSide.East, WallSide.South, WallSide.West].filter((s) => (via & (1 << s)) !== 0).map((s) => gateName(s, names));
+export function viaGates(via: number, view: WallView): string[] {
+  return [WallSide.North, WallSide.East, WallSide.South, WallSide.West].filter((s) => (via & (1 << s)) !== 0).map((s) => gateName(s, view));
 }
 
 export interface ShiftRow {
@@ -101,22 +87,22 @@ export function shiftRows(rows: Int32Array | undefined, town: number, owner: num
 }
 
 /**
- * A row's line: 「換邊：4 名走過東門頂，去打東牆南段（敵人 7 名，沒超過牆上的 2 倍）」, or
+ * A row's line: 「換邊：4 名走過右下門頂，去打右下牆靠下那段（敵人 7 名，沒超過牆上的 2 倍）」, or
  * 「敵人走了 10 秒：走回原位」 (R14-07 1 and 4). `odds`, `backSeconds`: rules.wallShift's. No enemy
  * seen there now (they set off while one was, and it walked out of sight; core 2026-11-06): 「敵人已
  * 離開視野」 (ceo), not 「敵人 0 名」.
  */
-export function shiftLine(row: ShiftRow, odds: number, backSeconds: number, names: WallNames): string {
+export function shiftLine(row: ShiftRow, odds: number, backSeconds: number, view: WallView): string {
   if (row.home) return `敵人走了 ${backSeconds} 秒：走回原位`;
-  const gates = viaGates(row.via, names);
+  const gates = viaGates(row.via, view);
   const way = gates.length === 0 ? "" : `走過${gates.join("、")}，`;
   const foes = row.foes === 0 ? "敵人已離開視野" : `敵人 ${row.foes} 名，沒超過牆上的 ${odds} 倍`;
-  return `換邊：${row.n} 名${way}去打${stretchName(row.to, names)}（${foes}）`;
+  return `換邊：${row.n} 名${way}去打${stretchName(row.to, view)}（${foes}）`;
 }
 
-/** R14-07 2: a walk over, those of ours on that stretch now: 「東牆南段：6 名一起打」. */
-export function arrivedLine(stretch: number, n: number, names: WallNames): string {
-  return `${stretchName(stretch, names)}：${n} 名一起打`;
+/** R14-07 2: a walk over, those of ours on that stretch now: 「右下牆靠下那段：6 名一起打」. */
+export function arrivedLine(stretch: number, n: number, view: WallView): string {
+  return `${stretchName(stretch, view)}：${n} 名一起打`;
 }
 
 /**
