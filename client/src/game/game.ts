@@ -78,7 +78,7 @@ import {
 } from "../sim.ts";
 import { HIT_RADIUS_PT, START_ZOOM, TILE_PX, UNIT_CORE_HIT_PT } from "../tuning.ts";
 import { BUILDING_NAME, buildingName, NODE_NAME, UNIT_NAME } from "../ui/hud/names.ts";
-import { arrivedLine, cellStretch, type ShiftRow, shiftLine, shiftRows, type WallView } from "../ui/hud/wall-shift.ts";
+import { arrivedLine, cellStretch, type ShiftRow, shiftLine, shiftRows, shiftTowns, type WallView } from "../ui/hud/wall-shift.ts";
 import { KEEP_HINT_KEY, KEEP_HINT_TEXT, loadHintSeen, saveHintSeen } from "../hint-pref.ts";
 import { loadGradeOn, saveGradeOn } from "../grade-pref.ts";
 import { loadGroundOn, saveGroundOn } from "../ground-pref.ts";
@@ -2191,11 +2191,11 @@ export class Game implements GestureHost {
     if (ids.length > 0) this.command({ c: "leave", building, u: [...ids] });
   }
 
-  /** A town of ours (7c): its 留守 up on the walls and inside, by kind. */
   /**
    * 牆上換邊 (R14-07, ui/hud/wall-shift.ts): our town's lines under its 牆上／城內, at most two: the
    * snapshot's walks (換邊, 走回原位), the most soldiers first, then for ARRIVED_MS after a walk to
-   * fight is over, how many of ours stand on that stretch (到了).
+   * fight is over, how many of ours stand on that stretch (到了). Only reads: what is over is kept
+   * once a snapshot (trackWallShifts), however often this is asked (the panel, the test hook).
    */
   wallShiftLines(town: number): string[] {
     const view = this.view;
@@ -2209,24 +2209,36 @@ export class Game implements GestureHost {
     const rows = shiftRows(snap.wallShifts, town, view.me);
     const now = performance.now();
     const going = new Set(rows.filter((r) => !r.home).map((r) => r.to));
-    for (const r of this.shiftsSeen.get(town) ?? []) if (!r.home && !going.has(r.to)) this.arrived.set(`${town}:${r.to}`, now + ARRIVED_MS);
-    this.shiftsSeen.set(town, rows);
     const lines = rows.map((r) => shiftLine(r, odds, back, names));
     for (const [key, until] of this.arrived) {
       const [t, to] = key.split(":").map(Number);
-      if (t !== town) continue;
-      if (now >= until) {
-        this.arrived.delete(key);
-        continue;
-      }
-      if (going.has(to)) continue;
+      if (t !== town || now >= until || going.has(to)) continue;
       const n = this.onStretch(town, to);
       if (n > 0) lines.push(arrivedLine(to, n, names));
     }
     return lines.slice(0, 2);
   }
 
-  /** The walks seen last time each town's lines were asked for, and when each 到了 goes (`town:stretch`). */
+  /**
+   * Once a snapshot (R14-07 2): each walk to fight that was in the last one and is not in this one
+   * is over, its 到了 shown for ARRIVED_MS; those past their time go.
+   */
+  private trackWallShifts(): void {
+    const view = this.view;
+    const snap = view?.curr?.snap;
+    if (view === null || snap === undefined) return;
+    const now = performance.now();
+    for (const [key, until] of this.arrived) if (now >= until) this.arrived.delete(key);
+    for (const town of new Set([...this.shiftsSeen.keys(), ...shiftTowns(snap.wallShifts, view.me)])) {
+      const rows = shiftRows(snap.wallShifts, town, view.me);
+      const going = new Set(rows.filter((r) => !r.home).map((r) => r.to));
+      for (const r of this.shiftsSeen.get(town) ?? []) if (!r.home && !going.has(r.to)) this.arrived.set(`${town}:${r.to}`, now + ARRIVED_MS);
+      if (rows.length > 0) this.shiftsSeen.set(town, rows);
+      else this.shiftsSeen.delete(town);
+    }
+  }
+
+  /** The walks to fight in the last snapshot by town, and when each 到了 goes (`town:stretch`). */
   private readonly shiftsSeen = new Map<number, ShiftRow[]>();
   private readonly arrived = new Map<string, number>();
 
@@ -2247,6 +2259,7 @@ export class Game implements GestureHost {
     return n;
   }
 
+  /** A town of ours (7c): its 留守 up on the walls and inside, by kind. */
   townSeats(town: number): { wall: number[]; inside: number[] } {
     const view = this.view;
     const u = view?.curr?.snap.units;
@@ -2659,6 +2672,7 @@ export class Game implements GestureHost {
         if (view === null) return;
         const now = performance.now();
         view.push(msg, now);
+        this.trackWallShifts();
         this.lab.snapshot(msg.header, now);
         const tick = view.header?.[H.tick] ?? 0;
         if (this.restoring !== null) this.restoreScreen(this.restoring, tick);

@@ -329,10 +329,21 @@
   bottom: 0;
   left: 0;
   z-index: 2;
-  height: 28px;
+  height: 34px;
   border-radius: 0 0 8px 8px;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.6));
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.75));
   pointer-events: none;
+}
+
+/* And a ⌄ in its middle, in the panel's light gold (an icon: B's panels own their ::before／::after). */
+:root[data-ui="r6"] .sel-info .sel-more .ic {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  width: 18px;
+  height: 18px;
+  color: var(--rim-hi);
+  transform: translateX(-50%);
 }
 
 /* The title line: 44 tall, the name, its state, then ⌃ 收起 (63 × 44) left of the ✕ (44 × 44), 6 in from the corner. */
@@ -425,16 +436,15 @@
 }
 
 /* 軍團畫面 (R6-17): 改成剛才選的 N 名、清空、自動補兵 on one row (PR 5). On two, at 814 × 380 with the
-   safe area, the panel reached up over 全軍撤退; the row takes some of the panel's side padding, its
-   chips less of their own (a three-digit count still fits, 14 to spare). */
+   safe area, the panel reached up over 全軍撤退; the row takes 6 of the panel's left padding (its right
+   reaches under the ✕'s column as style.css has it, no further: #402, nothing scrolls sideways), its
+   chips less of their own (a three-digit count still fits, 12 to spare). */
 :root[data-ui="r6"] .sel-info .group-actions {
-  /* style.css's -46 reaches under the ✕'s column; 6 more each side, into the panel's padding. */
   margin-left: -6px;
-  margin-right: -52px;
 }
 
 :root[data-ui="r6"] .sel-info .group-actions .chip.b {
-  padding: 0 6px;
+  padding: 0 5px;
 }
 
 /* 槍兵 ×6: the count apart, in bold (R6-14). */

@@ -86,6 +86,14 @@ export function shiftRows(rows: Int32Array | undefined, town: number, owner: num
   return [...byLine.values()].sort((a, b) => b.n - a.n || a.to - b.to);
 }
 
+/** The towns with rows of this owner's in the snapshot. */
+export function shiftTowns(rows: Int32Array | undefined, owner: number): Set<number> {
+  const out = new Set<number>();
+  if (rows === undefined) return out;
+  for (let o = 0; o + WS.home < rows.length; o += WALL_SHIFT_STRIDE) if (rows[o + WS.owner] === owner) out.add(rows[o + WS.town]);
+  return out;
+}
+
 /**
  * A row's line: 「換邊：4 名走過右下門頂，去打右下牆靠下那段（敵人 7 名，沒超過牆上的 2 倍）」, or
  * 「敵人走了 10 秒：走回原位」 (R14-07 1 and 4). `odds`, `backSeconds`: rules.wallShift's. No enemy

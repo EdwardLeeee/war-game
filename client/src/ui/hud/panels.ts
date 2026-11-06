@@ -359,6 +359,7 @@ export class SelectionInfo {
     // 正式介面: more below, a fade at the foot (ui/r6.css .sel-more).
     this.more = this.formal ? el("div", this.frame, "sel-more") : null;
     this.more?.setAttribute("aria-hidden", "true");
+    this.more?.appendChild(icon("unfold"));
     // Scrolled (正式介面): the title line kept at the top takes a ground of its own (ui/r6.css).
     this.el.addEventListener(
       "scroll",

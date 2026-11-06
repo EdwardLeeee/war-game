@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { arrivedLine, cellStretch, type ShiftRow, shiftLine, shiftRows, stretchName, viaGates } from "../src/ui/hud/wall-shift.ts";
+import { arrivedLine, cellStretch, type ShiftRow, shiftLine, shiftRows, shiftTowns, stretchName, viaGates } from "../src/ui/hud/wall-shift.ts";
 
 test("牆段的名字照畫面寫（D-132）：菱形下北牆在右上、東牆右下、南牆左下、西牆左上；兩半看靠哪個角（PROTOCOL.md 4.7 的例子：東門頂 3、東牆南段 5、北牆西段 1）", () => {
   assert.equal(stretchName(3, "diamond"), "右下門頂");
@@ -45,6 +45,10 @@ test("快照的列：只要這座城、這一方的，人多的在前面", () =>
     ],
   );
   assert.deepEqual(shiftRows(undefined, 0, 0), []);
+  // The towns with ours (for the screen's 到了, once a snapshot).
+  assert.deepEqual([...shiftTowns(rows, 0)], [0, 1]);
+  assert.deepEqual([...shiftTowns(rows, 1)], [0]);
+  assert.deepEqual([...shiftTowns(undefined, 0)], []);
 });
 
 test("同一段、同一條路的換邊合成一行（出發的段不寫）；走回原位的全部合成一行", () => {
