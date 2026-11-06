@@ -901,14 +901,97 @@
 }
 
 :root[data-ui="r6"] .dialog .theme-choice > span {
-  grid-column: 1 / -1;
   font-size: 13px;
+  font-weight: 700;
+}
+
+/* 換了馬上生效… at the right of 介面風格 (NEW-07). */
+:root[data-ui="r6"] .dialog .theme-choice > .theme-note {
+  justify-self: end;
+  font-weight: 400;
+  color: var(--ink2);
 }
 
 :root[data-ui="r6"] .dialog .theme-card.b {
   flex-direction: column;
   gap: 4px;
   min-height: 72px;
+  padding: 8px 10px;
+}
+
+/* A small picture of each look (NEW-07): the battlefield's green, the top bar, a panel and three
+   buttons in that look's colours, drawn here (no picture to load). */
+:root[data-ui="r6"] .dialog .theme-thumb {
+  position: relative;
+  display: block;
+  width: 100%;
+  max-width: 180px;
+  height: 70px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: linear-gradient(160deg, #5f7a3e, #3f5a2c);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+
+:root[data-ui="r6"] .dialog .theme-thumb i {
+  position: absolute;
+  display: block;
+}
+
+:root[data-ui="r6"] .dialog .theme-thumb .tt-bar {
+  left: 4px;
+  top: 4px;
+  width: 52%;
+  height: 9px;
+  border-radius: 2px;
+}
+
+:root[data-ui="r6"] .dialog .theme-thumb .tt-panel {
+  left: 22%;
+  bottom: 4px;
+  width: 44%;
+  height: 28px;
+  border-radius: 3px;
+}
+
+:root[data-ui="r6"] .dialog .theme-thumb .tt-btn {
+  bottom: 4px;
+  width: 9%;
+  height: 12px;
+  border-radius: 2px;
+}
+
+:root[data-ui="r6"] .dialog .theme-thumb .tt-btn.red {
+  right: 23%;
+  background: #a6382b;
+}
+
+:root[data-ui="r6"] .dialog .theme-thumb .tt-btn.blue {
+  right: 13%;
+  background: #3a63a8;
+}
+
+:root[data-ui="r6"] .dialog .theme-thumb .tt-btn.gold {
+  right: 3%;
+  background: #c9963a;
+}
+
+/* A 銅木: wood, a copper rim. */
+:root[data-ui="r6"] .dialog .theme-thumb.look-a .tt-bar,
+:root[data-ui="r6"] .dialog .theme-thumb.look-a .tt-panel {
+  background: linear-gradient(180deg, #4e3622, #2c1e13);
+  box-shadow: inset 0 0 0 1px #b98d4c;
+}
+
+/* B 墨漆金線: black lacquer, a thin gold line. */
+:root[data-ui="r6"] .dialog .theme-thumb.look-b .tt-bar,
+:root[data-ui="r6"] .dialog .theme-thumb.look-b .tt-panel {
+  background: linear-gradient(180deg, #161b26, #0a0c12);
+  box-shadow: inset 0 0 0 1px #d8b65e;
+}
+
+:root[data-ui="r6"] .dialog .theme-thumb.look-b .tt-btn {
+  box-shadow: inset 0 0 0 1px #d8b65e;
 }
 
 :root[data-ui="r6"] .dialog .theme-card .lb {
@@ -922,6 +1005,15 @@
 }
 
 /* 經濟分配, 預留 (INV-120, INV-121): − N + a row. */
+:root[data-ui="r6"] .dialog .ratio-row .ratio-name {
+  width: 2.2em;
+}
+
+/* 經濟分配 (INV-120): 自動分配 at the left of 取消 and 套用. */
+:root[data-ui="r6"] .dialog .dialog-buttons > .eco-toggle {
+  margin-right: auto;
+}
+
 :root[data-ui="r6"] .dialog .ratio-row .b {
   width: 44px;
   min-width: 44px;
@@ -945,6 +1037,19 @@
 
 :root[data-ui="r6"] .dialog .choice-row .b b {
   font-size: 22px;
+}
+
+/* 只能治理 (INV-124): 治理 half the width, as when 搶 is beside it. */
+:root[data-ui="r6"] .dialog .choice-row .b:only-child {
+  flex: 0 1 calc(50% - 5px);
+}
+
+/* 稍後再決定 at the right. */
+:root[data-ui="r6"] .dialog .town-choice-later,
+:root[data-ui="r6"] .town-choice .dialog-card > .later.b {
+  display: flex;
+  width: fit-content;
+  margin: 8px 0 0 auto;
 }
 
 :root[data-ui="r6"] .dialog .keep-row .b {
@@ -1075,6 +1180,60 @@
   width: 100%;
   min-height: 52px;
   font-size: 17px;
+}
+
+/* 繼續上一局 the main button (INV-07): above 開始. */
+:root[data-ui="r6"] #start .start-buttons > #continue-last:not(.secondary) {
+  order: -1;
+}
+
+/* 快轉中 (INV-11): the card no more than its title and the line catching up, 取消 at its end. */
+:root[data-ui="r6"] #start.continuing .start-left,
+:root[data-ui="r6"] #start.continuing .start-right > :not(.continue-progress),
+:root[data-ui="r6"] #start.continuing .card .small {
+  display: none;
+}
+
+:root[data-ui="r6"] #start.continuing .card.panel {
+  grid-template-columns: 1fr;
+}
+
+:root[data-ui="r6"] #start .continue-progress {
+  gap: 10px;
+  font-size: 13px;
+}
+
+:root[data-ui="r6"] #start .continue-progress progress {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 10px;
+  border: 0;
+  border-radius: 5px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+:root[data-ui="r6"] #start .continue-progress progress::-webkit-progress-bar {
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+:root[data-ui="r6"] #start .continue-progress progress::-webkit-progress-value {
+  border-radius: 5px;
+  background: #e7c35a;
+}
+
+:root[data-ui="r6"] #start .continue-progress progress::-moz-progress-bar {
+  border-radius: 5px;
+  background: #e7c35a;
+}
+
+/* 有新版本 (INV-13): a dark line, 更新 at its end. */
+:root[data-ui="r6"] #start .update {
+  justify-content: space-between;
+  padding: 4px 4px 4px 12px;
+  background: rgba(0, 0, 0, 0.3);
+  font-size: 13px;
 }
 
 :root[data-ui="r6"] #start .card .note {
