@@ -653,7 +653,6 @@ export class MockPort implements SimPort {
     }
   }
 
-  /** Tests: a building's hit points now (a gate damaged, D-096). */
   /** The game over: `winner` won for `reason` (surrender, or a test page's end: the fake world has no other way to win). */
   endGame(winner: number, reason: number): void {
     this.over = true;
@@ -664,6 +663,7 @@ export class MockPort implements SimPort {
     this.emit({ type: "game_over", winner, reason: reason as 0 | 1 | 2, stats: { ticks: this.tick, winner, reason: reason as 0 | 1 | 2, perPlayer: [player, { ...player }] } });
   }
 
+  /** Tests: a building's hit points now (a gate damaged, D-096). */
   damage(id: number, hp: number): void {
     const b = this.buildings.find((v) => v.id === id);
     if (b !== undefined) b.hp = hp;

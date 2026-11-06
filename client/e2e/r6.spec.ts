@@ -27,9 +27,10 @@ async function twoGroups(page: Page): Promise<void> {
   await saveGroup(page, ".groups > button:nth-child(1)");
 }
 
-test("正式介面關著（預設）：畫面照原型——原型標示還在、資源列是一行字、選單沒有設定、R6 的樣子不套用（ceo 2026-10-19）", async ({ page }) => {
+test("正式介面關著（?ui=proto，ceo 2026-10-19）：畫面照原型——原型標示還在、資源列是一行字、選單沒有設定、R6 的樣子不套用", async ({ page }) => {
   const check = watchErrors(page);
-  await page.goto("./?test=1&mock=1&tps=20");
+  // Off by ?ui=proto, whichever is the default (PR 5).
+  await page.goto("./?test=1&mock=1&tps=20&ui=proto");
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true);
   expect(await page.evaluate(() => document.documentElement.dataset.ui ?? null)).toBeNull();
@@ -101,3 +102,34 @@ for (const look of ["a", "b"] as const) {
     check();
   });
 }
+
+test("正式介面的資源列（R6-11，ceo 2026-11-06）：畫面上的數字和資源列的名字（測試讀的那一行）一樣，訓練中也是", async ({ page }) => {
+  await start(page);
+  // The figures under their icons, and the bar's name (helpers.ts resText reads it), at one moment.
+  const read = () =>
+    page.evaluate(() => {
+      const bar = document.querySelector(".res-bar");
+      const figures = [...(bar?.querySelectorAll(".r > b") ?? [])].map((b) => b.textContent ?? "");
+      const smalls = [...(bar?.querySelectorAll(".r > small") ?? [])].map((s) => ((s as HTMLElement).hidden ? "" : (s.textContent ?? "")));
+      return { name: bar?.getAttribute("aria-label") ?? "", figures, smalls };
+    });
+  /** The name the figures on screen spell (names.ts resourceLine's whole line). */
+  const spelled = (r: Awaited<ReturnType<typeof read>>) => {
+    const [food, wood, gold, crystal, pop, time] = r.figures;
+    const [cap, training] = r.smalls;
+    return `糧 ${food}　木 ${wood}　金 ${gold}　晶 ${crystal}　人口 ${pop}${cap}${training === "" ? "" : `（${training}）`}　時間 ${time}`;
+  };
+  const before = await read();
+  expect(before.figures, "food, wood, gold, crystal, population, time").toHaveLength(6);
+  expect(spelled(before)).toBe(before.name);
+  // Training: 人口 counts them, and 訓練中 N shows (D-050).
+  await page.evaluate(() => window.__proto?.game?.centerOn(5, 75, 1));
+  const at = await page.evaluate(() => window.__proto?.game?.cellToScreen(5, 75) ?? { x: 0, y: 0 });
+  await page.touchscreen.tap(at.x, at.y);
+  const train = page.locator(".cmds").getByRole("button", { name: /^訓練槍兵/ });
+  await train.tap();
+  await train.tap();
+  await expect.poll(async () => (await read()).name).toContain("（訓練中 2）");
+  const training = await read();
+  expect(spelled(training)).toBe(training.name);
+});

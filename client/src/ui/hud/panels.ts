@@ -1158,11 +1158,15 @@ export class CommandArea {
     // On the 建造 page, what each building still needs (round 7's `requires`).
     const needs = this.page === "build" ? BUILDABLE.map((t) => missingFor(view.rules, t, view.ownFinishedTypes()).join(".")).join("/") : "";
     const key = `${ident}|${this.keyFor(view)}|${this.page}|${this.host.mode()}|${needs}`;
-    if (key === this.key) return;
+    if (key === this.key) {
+      if (this.page === "build" && `${innerWidth}x${innerHeight}` !== this.fitSize) this.fitBuildPage();
+      return;
+    }
     this.key = key;
     this.el.replaceChildren();
-    this.el.classList.remove("cols5");
+    this.el.classList.remove("cols5", "build-page");
     this.build(view);
+    this.fitBuildPage();
     // Which selection these buttons act on (tests wait for it after selecting by hand).
     this.el.dataset.selection = view.selection.units.join(",");
   }
@@ -1324,6 +1328,8 @@ export class CommandArea {
     // 正式介面 (R14-04): more than 12 (砲坊 and 市場 with them) in five columns.
     const shown = BUILDABLE.filter((type) => view.rules.buildings[type] !== undefined && buildable(view.rules, type)).length;
     this.el.classList.toggle("cols5", this.formal && shown + 1 > 12);
+    // 正式介面: its rows kept low (r6.css .build-page), so that it stays under 全軍.
+    this.el.classList.add("build-page");
     for (const type of BUILDABLE) {
       const info = view.rules.buildings[type];
       if (info === undefined || !buildable(view.rules, type)) continue;
@@ -1345,6 +1351,27 @@ export class CommandArea {
   /** 重設: back to the first page (leaves the 建造 list). */
   reset(): void {
     this.setPage("main");
+  }
+
+  /** The screen size the right column was last fitted at (fitBuildPage). */
+  private fitSize = "";
+
+  /**
+   * 建造's page taller than the room under 全軍 (ceo 2026-11-07: Safari with its tab bar, 932 × 336):
+   * the right column (編隊 1–4, 全軍) out of sight while the page is open, kept in its place so that
+   * nothing moves, back as soon as the page closes (a building chosen, 返回). Measured, never by
+   * device: at 814 × 380 and 932 × 430 the page fits and the column stays.
+   */
+  private fitBuildPage(): void {
+    const right = document.querySelector<HTMLElement>(".side-right");
+    if (right === null) return;
+    right.classList.remove("make-room");
+    this.fitSize = `${innerWidth}x${innerHeight}`;
+    if (!this.formal || this.page !== "build") return;
+    const page = this.el.getBoundingClientRect();
+    const column = right.getBoundingClientRect();
+    const across = Math.min(page.right, column.right) - Math.max(page.left, column.left) > 0;
+    if (across && page.top < column.bottom) right.classList.add("make-room");
   }
 
   private setPage(page: "main" | "build"): void {

@@ -6,7 +6,7 @@
 // side is tested by core.
 
 import { expect, type Page, test } from "@playwright/test";
-import { armyButton, expectSaid, FULL_SCREEN, injectSafeArea, INTERACTIVE, IPHONE_SAFE, saveGroup, selectForCommands, shot, visibleBoxes, watchErrors, watchToasts } from "./helpers.ts";
+import { armyButton, expectSaid, formalOn, FULL_SCREEN, injectSafeArea, INTERACTIVE, IPHONE_SAFE, meaningText, saveGroup, selectForCommands, shot, visibleBoxes, watchErrors, watchToasts } from "./helpers.ts";
 import { tap, tapOn } from "./touch.ts";
 
 // Fake-world layout with r7=1, in cells.
@@ -327,7 +327,7 @@ test("躲著的兵（D-083，使用者 2026-10-26 推翻 D083-1-A）：躲進去
   expect((await sent(page)).slice(mark).filter((c) => c.c === "move" || c.c === "attack" || c.c === "retreat")).toEqual([]);
   // 全軍 (and 全軍撤退, from the same list): only those outside.
   const outside = [...spear, ...ranged.slice(2), ...mages].sort((a, b) => a - b);
-  await expect(armyButton(page)).toHaveText(`全軍 ${outside.length}`);
+  await expect(armyButton(page)).toHaveAccessibleName(`全軍 ${outside.length}`);
   await armyButton(page).tap();
   await expect.poll(() => selection(page)).toEqual({ units: outside, building: null });
   // 全部出來: they walk back to group 1, where the spearmen stand (an order of the screen's).
@@ -342,7 +342,7 @@ test("躲著的兵（D-083，使用者 2026-10-26 推翻 D083-1-A）：躲進去
   expect(await groupIds()).toEqual(group);
   // 全軍 and 全軍撤退 count them again.
   const all = [...spear, ...ranged, ...mages].sort((a, b) => a - b);
-  await expect(armyButton(page)).toHaveText(`全軍 ${all.length}`);
+  await expect(armyButton(page)).toHaveAccessibleName(`全軍 ${all.length}`);
   await page.getByRole("button", { name: "全軍撤退" }).tap();
   await expect.poll(() => lastOrder(page)).toMatchObject({ c: "retreat", u: all });
 });
@@ -366,7 +366,9 @@ test("召回（使用者 2026-11-04，D-119）：兩個編隊躲在同一座主�
   await expect.poll(() => soldiersIn(page, city), TICKS).toBe(4);
   // Group 1's 軍團畫面: 躲著 with 召回, from out in the field (the main city nowhere near the screen).
   await tapOn(page, GROUP_1);
-  await page.locator(".sel-info").getByRole("button", { name: "展開選取資訊" }).tap({ timeout: 1500 }).catch(() => undefined);
+  // Unfolded if it was folded (no short limit: WebKit took longer than 1.5 s, PR 5).
+  const unfold = page.locator(".sel-info").getByRole("button", { name: "展開選取資訊" });
+  if (await unfold.isVisible()) await unfold.tap();
   await expect(page.locator(".sel-info .group-place", { hasText: "主城" })).toHaveAttribute("aria-label", "主城 2 名");
   await expect(page.locator(".sel-info .group-places").getByRole("button", { name: "召回" })).toBeVisible();
   await shot(page, info, "d119-recall-button");
@@ -448,7 +450,7 @@ test("馬廄和騎兵：建造選單有馬廄；選馬廄 → 訓練騎兵，騎
   await expect(row.locator(".group-has")).toHaveText("現有 1");
   await expect(row.locator(".group-want")).toHaveText("1");
   await shot(page, info, "r7-cavalry-group");
-  await expect(armyButton(page)).toHaveText(`全軍 ${soldiers + 1}`);
+  await expect(armyButton(page)).toHaveAccessibleName(`全軍 ${soldiers + 1}`);
 });
 
 /** 選單 → 兵種相剋: the rows as the player reads them. */
@@ -494,18 +496,26 @@ test("剋／怕（D-097）：訓練鈕寫「剋：…／怕：…」，只選一
   await expect(page.locator(".cmds").getByRole("button", { name: /^訓練騎兵/ }).locator(".counter-sub")).toHaveText("剋：遠程、法師／怕：槍兵");
   await checkLayout(page);
   await shot(page, info, "d097-stable");
-  // Ranged selected: its line. Spearmen and ranged together: none (the chips; one tapped shows its own).
+  // One kind selected, its line: the prototype's own with the kind's name, 正式介面's among the
+  // explanation (R14: 剋怕 as its tag). Spearmen and ranged together: none (the chips; one tapped shows its own).
+  const formal = await formalOn(page);
+  const counterLine = async (name: string, short: string | null): Promise<void> => {
+    const line = page.locator(formal ? ".sel-info .counter-meaning" : ".sel-info .counter-short");
+    if (short === null) await expect(line).toHaveCount(0);
+    else if (formal) await expect.poll(() => meaningText(line)).toBe(`剋怕：${short}`);
+    else await expect(line).toHaveText([`${name}　${short}`]);
+  };
   await selectForCommands(page, await ownIds(page, [2]));
-  await expect(page.locator(".sel-info .counter-short")).toHaveText(["遠程兵　剋：槍兵／怕：騎兵"]);
+  await counterLine("遠程兵", "剋：槍兵／怕：騎兵");
   await shot(page, info, "d097-selection");
   await selectForCommands(page, await ownIds(page, [1, 2]));
   await expect(page.locator(".sel-info .sel-chips")).toBeVisible();
-  await expect(page.locator(".sel-info .counter-short")).toHaveCount(0);
+  await counterLine("", null);
   await selectForCommands(page, await ownIds(page, [1]));
-  await expect(page.locator(".sel-info .counter-short")).toHaveText(["槍兵　剋：騎兵／怕：遠程"]);
+  await counterLine("槍兵", "剋：騎兵／怕：遠程");
   // A mage: 剋 the crowded (the cannon), 怕 cavalry.
   await selectForCommands(page, await ownIds(page, [3]));
-  await expect(page.locator(".sel-info .counter-short")).toHaveText(["法師　剋：擠在一起的部隊／怕：騎兵"]);
+  await counterLine("法師", "剋：擠在一起的部隊／怕：騎兵");
 });
 
 for (const viewport of [null, FULL_SCREEN]) {

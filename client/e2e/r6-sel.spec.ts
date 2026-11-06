@@ -54,7 +54,7 @@ test("正式介面：多選的說明照 R14 的字，多一行進駐；「目前
 });
 
 test("原型：說明照舊（沒有進駐那行、剋怕自己一行）", async ({ page }) => {
-  await page.goto("./?test=1&mock=1&r7=1&outpost=1&tps=20");
+  await page.goto("./?test=1&mock=1&r7=1&outpost=1&tps=20&ui=proto");
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true);
   const soldiers = await ownSoldiers(page);

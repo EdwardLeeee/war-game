@@ -751,6 +751,31 @@
   text-align: left;
 }
 
+/* 建造's page (PR 5, ceo 2026-11-06): a cost on two lines (法術營 木200 金150) made its row 61 high and
+   the menu reached over 全軍 at 814 × 380; a smaller icon and closer lines keep a row at 52 or less, every
+   button still 46 or more, nothing cut. */
+:root[data-ui="r6"] .cmds.build-page .b {
+  min-height: 46px;
+  padding: 2px 0 3px;
+  line-height: 1.05;
+}
+
+:root[data-ui="r6"] .cmds.build-page .b .ic {
+  width: 14px;
+  height: 14px;
+  margin-bottom: 0;
+}
+
+:root[data-ui="r6"] .cmds.build-page .b .sub {
+  line-height: 1;
+}
+
+/* 建造's page taller than the room under 全軍 (932 × 336, panels.ts fitBuildPage): the right column out of
+   sight, in its place, while it is open. */
+:root[data-ui="r6"] #hud .side-right.make-room {
+  visibility: hidden;
+}
+
 /* 建造 with 砲坊 and 市場 (R14-04): five columns of 52. */
 :root[data-ui="r6"] .cmds.cols5 {
   grid-template-columns: repeat(5, 52px);

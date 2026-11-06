@@ -16,6 +16,7 @@ import {
   BuildingField,
   BuildingType,
   CELL,
+  GameOverReason,
   type GameStats,
   HeaderField as H,
   NEUTRAL,
@@ -1024,6 +1025,8 @@ export class Hud {
     const card = this.openDialog(`攻下${big ? "大城" : "小鎮"}！${once ? "只能治理" : "搶還是治理？"}`, "town-choice");
     // 留守 (D-026): how many soldiers stay behind with each choice.
     const keep = { plunder: this.defaultKeep(town), govern: this.defaultKeep(town) };
+    // 正式介面: one 留守 for either (below), the same number from the start (ceo 2026-11-06).
+    if (this.formal) keep.plunder = keep.govern;
     const row = el("div", card, "choice-row");
     if (!once) {
       const plunder = btn(row, "", () => this.chooseTown(town, TownChoice.Plunder, keep.plunder), "choice-plunder");
@@ -1111,7 +1114,9 @@ export class Hud {
     const me = this.game.view?.me ?? 0;
     const title = winner === -1 ? "平手" : winner === me ? "勝利" : "失敗";
     const card = this.openDialog(title, `result ${winner === me ? "won" : winner === -1 ? "draw" : "lost"}`);
-    el("p", card, "", `${GAME_OVER_REASON[reason] ?? ""}　遊戲時間 ${clock(stats.ticks)}`);
+    // 正式介面 (R6-21, INV-130): a win by the enemy's main city 「敵方主城被摧毀」, as the board; a loss as before.
+    const why = this.formal && winner === me && reason === GameOverReason.MainCityDestroyed ? "敵方主城被摧毀" : (GAME_OVER_REASON[reason] ?? "");
+    el("p", card, "", `${why}　遊戲時間 ${clock(stats.ticks)}`);
     const table = el("table", card, "stats");
     const head = el("tr", table);
     for (const t of ["", "我方", "敵方"]) el("th", head, "", t);
