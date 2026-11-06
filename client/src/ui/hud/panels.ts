@@ -262,9 +262,9 @@ function seats(e: HTMLElement, kinds: readonly number[], cap: number, coming = 0
 }
 
 function button(parent: HTMLElement, label: string, sub: string, onTap: () => void, cls = ""): HTMLButtonElement {
-  // 正式介面 (R6-40, R6-14 to R6-17): the selection info's buttons are the interface's (.b); the
-  // command area's come with R6-18.
-  const formal = formalUi() && parent.closest(".sel-info") !== null;
+  // 正式介面 (R6-40): the selection info's (R6-14 to R6-17) and the command area's (R6-18) buttons
+  // are the interface's (.b).
+  const formal = formalUi() && parent.closest(".sel-info, .cmds") !== null;
   const b = el("button", parent, formal ? `b ${cls}` : cls);
   b.type = "button";
   el("span", b, "label", label);
@@ -1124,6 +1124,8 @@ export class SelectionInfo {
 export class CommandArea {
   readonly el: HTMLElement;
   private readonly host: PanelHost;
+  /** 正式介面 (R6-18): each button with its icon over its words, in its order's colour. */
+  private readonly formal = formalUi();
   private key = "";
   private page: "main" | "build" = "main";
   /** What is selected; a new selection goes back to the first page. */
@@ -1133,6 +1135,14 @@ export class CommandArea {
     this.host = host;
     this.el = el("section", parent, "cmds");
     this.el.setAttribute("aria-label", "指令區");
+  }
+
+  /** 正式介面 (R6-18): the icon over the words and the colour (攻擊 red, 移動 blue, 堅守 gold, 建造 and 訓練 gold); else as it is. */
+  private look(b: HTMLButtonElement, ic: IconName | null, tone: "" | "red" | "blue" | "gold" | "pri" = ""): HTMLButtonElement {
+    if (!this.formal) return b;
+    if (tone !== "") b.classList.add(tone);
+    if (ic !== null) b.prepend(icon(ic));
+    return b;
   }
 
   update(): void {
@@ -1151,6 +1161,7 @@ export class CommandArea {
     if (key === this.key) return;
     this.key = key;
     this.el.replaceChildren();
+    this.el.classList.remove("cols5");
     this.build(view);
     // Which selection these buttons act on (tests wait for it after selecting by hand).
     this.el.dataset.selection = view.selection.units.join(",");
@@ -1197,14 +1208,22 @@ export class CommandArea {
       const retreating = mode === "retreat" || (mode === "normal" && allIn(view, sel.units, "retreat"));
       if (counts !== null) {
         // 攻擊紅、移動藍 (D-080); 堅守 stays as it was.
-        const advance = advancing
-          ? button(this.el, "取消攻擊", "停下堅守", () => this.host.cancelToHold(), ORDER_TONE.advance)
-          : button(this.el, "攻擊", "地面或敵人", () => this.host.setMode("advance"), ORDER_TONE.advance);
+        const advance = this.look(
+          advancing
+            ? button(this.el, "取消攻擊", "停下堅守", () => this.host.cancelToHold(), ORDER_TONE.advance)
+            : button(this.el, "攻擊", "地面或敵人", () => this.host.setMode("advance"), ORDER_TONE.advance),
+          "attack",
+          "red",
+        );
         if (advancing) advance.classList.add("active");
       }
-      const retreat = retreating
-        ? button(this.el, "取消移動", "停下堅守", () => this.host.cancelToHold(), ORDER_TONE.retreat)
-        : button(this.el, "移動", "點地面", () => this.host.retreat(), ORDER_TONE.retreat);
+      const retreat = this.look(
+        retreating
+          ? button(this.el, "取消移動", "停下堅守", () => this.host.cancelToHold(), ORDER_TONE.retreat)
+          : button(this.el, "移動", "點地面", () => this.host.retreat(), ORDER_TONE.retreat),
+        "retreat",
+        "blue",
+      );
       if (retreating) retreat.classList.add("active");
       if (counts !== null) {
         const hold = button(this.el, "堅守", "原地不動", () => {
@@ -1212,31 +1231,36 @@ export class CommandArea {
           this.host.command({ c: "stance", u: soldiers, stance: Stance.Hold });
           this.host.notify(ORDER_TEXT.hold);
         });
+        this.look(hold, "hold", "gold");
         if (mode === "normal" && allIn(view, sel.units, "hold")) hold.classList.add("active");
       }
-      button(this.el, "停止", "", () => this.host.command({ c: "stop", u: sel.units }), "secondary");
+      this.look(button(this.el, "停止", "", () => this.host.command({ c: "stop", u: sel.units }), "secondary"), "stop");
       // A tap re-forms the troops where they stand (D-028): no march order needed.
       const formation = formationOf(view, sel.units);
       if (formation !== null) {
         const loose = formation !== true;
         const now = formation === "mixed" ? "混合" : formation ? "散開" : "密集";
         const to = `${formation === "mixed" ? "全部" : ""}改成${loose ? "散開" : "密集"}`;
-        button(this.el, `隊形：${now}`, `按一下${to}`, () => {
-          this.host.command({ c: "formation", u: soldiers, loose });
-          this.host.notify(`已${to}。${FORMATION_TEXT[loose ? "loose" : "close"][0]}`);
-        }, "wide");
+        this.look(
+          button(this.el, `隊形：${now}`, `按一下${to}`, () => {
+            this.host.command({ c: "formation", u: soldiers, loose });
+            this.host.notify(`已${to}。${FORMATION_TEXT[loose ? "loose" : "close"][0]}`);
+          }, "wide"),
+          "formation",
+        );
       }
       // 整理隊形 (D-095, the user: 「常常跑一跑法師就跑到前排」): the soldiers re-form where they
       // are, spearmen in front, mages behind, facing the nearest enemy seen (game.ts reform()).
       if (soldiers.length > 1) button(this.el, "整理隊形", "槍兵在前", () => this.host.reform(), "secondary");
-      if (types.has(UnitType.Farmer)) button(this.el, "建造", "", () => this.setPage("build"));
+      if (types.has(UnitType.Farmer)) this.look(button(this.el, "建造", "", () => this.setPage("build")), "build", "pri");
       // No 晶砲 or 自動施放 (D-095: 「晶泡的按鈕可以拿掉了」): mages always fire on their own.
       // 進駐 (D-124, D-125): 駐軍, 躲進去 and 駐守 as one: then a tap on one of ours, which says who goes in (game/enter.ts).
       if (soldiers.length > 0 && enterOn(view.rules)) {
         const picking = mode === "enter";
-        const enter = picking
-          ? button(this.el, "取消", "進駐", () => this.host.setMode("normal"), "secondary")
-          : button(this.el, "進駐", "點建築", () => this.host.setMode("enter"), "secondary");
+        const enter = this.look(
+          picking ? button(this.el, "取消", "進駐", () => this.host.setMode("normal"), "secondary") : button(this.el, "進駐", "點建築", () => this.host.setMode("enter"), "secondary"),
+          "home",
+        );
         if (picking) enter.classList.add("active");
       }
       return;
@@ -1254,11 +1278,13 @@ export class CommandArea {
           const u = view.rules.units[unit];
           // 剋／怕 under the cost (D-097), the button two columns wide for it.
           const counters = isSoldier(unit) ? counterShort(view.rules, unit, true) : "";
-          const train = button(this.el, `訓練${UNIT_NAME[unit] ?? ""}`, u === undefined ? "" : costText(u.cost), () => this.host.command({ c: "train", building: id, type: unit, n: 1 }), counters === "" ? "" : "wide");
+          const train = this.look(button(this.el, `訓練${UNIT_NAME[unit] ?? ""}`, u === undefined ? "" : costText(u.cost), () => this.host.command({ c: "train", building: id, type: unit, n: 1 }), counters === "" ? "" : "wide"), "build", "pri");
           if (counters !== "") el("span", train, "sub counter-sub", counters);
         }
         if (info.trains.length > 0) {
-          const rally = button(this.el, mode === "rally" ? "取消集結點" : "集結點", "", () => this.host.setMode(mode === "rally" ? "normal" : "rally"), "secondary");
+          // 正式介面 (R6-18 INV-97): 取消 over 集結點, five words do not fit across 56 pt.
+          const cancelWords: [string, string] = this.formal ? ["取消", "集結點"] : ["取消集結點", ""];
+          const rally = this.look(button(this.el, mode === "rally" ? cancelWords[0] : "集結點", mode === "rally" ? cancelWords[1] : "", () => this.host.setMode(mode === "rally" ? "normal" : "rally"), "secondary"), "rally");
           if (mode === "rally") rally.classList.add("active");
         }
         if (type === BuildingType.MainCity) {
@@ -1266,7 +1292,7 @@ export class CommandArea {
           // 預留 (D-054): what 自動訓練 leaves for building.
           // While 治理 waits for its cost (ceo 2026-10-21), the reserve is raised: the button says so.
           button(this.el, "預留", this.host.reserveRaised() ? "暫時提高" : "自動訓練", () => this.host.openReserve(), "secondary");
-          button(this.el, "建造", "", () => this.setPage("build"));
+          this.look(button(this.el, "建造", "", () => this.setPage("build")), "build", "pri");
         }
       }
       // 自動訓練 (D-054): on by default for the player; a tap pauses or resumes this building
@@ -1289,20 +1315,27 @@ export class CommandArea {
     }
     // Nothing selected (or only looking at a resource, a town or someone else's building):
     // 建造 still works, and the simulation sends the nearest farmers (D-024).
-    button(this.el, "建造", "", () => this.setPage("build"));
+    this.look(button(this.el, "建造", "", () => this.setPage("build")), "build", "pri");
   }
 
   private buildMenu(view: GameView): void {
     const owned = view.ownFinishedTypes();
+    // 正式介面 (R14-04): more than 12 (砲坊 and 市場 with them) in five columns.
+    const shown = BUILDABLE.filter((type) => view.rules.buildings[type] !== undefined && buildable(view.rules, type)).length;
+    this.el.classList.toggle("cols5", this.formal && shown + 1 > 12);
     for (const type of BUILDABLE) {
       const info = view.rules.buildings[type];
       if (info === undefined || !buildable(view.rules, type)) continue;
       // Round 7's `requires`: greyed out, saying what to build first.
       const missing = missingFor(view.rules, type, owned);
-      const b = button(this.el, BUILDING_NAME[type] ?? "", missing.length > 0 ? `要先蓋${missing.map((t) => BUILDING_NAME[t] ?? "").join("、")}` : costText(info.cost), () => {
-        this.page = "main";
-        this.host.startPlacement(type);
-      });
+      const b = this.look(
+        button(this.el, BUILDING_NAME[type] ?? "", missing.length > 0 ? `要先蓋${missing.map((t) => BUILDING_NAME[t] ?? "").join("、")}` : costText(info.cost), () => {
+          this.page = "main";
+          this.host.startPlacement(type);
+        }),
+        "build",
+        "pri",
+      );
       b.disabled = missing.length > 0;
     }
     button(this.el, "返回", "", () => this.setPage("main"), "secondary");

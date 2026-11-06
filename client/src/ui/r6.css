@@ -677,6 +677,104 @@
   justify-content: space-between;
 }
 
+/* --- 指令區 (R6-18) ------------------------------------------------------------------------ */
+
+/* Four columns of 56 × 50, 5 apart (239 wide, from x 571 when two rows: spec section 2); the icon over
+   the words over the small line. */
+:root[data-ui="r6"] .cmds {
+  gap: 5px;
+}
+
+:root[data-ui="r6"] .cmds .b {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: 56px;
+  min-width: 56px;
+  min-height: 50px;
+  padding: 3px 0 4px;
+  font-size: 12px;
+  line-height: 1.15;
+}
+
+:root[data-ui="r6"] .cmds .b .ic {
+  width: 17px;
+  height: 17px;
+  margin-bottom: 1px;
+}
+
+:root[data-ui="r6"] .cmds .b .label {
+  white-space: nowrap;
+}
+
+/* A cost or 「要先蓋 兵營」 wraps at its space, inside the button. */
+:root[data-ui="r6"] .cmds .b .sub {
+  display: block;
+  max-width: 52px;
+  min-width: 0;
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.1;
+  text-align: center;
+  white-space: normal;
+  word-break: keep-all;
+}
+
+:root[data-ui="r6"] .cmds .b.wide {
+  width: auto;
+}
+
+:root[data-ui="r6"] .cmds .b.wide .sub {
+  max-width: none;
+}
+
+/* Two wide (隊形, 117; 訓練 with its 剋怕): the icon left of the lines. */
+:root[data-ui="r6"] .cmds .b.wide:has(> .ic) {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-content: center;
+  justify-content: center;
+  column-gap: 8px;
+}
+
+:root[data-ui="r6"] .cmds .b.wide:has(> .ic) > .ic {
+  grid-column: 1;
+  grid-row: 1 / span 3;
+  align-self: center;
+  margin: 0;
+}
+
+/* Every line in the second column, one under another (訓練槍兵's cost, then its 剋怕). */
+:root[data-ui="r6"] .cmds .b.wide:has(> .ic) > :not(.ic) {
+  grid-column: 2;
+  justify-self: start;
+  text-align: left;
+}
+
+/* 建造 with 砲坊 and 市場 (R14-04): five columns of 52. */
+:root[data-ui="r6"] .cmds.cols5 {
+  grid-template-columns: repeat(5, 52px);
+}
+
+:root[data-ui="r6"] .cmds.cols5 .b {
+  width: 52px;
+  min-width: 52px;
+}
+
+/* --- 技能輪盤 (R6-19 INV-103 to INV-106) -------------------------------------------------------- */
+
+:root[data-ui="r6"] .wheel .wheel-item.b {
+  position: absolute;
+  width: 60px;
+  height: 60px;
+  min-width: 0;
+  min-height: 0;
+  padding: 0 4px;
+  border-radius: 30px;
+  font-size: 12px;
+  line-height: 1.15;
+}
+
 /* =========================================================================== A 銅木 */
 
 :root[data-ui="r6"]:not([data-theme="b"]) {
@@ -795,6 +893,18 @@
 :root[data-ui="r6"]:not([data-theme="b"]) .sel-info .b:disabled {
   opacity: 0.82;
   color: #d9cba9;
+}
+
+/* 指令區: what cannot be pressed is still readable (「要先蓋 兵營」); the wheel round, its shadow below it. */
+:root[data-ui="r6"]:not([data-theme="b"]) .cmds .b:disabled {
+  opacity: 0.82;
+  color: #d9cba9;
+}
+:root[data-ui="r6"]:not([data-theme="b"]) .wheel .wheel-item.b {
+  box-shadow:
+    inset 0 0 0 1.5px var(--rim),
+    inset 0 2px 0 rgba(255, 225, 170, 0.35),
+    0 3px 8px rgba(0, 0, 0, 0.5);
 }
 
 /* =========================================================================== B 墨漆金線 */
@@ -957,6 +1067,25 @@
 :root[data-ui="r6"][data-theme="b"] .sel-info .b:disabled {
   opacity: 1;
   color: #8c867a;
+}
+
+/* 指令區 and the wheel (R6-18, R6-19): what cannot be pressed still readable; the wheel's lacquer round, its rim a ring. */
+:root[data-ui="r6"][data-theme="b"] .cmds .b:disabled {
+  color: #8c867a;
+}
+:root[data-ui="r6"][data-theme="b"] .wheel .wheel-item.b::before {
+  clip-path: circle(50%);
+}
+:root[data-ui="r6"][data-theme="b"] .wheel .wheel-item.b::after {
+  border: 1.5px solid var(--gold-dim);
+  border-image: none;
+  border-radius: 50%;
+}
+:root[data-ui="r6"][data-theme="b"] .wheel .wheel-item.b.red::after {
+  border-color: rgba(255, 171, 146, 0.85);
+}
+:root[data-ui="r6"][data-theme="b"] .wheel .wheel-item.b.blue::after {
+  border-color: rgba(169, 200, 255, 0.85);
 }
 
 /* INV-16: no 原型介面 label in the formal interface. */
