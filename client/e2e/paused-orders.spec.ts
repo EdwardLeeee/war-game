@@ -7,7 +7,7 @@
 // preview says 已取消 without the check.
 
 import { expect, type Page, test } from "@playwright/test";
-import { shot, watchErrors } from "./helpers.ts";
+import { expectSaid, recordToasts, shot, watchErrors } from "./helpers.ts";
 import { tap } from "./touch.ts";
 
 const BARRACKS = 6;
@@ -28,43 +28,6 @@ async function placeHouse(page: Page, near: { x: number; y: number }, answer: "�
   await tap(page, await toScreen(page, { x: spot.x + 0.5, y: spot.y + 0.5 }));
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.placement()?.valid ?? false)).toBe(true);
   await page.getByRole("button", { name: answer }).tap();
-}
-
-interface Said {
-  text: string;
-  ok: boolean;
-  info: boolean;
-}
-
-/**
- * Every message the strip shows from now on, with its look. Once the game runs, the simulation's own
- * messages (「民居蓋好了」 for the house placed while paused, 20 s of its time later) can take the
- * strip before a check reads it, sooner or later as the machine runs: the checks read this record.
- */
-async function recordToasts(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const w = window as unknown as { __said?: { text: string; ok: boolean; info: boolean }[] };
-    const box = document.querySelector<HTMLElement>(".toast");
-    if (w.__said !== undefined || box === null) return;
-    const said: { text: string; ok: boolean; info: boolean }[] = [];
-    w.__said = said;
-    new MutationObserver(() => {
-      if (box.hidden) return;
-      const now = { text: box.textContent ?? "", ok: box.classList.contains("toast-ok"), info: box.classList.contains("toast-info") };
-      const last = said.at(-1);
-      if (last === undefined || last.text !== now.text || last.ok !== now.ok || last.info !== now.info) said.push(now);
-    }).observe(box, { subtree: true, childList: true, characterData: true, attributes: true });
-  });
-}
-
-/** The strip said this (exactly, or matching), with its look, since the record began. */
-async function expectSaid(page: Page, text: string | RegExp, look: Partial<Said> = {}): Promise<void> {
-  const find = async () => {
-    const said = (await page.evaluate(() => (window as unknown as { __said?: Said[] }).__said ?? [])) as Said[];
-    return said.find((m) => (typeof text === "string" ? m.text === text : text.test(m.text))) ?? null;
-  };
-  await expect.poll(find, { message: `the strip said ${String(text)}` }).not.toBeNull();
-  expect(await find()).toMatchObject(look);
 }
 
 /** A game on core's simulation (the e2e scenario), paused, our barracks selected; its row. */
