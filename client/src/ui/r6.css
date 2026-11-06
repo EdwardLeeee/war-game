@@ -314,6 +314,61 @@
   padding: 6px 10px 8px;
   padding-right: 56px;
   font-size: 12px;
+  /* No higher than under 全軍撤退 (its foot 90 below the safe top; the panel's 4 above the safe
+     bottom; 4 apart), not just under the top bar (#402): five kinds in a 軍團畫面 at 814 × 380, or a
+     long explanation, reached over it (PR 5, ceo 2026-11-07). What does not fit scrolls (#402). */
+  max-height: calc(100vh - var(--safe-t) - var(--safe-b) - 98px);
+  max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - 98px);
+}
+
+/* More below (ceo 2026-11-07: the fifth kind out of sight): at the foot of what scrolls, while it is
+   not scrolled to its end (panels.ts showMore), a fade into the panel's own ground, whole at its foot
+   over the rows cut there (ui 2026-11-07), and a ⌄ that scrolls a row down. */
+:root[data-ui="r6"] .sel-info .sel-more {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  height: 34px;
+  margin-top: -34px;
+  pointer-events: none;
+}
+
+:root[data-ui="r6"]:not([data-theme="b"]) .sel-info .sel-more {
+  background: linear-gradient(180deg, rgba(48, 33, 21, 0), rgb(48, 33, 21) 80%);
+}
+
+:root[data-ui="r6"][data-theme="b"] .sel-info .sel-more {
+  background: linear-gradient(180deg, rgba(12, 15, 22, 0), rgb(12, 15, 22) 80%);
+}
+
+:root[data-ui="r6"] .sel-info .sel-more-btn {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  pointer-events: auto;
+}
+
+/* 14, its line 2 (24 in the icon's box), R6's gold (A) or the frame's (B), a shadow under it. */
+:root[data-ui="r6"] .sel-info .sel-more-btn .ic {
+  width: 14px;
+  height: 14px;
+  stroke-width: 3.4;
+  color: #e7c35a;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.9));
+}
+
+:root[data-ui="r6"][data-theme="b"] .sel-info .sel-more-btn .ic {
+  color: var(--gold);
 }
 
 /* The title line: 44 tall, the name, its state, then ⌃ 收起 (63 × 44) left of the ✕ (44 × 44), 6 in from the corner. */
@@ -403,6 +458,31 @@
 :root[data-ui="r6"] .sel-info .chip.b {
   padding: 0 10px;
   font-size: 12px;
+}
+
+/* 軍團畫面 (R6-17 INV-80): 改成剛才選的、清空、自動補兵 on one row at the panel's foot, out of what
+   scrolls (ui 2026-11-07); its buttons of two lines as R6-18 INV-95's, 44 tall. */
+:root[data-ui="r6"] .sel-info > .group-actions {
+  flex: none;
+  flex-wrap: nowrap;
+  margin-top: 6px;
+}
+
+:root[data-ui="r6"] .sel-info > .group-actions .chip.b:has(> .sub) {
+  flex-direction: column;
+  justify-content: center;
+  gap: 0;
+  line-height: 1.15;
+}
+
+/* 收起: only the title line, the pinned row too. */
+:root[data-ui="r6"] .sel-info.collapsed > .group-actions {
+  display: none;
+}
+
+:root[data-ui="r6"] .sel-info > .group-actions .chip.b > .sub {
+  font-size: 10px;
+  font-weight: 400;
 }
 
 /* 槍兵 ×6: the count apart, in bold (R6-14). */
@@ -762,6 +842,48 @@
   grid-column: 2;
   justify-self: start;
   text-align: left;
+}
+
+/* 建造's page (PR 5, ceo 2026-11-06): a cost on two lines (法術營 木200 金150) made its row 61 high and
+   the menu reached over 全軍 at 814 × 380; a smaller icon and closer lines keep a row at 50 or less, every
+   button still 46 or more, nothing cut. */
+:root[data-ui="r6"] .cmds.build-page {
+  /* With the iPhone's safe area under it, 814 × 380 had 2 too few under 全軍: rows 3 apart. */
+  row-gap: 3px;
+}
+
+:root[data-ui="r6"] .cmds.build-page .b {
+  min-height: 46px;
+  padding: 1px 0 2px;
+  line-height: 1.05;
+}
+
+:root[data-ui="r6"] .cmds.build-page .b .ic {
+  width: 14px;
+  height: 14px;
+  margin-bottom: 0;
+}
+
+:root[data-ui="r6"] .cmds.build-page .b .sub {
+  line-height: 1;
+}
+
+/* 建造's page taller than the room under 全軍 (932 × 336, panels.ts fitBuildPage): the right column out of
+   sight, in its place, while it is open; out and back in 120 ms, as R6-25's press (ui 2026-11-07). */
+:root[data-ui="r6"] #hud .side-right {
+  transition:
+    opacity 120ms,
+    visibility 120ms;
+}
+
+:root[data-ui="r6"] #hud .side-right.make-room {
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* 建造's page (ui 2026-11-07): a cost a resource a line, 要先蓋 a line and the building another. */
+:root[data-ui="r6"] .cmds.build-page .b .sub {
+  white-space: pre-line;
 }
 
 /* 建造 with 砲坊 and 市場 (R14-04): five columns of 52. */

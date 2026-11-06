@@ -11,7 +11,7 @@
 // and villagers up to 40) until step 8d pauses the barracks, so the counts before that say "at least".
 
 import { expect, type Page, test } from "@playwright/test";
-import { armyButton, openBox, openPanel, saveGroup, selectForCommands, shot, watchErrors } from "./helpers.ts";
+import { armyButton, formalOn, keepControls, openBox, openPanel, resetAll, resText, saveGroup, selectForCommands, shot, watchErrors } from "./helpers.ts";
 import { doubleTap, longPress, tap, tapOn } from "./touch.ts";
 
 const FARMER = 0;
@@ -72,7 +72,7 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   expect((await header(page)).scenario, "the e2e scenario").toBe(1);
   // The chosen 難度 and no time limit reach the simulation (player 1 does not play here: ai=0).
   expect(await page.evaluate(() => window.__proto?.game?.init())).toMatchObject({ difficulty: ["normal", "easy"], maxTicks: 0, ai: [false, false] });
-  await expect(page.locator(".res-bar")).toContainText(/糧 \d{4}/);
+  await expect.poll(() => resText(page)).toMatch(/糧 \d{4}/);
   await shot(page, info, "1-start");
 
   // 2. 選村民（點兩下一名村民 = 畫面內所有村民）
@@ -85,11 +85,11 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   expect(farmerIds.every((id) => farmers.some((f) => f.id === id)), "only farmers").toBe(true);
 
   // 3. 蓋房子（指令區：建造 → 民居 → 點一個能蓋的位置 → ✓）
-  // 先用重設按鈕離開放建築（D-024）：開始放民居 → 重設 → 沒有選取、不在放建築 → 再選一次村民。
+  // 先用重設按鈕離開放建築（D-024；正式介面沒有重設，按 ✗ 再取消選取，helpers.ts resetAll）：開始放民居 → 重設 → 沒有選取、不在放建築 → 再選一次村民。
   await page.getByRole("button", { name: "建造" }).tap();
   await page.getByRole("button", { name: /^民居/ }).tap();
   await expect.poll(() => mode(page)).toBe("place:dragging");
-  await page.getByRole("button", { name: "重設" }).tap();
+  await resetAll(page);
   await expect.poll(() => mode(page)).toBe("normal");
   expect(await placement(page), "no building preview").toBeNull();
   await expect.poll(() => selection(page)).toEqual({ units: [], building: null });
@@ -174,7 +174,8 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   // Saved, the group's panel shows (D-054); the squad selected as such shows its states.
   await selectForCommands(page, squadIds);
   await expect(now).toHaveText(`目前：待命 ${squadIds.length}`);
-  await expect(page.locator(".sel-info")).toContainText("堅守：停在原地，敵人進到射程就打，不追出去");
+  // 正式介面 sets 堅守 apart as a tag, no 「：」 (panels.ts meaning).
+  await expect(page.locator(".sel-info")).toContainText(`堅守${(await formalOn(page)) ? "" : "："}停在原地，敵人進到射程就打，不追出去`);
   await hold.tap();
   await expect.poll(async () => (await sent(page)).slice(-2)).toMatchObject([{ c: "stop", u: squadIds }, { c: "stance", u: squadIds, stance: 1 }]);
   // An order given while paused runs when the game goes on.
@@ -255,8 +256,8 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   const choice = page.getByRole("dialog", { name: /搶還是治理/ });
   await expect(choice).toBeVisible({ timeout: 180_000 });
   // 治理 and 搶 both keep the least a small town needs (1; D-084).
-  await expect(choice.getByRole("status", { name: "留守幾名（治理）" })).toHaveText("1");
-  await expect(choice.getByRole("status", { name: "留守幾名（搶）" })).toHaveText("1");
+  await expect((await keepControls(page, choice, "治理")).count).toHaveText("1");
+  await expect((await keepControls(page, choice, "搶")).count).toHaveText("1");
   await shot(page, info, "8-town-choice");
   await choice.getByRole("button", { name: /^治理/ }).tap();
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "town_choice", town: town.id, choice: 1 });
@@ -368,7 +369,7 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   // 不選村民蓋民居：重設 → 建造 → 民居 → ✓，由模擬派最近的村民去蓋. Placed while paused, so
   // nobody walks onto the spot between the preview and ✓.
   await pause(page);
-  await page.getByRole("button", { name: "重設" }).tap();
+  await resetAll(page);
   await expect.poll(() => selection(page)).toEqual({ units: [], building: null });
   await centre(page, { x: farmers[0].cx, y: farmers[0].cy });
   await page.getByRole("button", { name: "建造" }).tap();
@@ -467,7 +468,8 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "formation", u: troops, loose: true });
   await expect.poll(async () => (await units(page)).filter((u) => troops.includes(u.id)).every((u) => u.loose)).toBe(true);
   await expect(formation).toHaveText("隊形：散開按一下改成密集");
-  await expect(page.locator(".sel-info")).toContainText("散開：站位間隔 2 格，站好時一發晶砲只炸得到 1 名");
+  // 正式介面 sets 散開 apart as a tag, no 「：」 (panels.ts meaning).
+  await expect(page.locator(".sel-info")).toContainText(`散開${(await formalOn(page)) ? "" : "："}站位間隔 2 格，站好時一發晶砲只炸得到 1 名`);
   // March them together to open ground south of where the squad started; tap where nothing stands.
   // 12 cells south: with 自動訓練 the army is some 16 strong, 8 by 8 cells loose, and 4 cells
   // south its north edge met the rocks at (19–25, 33–39). Loose soldiers pressed there never
@@ -516,7 +518,7 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   expect(mean, `not scattered: ${shown}`).toBeLessThanOrEqual(2.6);
 
   // 11. 全軍撤退（使用者 2026-10-01）：什麼都沒選，按一下，所有士兵（留守的不算）退回主城前面
-  await page.getByRole("button", { name: "重設" }).tap();
+  await resetAll(page);
   await expect.poll(() => selection(page)).toEqual({ units: [], building: null });
   await page.getByRole("button", { name: "全軍撤退" }).tap();
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "retreat", u: troops });

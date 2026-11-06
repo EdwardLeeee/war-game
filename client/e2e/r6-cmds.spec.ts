@@ -91,8 +91,8 @@ test("正式介面的建造選單（R14-04，真的模擬）：超過 12 顆時�
   await expect(cmds(page)).not.toHaveClass(/\bcols5\b/);
 });
 
-test("原型的指令區照舊：沒有 ?ui=r6 時按鈕不是正式介面的樣子，沒有圖示", async ({ page }) => {
-  const soldiers = await startMock(page, "");
+test("原型的指令區照舊：?ui=proto 時按鈕不是正式介面的樣子，沒有圖示", async ({ page }) => {
+  const soldiers = await startMock(page, "&ui=proto");
   await selectForCommands(page, soldiers);
   await expect(cmds(page).locator(".b")).toHaveCount(0);
   await expect(cmds(page).locator("svg.ic")).toHaveCount(0);

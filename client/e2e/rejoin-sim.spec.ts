@@ -8,7 +8,7 @@
 // (CI run 40222760397, WebKit).
 
 import { expect, type Page, test } from "@playwright/test";
-import { expectSaid, saveGroup, selectForCommands, watchErrors, watchToasts } from "./helpers.ts";
+import { expectSaid, formalOn, keepControls, saveGroup, selectForCommands, watchErrors, watchToasts } from "./helpers.ts";
 import { tap } from "./touch.ts";
 
 const SMALL = 0;
@@ -57,8 +57,8 @@ test("真模擬：攻下小鎮、治理，整個編隊 1 駐軍；出城歸隊�
   await expect(page.getByText(/^攻下小鎮！/)).toBeVisible({ timeout: 240_000 });
   // Nobody kept with the choice: 駐軍 below keeps group 1.
   const choice = page.locator(".town-choice");
-  await choice.getByRole("button", { name: "少留守 1 名（治理）" }).tap();
-  await expect(choice.getByRole("status", { name: "留守幾名（治理）" })).toHaveText("0");
+  await (await keepControls(page, choice, "治理")).less.tap();
+  await expect((await keepControls(page, choice, "治理")).count).toHaveText("0");
   await choice.getByRole("button", { name: /^治理/ }).tap();
   await expect.poll(async () => (await towns(page)).find((t) => t.id === town.id)?.state, { timeout: 30_000 }).toBe(REPAIRING);
   // The others walk home.
@@ -128,7 +128,9 @@ test("真模擬：攻下小鎮、治理，整個編隊 1 駐軍；出城歸隊�
   }
   if (spot === null) throw new Error("no spot that picks the town");
   await tap(page, spot);
-  await expect(panel).toContainText("編隊 1：1 名");
+  // 正式介面 names the group only when there are several (R14-06): its 留守 − 1 +.
+  if (await formalOn(page)) await expect(panel.getByRole("status", { name: "留守幾名" })).toHaveText("1");
+  else await expect(panel).toContainText("編隊 1：1 名");
   await panel.getByRole("button", { name: "全部帶走" }).tap();
   await expectSaid(page, "1 名離開這座城。駐軍不足，這座城會叛離");
   await page.evaluate(([u, x, y]) => window.__proto?.game?.send({ c: "move", u, x, y }), [kept, from.x, from.y] as const);

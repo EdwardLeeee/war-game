@@ -54,7 +54,7 @@ test("正式介面：多選的說明照 R14 的字，多一行進駐；「目前
 });
 
 test("原型：說明照舊（沒有進駐那行、剋怕自己一行）", async ({ page }) => {
-  await page.goto("./?test=1&mock=1&r7=1&outpost=1&tps=20");
+  await page.goto("./?test=1&mock=1&r7=1&outpost=1&tps=20&ui=proto");
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true);
   const soldiers = await ownSoldiers(page);
@@ -99,6 +99,7 @@ test("正式介面的 3×3 哨所（R14-05）：方塊和幾名在同一列，�
   expect(Math.abs(count.y + count.height / 2 - (seat.y + seat.height / 2)), "the count beside the squares").toBeLessThan(8);
   const groups = panel(page).locator(".outpost-groups");
   await expect(groups).toContainText(/^編隊 1：\d+ 名召回$/);
-  const last = await panel(page).locator(".sel-body > *").last().getAttribute("class");
+  // The last row (the fade at the foot of what scrolls, .sel-more, is not one).
+  const last = await panel(page).locator(".sel-body > :not(.sel-more)").last().getAttribute("class");
   expect(last).toContain("outpost-groups");
 });
