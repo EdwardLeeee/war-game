@@ -3002,6 +3002,11 @@ export class Game implements GestureHost {
     this.overlays.showCue(x, y, on);
   }
 
+  /** A long press's wheel, closed: the finger was up before the hold was long (gestures.ts). */
+  closeWheel(): void {
+    this.overlays.closeWheel();
+  }
+
   panStart(x: number, y: number): void {
     if (this.placement !== null) this.moveGhost(x, y);
   }
