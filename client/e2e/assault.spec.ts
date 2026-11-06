@@ -7,7 +7,7 @@
 // gate (the user 2026-11-01): the spearmen at it, the ranged at those on the walls by it.
 
 import { expect, type Page, test } from "@playwright/test";
-import { saveGroup, selectForCommands, shot, watchErrors } from "./helpers.ts";
+import { expectSaid, recordToasts, saveGroup, selectForCommands, shot, watchErrors } from "./helpers.ts";
 
 const SMALL = 0;
 const GATE = 13;
@@ -130,6 +130,8 @@ test("點城門（使用者 2026-11-01，近戰打門、遠程打牆上）：槍
   // The gate in sight (the others are in the fog at the start; another gate than the nearest: test/assault.test.ts).
   const gate = s.gate;
   await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 1.0), [gate.cx, gate.cy] as const);
+  // What the strip says, read from its record (it shows 2.2 s; a busy page's checks before it can take longer).
+  await recordToasts(page);
   await page.evaluate(([ids, target]) => window.__proto?.game?.send({ c: "attack", u: ids, target }), [s.ids, gate.id] as const);
   // Two orders of his: the spearmen at the gate, the ranged before it (攻擊移動).
   const mine = (await playerOrders(page)).slice(-2);
@@ -138,7 +140,7 @@ test("點城門（使用者 2026-11-01，近戰打門、遠程打牆上）：槍
   const front = mine[1] as { x: number; y: number };
   expect(Math.max(Math.abs(front.x - gate.cx), Math.abs(front.y - gate.cy))).toBeLessThanOrEqual(4);
   const given = (await playerOrders(page)).length;
-  await expect(page.getByText("近戰打這座城門；弓手和法師到門前，先射牆上的守軍")).toBeVisible();
+  await expectSaid(page, "近戰打這座城門；弓手和法師到門前，先射牆上的守軍", { ok: true });
   await shot(page, info, "assault-6-gate-tapped");
   // While it stands, what the screen sends the spearmen at is the gate tapped (the gate and the orders read at once).
   const check = () =>

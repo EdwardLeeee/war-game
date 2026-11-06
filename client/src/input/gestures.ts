@@ -8,6 +8,8 @@
 //     (empty ground), skill wheel (own unit) or nothing
 //   - lifted before that without moving                  -> tap (count 2 if it follows a tap
 //     within DOUBLE_TAP_MS and DOUBLE_TAP_SLOP_PX; the first tap is reported at once)
+//   The times are the events' own: a page busy past LONG_PRESS_MS (a long frame) may start a box or
+//   the wheel before it reads a lift that came sooner; that lift then undoes it and taps.
 // Two fingers: pinch zoom with two-finger pan, from any state; a box in progress is cancelled.
 // After a pinch the remaining finger does nothing until every finger is up.
 
@@ -29,6 +31,8 @@ export interface GestureHost {
   panEnd(vx: number, vy: number): void;
   /** Box from where the long press started to where the finger is. */
   box(x0: number, y0: number, x1: number, y1: number, phase: BoxPhase): void;
+  /** Close the wheel a long press opened (it was a tap after all: the finger was up in time). */
+  closeWheel?(): void;
   pinchStart(): void;
   /** Zoom by factor about (cx, cy), and pan by the midpoint's movement (dx, dy). */
   pinch(cx: number, cy: number, factor: number, dx: number, dy: number): void;
@@ -156,6 +160,16 @@ export class GestureRecognizer {
     f.x = x;
     f.y = y;
     this.fingers.delete(id);
+    // Up, by the events' own times, before the press was long (the page was late to read it: a
+    // frame or the timer ran first, ceo 2026-11-06): the box or the wheel it began is undone, and it
+    // taps. Not "held": a host that acts on the long press itself (the minimap's move, 閒置's) has
+    // done it, and a tap on top would do a second thing.
+    const early = !cancelled && t - f.startT < LONG_PRESS_MS && Math.hypot(x - f.startX, y - f.startY) <= TAP_SLOP_PX;
+    if (early && (this.state === "box" || this.state === "wheel")) {
+      if (this.state === "box") this.host.box(f.startX, f.startY, x, y, "cancel");
+      if (this.state === "wheel") this.host.closeWheel?.();
+      this.state = "press";
+    }
     switch (this.state) {
       case "press":
         this.hideCue();

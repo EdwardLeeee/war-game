@@ -8,6 +8,8 @@
 # again (v2's chain broke on one failed download, run 41078447033); its own groups (ai-train-v3-*).
 # NN v4 (ai/train-v4, never merged; D-122, ceo 2026-11-04): squads and the charge, from v3's weights (train.ts widens
 # them); its own groups (ai-train-v4-*), so a trial runs beside v3's chain and the switch waits for a run's end.
+# NN v4n (ai/train-v4n, never merged; D-120, ceo 2026-11-06): v4m's training on main bb8a49b's rules (the batch #401: farAvoid on, the
+# siege engine's worth, the timeline); its own groups (ai-train-v4n-*), so runs on v4m's rules neither wait on these nor fill in here.
 # NN v4m: no push trigger. A new branch's first push counts every file as changed, so v3's run.json started a run
 # from hard itself on ai/train-v4m (42022292274, with a fill-in run); runs start by workflow_dispatch only.
 # NN v4m (ai/train-v4m, never merged; D-120, ceo 2026-11-05): main 6ca70e3's rules (D-119's batch) with v4s and v4f; its own groups
@@ -99,7 +101,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: ai-train-v4m-${{ inputs.mode || 'push' }}-${{ inputs.mode == 'fill' && inputs.tag || inputs.only || 'all' }}
+  group: ai-train-v4n-${{ inputs.mode || 'push' }}-${{ inputs.mode == 'fill' && inputs.tag || inputs.only || 'all' }}
   cancel-in-progress: false
 
 jobs:

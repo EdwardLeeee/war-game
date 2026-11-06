@@ -3062,7 +3062,10 @@ export const HARD: HardPlan = {
   rescue: false,
   rescueRest: 3,
   hideFar: false,
-  farAvoid: false,
+  // D-130 (ceo 2026-11-06; runs 42114122287, 42114168794): a far spot where farmers fall again is remembered (hideFar
+  // comes on with the population rules, HARD_POP). The six active groups and hard against normal as before; against a
+  // squad waiting by its far spots, the worst game's farmers lost 121 -> 63.
+  farAvoid: true,
   foeMemory: false,
   foeDecay: 10,
   foeGrow: false,
@@ -3279,7 +3282,9 @@ export const HARD_POP: Partial<HardPlan> = {
   cityAgain: 120,
 };
 /** What a soldier is worth when weighing up two armies (a mage for its cannon; cavalry, round 7). */
-const WORTH = [0, 10, 10, 25, 6, 16];
+// D-099: a siege engine (index 6). With none, an army or an enemy with one in sight summed to NaN, and every
+// comparison of strength with it was false (hard never broke off from, nor weighed, the user's engines).
+const WORTH = [0, 10, 10, 25, 6, 16, 8];
 /** Enemy soldiers not seen for this long are forgotten. */
 const INTEL_TICKS = 4 * TICKS_PER_MINUTE;
 /** Enemy soldiers within this many cells of the main city make a wave (as the scripted player counts). */

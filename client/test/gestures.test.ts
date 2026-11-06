@@ -82,6 +82,47 @@ test("a long press the host turns into the wheel ignores movement and is not a t
   assert.deepEqual(host.names().filter((n) => n !== "pressCue"), ["longPress"]);
 });
 
+// A busy page (a long frame, ceo 2026-11-06: an iPhone dropping frames): the timer or a frame runs
+// past LONG_PRESS_MS before the page reads a lift that came sooner. The events' own times say tap.
+test("a lift that came before the long press, read after a late timer, undoes the box and taps", () => {
+  const { host, g } = setup();
+  host.longPressAnswer = "box";
+  g.down(1, 100, 100, 0);
+  g.update(LONG_PRESS_MS + 60);
+  assert.equal(g.state, "box");
+  g.up(1, 101, 100, 250);
+  assert.deepEqual(host.of("box"), [
+    ["box", 100, 100, 100, 100, "start"],
+    ["box", 100, 100, 101, 100, "cancel"],
+  ]);
+  assert.deepEqual(host.of("tap"), [["tap", 100, 100, 1]]);
+  assert.equal(g.state, "idle");
+});
+
+test("…and closes a wheel it opened, then taps; a press really held that long stays a long press", () => {
+  const { host, g } = setup();
+  host.longPressAnswer = "wheel";
+  g.down(1, 100, 100, 0);
+  g.update(LONG_PRESS_MS + 60);
+  g.up(1, 100, 100, 200);
+  assert.deepEqual(host.names().filter((n) => n !== "pressCue"), ["longPress", "closeWheel", "tap"]);
+  const held = setup();
+  held.host.longPressAnswer = "wheel";
+  held.g.down(1, 100, 100, 0);
+  held.g.update(LONG_PRESS_MS + 60);
+  held.g.up(1, 100, 100, LONG_PRESS_MS + 80);
+  assert.deepEqual(held.host.names().filter((n) => n !== "pressCue"), ["longPress"]);
+});
+
+test("…but a long press the host acted on itself (none: the minimap's move) stays one, with no tap on top", () => {
+  const { host, g } = setup();
+  host.longPressAnswer = "none";
+  g.down(1, 100, 100, 0);
+  g.update(LONG_PRESS_MS + 60);
+  g.up(1, 100, 100, 200);
+  assert.deepEqual(host.names().filter((n) => n !== "pressCue"), ["longPress"]);
+});
+
 test("a second tap nearby within 300 ms is a double tap; the first is reported at once", () => {
   const { host, g } = setup();
   g.down(1, 100, 100, 0);

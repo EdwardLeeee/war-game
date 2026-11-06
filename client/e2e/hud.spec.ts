@@ -3,7 +3,7 @@
 // and idle farmers, and every piece of the temporary interface (GDD §10 草稿).
 
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { armyButton, FULL_SCREEN, hintTownOf, INTERACTIVE, IPHONE_SAFE, injectSafeArea, openBox, openPanel, saveGroup, selectForCommands, shot, visibleBoxes, watchErrors } from "./helpers.ts";
+import { armyButton, expectSaid, FULL_SCREEN, hintTownOf, INTERACTIVE, IPHONE_SAFE, injectSafeArea, openBox, openPanel, recordToasts, saveGroup, selectForCommands, shot, visibleBoxes, watchErrors } from "./helpers.ts";
 import { doubleTap, doubleTapOn, longPress, longPressOn, tap, tapOn } from "./touch.ts";
 
 // Fake-world layout (src/mock/mock-port.ts), in cells.
@@ -1617,11 +1617,13 @@ test("自動訓練（D-098）：兵營只補軍團缺的；沒設軍團不訓練
   expect(await marks()).toBe(0);
   // 暫停: the screen's own (no order to the simulation); the line says so, and nothing more is queued.
   const before = (await sent(page)).length;
+  // Its message read from the strip's record: it shows 2.2 s, less than the checks before it can take.
+  await recordToasts(page);
   await auto.tap();
   await expect(auto).toHaveText("自動訓練目前：暫停");
   await expect.poll(marks).toBe(1);
   await expect(line).toHaveText("自動訓練暫停");
-  await expect(toast(page, "已暫停這座兵營的自動訓練")).toBeVisible();
+  await expectSaid(page, "已暫停這座兵營的自動訓練");
   await page.waitForTimeout(4000);
   expect((await sent(page)).slice(before).filter((c) => c.c === "auto_train" || (c.c === "train" && c.building === barracks))).toEqual([]);
   await auto.tap();

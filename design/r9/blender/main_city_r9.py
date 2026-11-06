@@ -239,7 +239,9 @@ def r9_main_city_v7(root, c="E", look="done"):
         x1, z1 = max(b[3] for b in bb), max(b[5] for b in bb)
         z0 = min(b[2] for b in bb)
         p = (x0 + (x1 - x0) * 0.3, y0 + 0.6, z0 + (z1 - z0) * 0.55)
-        states.flames(root, P, f"dm_fire{k}", p, size=1.8 if k == 0 else 1.1, n=8, seed=5 + k)
+        # art-v7.3 (the review 2026-11-04: the fire's middle read white): the feet at 2, not 9, and a deeper yellow
+        # (at 4 the dozen overlapping tongues still added up to a pale cream)
+        states.flames(root, P, f"dm_fire{k}", p, size=1.8 if k == 0 else 1.1, n=8, seed=5 + k, core=2.0)
         states.smoke(root, f"dm_smoke{k}", (p[0], p[1], p[2] + 0.8), height=3.2, r0=0.35, r1=0.9, n=11, dark=0.16, alpha=0.9)
     states.R8 = prev
     states.scorch(root, "dm_scorch", (-0.6, -0.85, 2.2), "y", 1.6, 1.4, seed=3)

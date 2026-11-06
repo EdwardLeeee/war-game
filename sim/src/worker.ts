@@ -71,6 +71,7 @@ function stats(): GameStats {
     ticks: w.tick,
     winner: w.winner,
     reason: w.endReason as GameStats["reason"],
+    timeline: runner!.timeline(),
     perPlayer: Array.from({ length: PLAYER_COUNT }, (_, p) => ({
       gathered: {
         food: w.gathered[p * 4 + Resource.Food],
