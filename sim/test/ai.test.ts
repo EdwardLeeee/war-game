@@ -3874,3 +3874,68 @@ test("D-099: an enemy siege engine in sight counts in the enemy's strength (it s
   assert.equal(backs(false), false, "14 against 14: on");
   assert.equal(backs(true), true, "14 and an engine against 14: stronger, back");
 }));
+
+// --- D-131: the tactical switches ------------------------------------------------------------------------------
+
+test("D-131 (plan.focusFire): its ranged units shoot the weakest enemy in reach, from its own view: enemies in the fog change nothing", () => {
+  /** Hard at minute 12, 6 ranged units and 6 spearmen at home; 3 enemy spearmen 4 cells off, one hurt; `hidden`: 30 more far off in the fog. */
+  const think = (hidden: boolean, focusFire = true) => {
+    const g = emptyGame();
+    const w = g.w;
+    w.tick = 12 * 1200;
+    const s0 = w.map.spawns[0];
+    const s1 = w.map.spawns[1];
+    for (let k = 0; k < 6; k++) put(g, 0, UnitType.Ranged, s0.cellX + 6 + k, s0.cellY - 6);
+    for (let k = 0; k < 6; k++) put(g, 0, UnitType.Spearman, s0.cellX + 6 + k, s0.cellY - 7);
+    const foes = [0, 1, 2].map((k) => put(g, 1, UnitType.Spearman, s0.cellX + 8 + k, s0.cellY - 10));
+    w.units.col.hp[slotOf(g, foes[2])] = 10;
+    if (hidden) for (let k = 0; k < 30; k++) put(g, 1, UnitType.Spearman, s1.cellX - 6 + (k % 6), s1.cellY + 6 + Math.trunc(k / 6));
+    g.fog.update(w);
+    const ai = hardAi(g, { dodge: false, focusFire });
+    return { out: ai.think(buildView(g, 0)), foes };
+  };
+  const a = think(false);
+  const b = think(true);
+  assert.deepEqual(b.out, a.out, "the same commands");
+  const shots = a.out.filter((c) => c.c === "attack") as { u: number[]; target: number }[];
+  assert.ok(shots.length > 0, "it picks targets");
+  assert.equal(shots[0].target, a.foes[2], "the hurt one first");
+  assert.ok(shots[0].u.length <= 2, `as many on it as it takes (${shots[0].u.length})`);
+  assert.equal(think(false, false).out.filter((c) => c.c === "attack").length, 0, "off: no such orders");
+});
+
+test("D-131 (plan.meetRatio): out to meet a wave when strong enough; back once it is not, and not out again till none has been near for 30 s", () => {
+  const g = emptyGame();
+  const w = g.w;
+  w.tick = 12 * 1200;
+  const s0 = w.map.spawns[0];
+  for (let k = 0; k < 16; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + (k % 8), s0.cellY - 4 - Math.trunc(k / 8));
+  g.fog.update(w);
+  const ai = hardAi(g, { dodge: false, peekFirst: 0, meetRatio: 13 });
+  const step = (ticks: number) => {
+    let out: CommandBody[] = [];
+    for (let t = 0; t < ticks; t += 10) {
+      w.tick += 10;
+      g.fog.update(w);
+      out = out.concat(ai.think(buildView(g, 0)));
+    }
+    return out;
+  };
+  const outs = () => (ai as unknown as { stats: () => Record<string, number> }).stats().meetOuts;
+  // 10 enemy spearmen in sight by the city: 16 is under 2 x them (it would wait by the city), over 1.3 x (it meets them).
+  const wave = Array.from({ length: 10 }, (_, k) => put(g, 1, UnitType.Spearman, s0.cellX + 7 + (k % 5), s0.cellY - 9 - Math.trunc(k / 5)));
+  step(20);
+  assert.equal(outs(), 1, "out to meet them");
+  // 12 more: too strong now; back, and not out again while they are near, though some fall.
+  const more = Array.from({ length: 12 }, (_, k) => put(g, 1, UnitType.Spearman, s0.cellX + 6 + (k % 6), s0.cellY - 11 - Math.trunc(k / 6)));
+  step(20);
+  kill(g, more);
+  step(200);
+  assert.equal(outs(), 1, "not out again in the same wave");
+  // All gone 30 s: the next wave is a new one.
+  kill(g, wave);
+  step(30 * 20 + 20);
+  Array.from({ length: 10 }, (_, k) => put(g, 1, UnitType.Spearman, s0.cellX + 7 + (k % 5), s0.cellY - 9 - Math.trunc(k / 5)));
+  step(20);
+  assert.equal(outs(), 2, "a new wave: out again");
+});
