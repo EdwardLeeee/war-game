@@ -32,6 +32,9 @@ export class RecordingHost implements GestureHost {
   box(x0: number, y0: number, x1: number, y1: number, phase: BoxPhase): void {
     this.calls.push(["box", x0, y0, x1, y1, phase]);
   }
+  closeWheel(): void {
+    this.calls.push(["closeWheel"]);
+  }
   pinchStart(): void {
     this.calls.push(["pinchStart"]);
   }

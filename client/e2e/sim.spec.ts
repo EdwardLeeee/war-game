@@ -64,12 +64,21 @@ async function selectFarmers(page: Page): Promise<number[]> {
   return ids;
 }
 
-/** An open cell a few cells from the farmers, on screen. */
+/**
+ * An open cell a few cells from the farmers with nothing under its middle on screen, the camera on
+ * it. Where the farmers walked to before the pause depends on how fast the page ran: one standing
+ * on the cell took the tap and was selected (main's sim.spec:88 on CI; sim.spec:101 here, under load).
+ */
 async function groundNearFarmers(page: Page, dx: number, dy: number) {
   const f = (await farmers(page))[0];
-  const cell = await page.evaluate(([x, y]) => window.__proto?.game?.openCellNear(x, y) ?? null, [f.cx + dx, f.cy + dy] as const);
-  if (cell === null) throw new Error("no open cell near the farmers");
-  return cell;
+  for (const [ox, oy] of [[0, 0], [1, 0], [0, 1], [-1, 0], [0, -1], [2, 2], [-2, 2], [2, -2], [-2, -2], [3, 0], [0, 3]] as const) {
+    const cell = await page.evaluate(([x, y]) => window.__proto?.game?.openCellNear(x, y) ?? null, [f.cx + dx + ox, f.cy + dy + oy] as const);
+    if (cell === null) continue;
+    await lookAt(page, cell);
+    const at = await toScreen(page, cell);
+    if ((await page.evaluate(([x, y]) => window.__proto?.game?.pickAt(x, y) ?? null, [at.x, at.y] as const)) === null) return cell;
+  }
+  throw new Error("no bare ground near the farmers");
 }
 
 /** Sum of the farmers' distances (in cells) to a cell. */
