@@ -120,12 +120,14 @@ jobs:
       - name: Hashes the page's determinism check compares against (headless run of the same game)
         run: bash scripts/expected-hashes.sh dist/expected-hashes.json
       - run: npx playwright test --project=${{ matrix.browser }} --shard=${{ matrix.shard }}
+      # The report and each failed test's screenshot and trace, an attempt each: a rerun keeps the
+      # one before (#408's run 42146287448: attempt 3 replaced attempt 2's, whose failure was gone).
       - if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: client-e2e-${{ matrix.artifact }}
+          name: client-e2e-${{ matrix.artifact }}-attempt-${{ github.run_attempt }}
           path: |
             client/playwright-report/
             client/test-results/
-          retention-days: 30
+          retention-days: 7
           if-no-files-found: ignore
