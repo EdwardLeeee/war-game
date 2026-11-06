@@ -4,6 +4,7 @@
 
 import { tradeRejectText } from "../game/market.ts";
 import { type CommandBody, type CommandKind, Reject } from "../sim.ts";
+import { formalUi } from "./formal.ts";
 
 /**
  * 進攻紅、撤退藍 (D-080, user 2026-10-09: 「攻擊跟撤退可以做成紅色跟藍色的按鈕，不然有點搞不清楚」):
@@ -194,7 +195,9 @@ export class Overlays {
       const rad = (deg * Math.PI) / 180;
       const bx = Math.min(Math.max(x + WHEEL_RADIUS * Math.cos(rad), WHEEL_BUTTON / 2 + 8), w - WHEEL_BUTTON / 2 - 8);
       const by = Math.min(Math.max(y + WHEEL_RADIUS * Math.sin(rad), WHEEL_BUTTON / 2 + 8), h - WHEEL_BUTTON / 2 - 8);
-      const btn = el("button", b.tone === undefined ? "wheel-item" : `wheel-item ${ORDER_TONE[b.tone]}`, this.wheel);
+      // 正式介面 (R6-19 INV-103): round buttons of the interface, 攻擊 red, 移動 blue, 堅守 gold.
+      const tone = formalUi() ? ` b wheelb ${b.tone === "advance" ? "red" : b.tone === "retreat" ? "blue" : b.id === "hold" ? "gold" : ""}` : "";
+      const btn = el("button", `${b.tone === undefined ? "wheel-item" : `wheel-item ${ORDER_TONE[b.tone]}`}${tone}`.trim(), this.wheel);
       btn.type = "button";
       btn.setAttribute("role", "menuitem");
       btn.dataset.item = b.id;
