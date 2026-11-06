@@ -109,6 +109,8 @@ export interface GameHook {
   remove(ids: number[]): void;
   /** Fake world only: a building's hit points (a gate damaged, D-096). */
   damage(id: number, hp: number): void;
+  /** Fake world only: the game over, `winner` winning for `reason` (GameOverReason; the result screen). */
+  endGame(winner: number, reason: number): void;
   /** Fake world only (真的箭): own units stand and attack `target`; −1, they stop. */
   strike(ids: number[], target: number): void;
   /** 真的箭: whether arrows fly as art-v6 draws them; bowmen's and buildings' arrows so far. */
@@ -354,6 +356,9 @@ export function gameHook(game: Game): GameHook {
     arrows: () => game.arrowsForTest,
     damage: (id, hp) => {
       if (game.portForTest instanceof MockPort) game.portForTest.damage(id, hp);
+    },
+    endGame: (winner, reason) => {
+      if (game.portForTest instanceof MockPort) game.portForTest.endGame(winner, reason);
     },
     shots: () => game.shotsForTest,
     siege: () => game.siegeForTest,
