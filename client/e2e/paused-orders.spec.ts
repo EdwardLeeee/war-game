@@ -30,6 +30,43 @@ async function placeHouse(page: Page, near: { x: number; y: number }, answer: "�
   await page.getByRole("button", { name: answer }).tap();
 }
 
+interface Said {
+  text: string;
+  ok: boolean;
+  info: boolean;
+}
+
+/**
+ * Every message the strip shows from now on, with its look. Once the game runs, the simulation's own
+ * messages (「民居蓋好了」 for the house placed while paused, 20 s of its time later) can take the
+ * strip before a check reads it, sooner or later as the machine runs: the checks read this record.
+ */
+async function recordToasts(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const w = window as unknown as { __said?: { text: string; ok: boolean; info: boolean }[] };
+    const box = document.querySelector<HTMLElement>(".toast");
+    if (w.__said !== undefined || box === null) return;
+    const said: { text: string; ok: boolean; info: boolean }[] = [];
+    w.__said = said;
+    new MutationObserver(() => {
+      if (box.hidden) return;
+      const now = { text: box.textContent ?? "", ok: box.classList.contains("toast-ok"), info: box.classList.contains("toast-info") };
+      const last = said.at(-1);
+      if (last === undefined || last.text !== now.text || last.ok !== now.ok || last.info !== now.info) said.push(now);
+    }).observe(box, { subtree: true, childList: true, characterData: true, attributes: true });
+  });
+}
+
+/** The strip said this (exactly, or matching), with its look, since the record began. */
+async function expectSaid(page: Page, text: string | RegExp, look: Partial<Said> = {}): Promise<void> {
+  const find = async () => {
+    const said = (await page.evaluate(() => (window as unknown as { __said?: Said[] }).__said ?? [])) as Said[];
+    return said.find((m) => (typeof text === "string" ? m.text === text : text.test(m.text))) ?? null;
+  };
+  await expect.poll(find, { message: `the strip said ${String(text)}` }).not.toBeNull();
+  expect(await find()).toMatchObject(look);
+}
+
 /** A game on core's simulation (the e2e scenario), paused, our barracks selected; its row. */
 async function pausedAtBarracks(page: Page, query = "") {
   await page.goto(`./?test=1&scenario=e2e${query}`);
@@ -87,6 +124,7 @@ test("下指令的回饋：暫停中先畫出結果（虛線、繼續後…）�
   expect((await header(page)).tick, "no ticks while paused").toBe(frozen);
 
   // 繼續: the simulation takes them in order; what was shown gives way to what is.
+  await recordToasts(page);
   await page.getByRole("button", { name: "繼續", exact: true }).tap();
   await expect.poll(async () => (await pending(page, barracks.id)).sites, { timeout: 15_000 }).toBe(0);
   // The simulation's own 自動訓練 is off for the player (D-098: the screen sends what to train), from the
@@ -103,22 +141,20 @@ test("下指令的回饋：暫停中先畫出結果（虛線、繼續後…）�
   // Running: 訓練槍兵 says its place in the queue (those in it, then this one).
   await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.selection()))?.building).toBe(barracks.id);
   await page.locator(".cmds").getByRole("button", { name: /^訓練槍兵/ }).tap();
-  await expect(toast).toHaveText(/^已下令訓練槍兵（排第 \d+）$/);
-  await expect(toast).toHaveClass(/\btoast-ok\b/);
+  await expectSaid(page, /^已下令訓練槍兵（排第 \d+）$/, { ok: true });
   // The barracks higher on screen, its pause mark clear of the line.
   await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 1.2), [barracks.cx + 3, barracks.cy + 3] as const);
   await shot(page, info, "running-orders");
 
   // ✗ on a preview: 已取消, dark, no check (nothing was ordered).
   await placeHouse(page, { x: barracks.cx - 4, y: barracks.cy - 4 }, "取消放建築");
-  await expect(toast).toHaveText("已取消蓋民居");
-  await expect(toast).toHaveClass(/\btoast-info\b/);
-  await expect(toast.locator(".toast-check")).toBeHidden();
+  // Dark, no check (the check shows on toast-ok only).
+  await expectSaid(page, "已取消蓋民居", { info: true, ok: false });
   expect(await page.evaluate(() => window.__proto?.game?.placement() ?? null)).toBeNull();
 
   // A house running, no farmers selected (the barracks is): 派 1 名村民, the nearest (a house is 2 x 2).
   await placeHouse(page, { x: barracks.cx - 4, y: barracks.cy - 4 }, "確定蓋在這裡");
-  await expect(toast).toHaveText(/^已下令蓋民居，派 1 名村民$/);
+  await expectSaid(page, "已下令蓋民居，派 1 名村民");
   check();
 });
 

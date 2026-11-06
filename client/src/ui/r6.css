@@ -694,12 +694,13 @@
   --gold2: #8d6421;
 }
 
+/* Panels opaque (ceo 2026-11-06): the battlefield's words (a town's 「我方治理」) never show through them. */
 :root[data-ui="r6"]:not([data-theme="b"]) .panel {
   color: var(--ink);
   border-radius: 9px;
   background:
     repeating-linear-gradient(176deg, rgba(255, 220, 170, 0.035) 0 2px, rgba(0, 0, 0, 0.05) 2px 5px),
-    linear-gradient(180deg, rgba(78, 54, 34, 0.94), rgba(44, 30, 19, 0.94));
+    linear-gradient(180deg, rgb(78, 54, 34), rgb(44, 30, 19));
   box-shadow:
     inset 0 0 0 1.5px var(--rim),
     inset 0 0 0 3px rgba(30, 18, 10, 0.9),
@@ -811,7 +812,7 @@
   --frame-blue: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='30' height='30' viewBox='0 0 30 30'%3E%3Cpath d='M7 .6H23L29.4 7V23L23 29.4H7L.6 23V7Z' fill='none' stroke='%23a9c8ff' stroke-opacity='.85' stroke-width='1.2'/%3E%3Cpath d='M3.8 1.6L6 3.8 3.8 6 1.6 3.8ZM26.2 1.6L28.4 3.8 26.2 6 24 3.8ZM26.2 24L28.4 26.2 26.2 28.4 24 26.2ZM3.8 24L6 26.2 3.8 28.4 1.6 26.2Z' fill='%23a9c8ff'/%3E%3C/svg%3E");
   --frame-bright: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='30' height='30' viewBox='0 0 30 30'%3E%3Cpath d='M7 1H23L29 7V23L23 29H7L1 23V7Z' fill='none' stroke='%23ffe7a6' stroke-width='2'/%3E%3Cpath d='M3.8 1.6L6 3.8 3.8 6 1.6 3.8ZM26.2 1.6L28.4 3.8 26.2 6 24 3.8ZM26.2 24L28.4 26.2 26.2 28.4 24 26.2ZM3.8 24L6 26.2 3.8 28.4 1.6 26.2Z' fill='%23ffe7a6'/%3E%3C/svg%3E");
   --frame-grey: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='30' height='30' viewBox='0 0 30 30'%3E%3Cpath d='M7 .6H23L29.4 7V23L23 29.4H7L.6 23V7Z' fill='none' stroke='%238a857a' stroke-opacity='.7' stroke-width='1.2'/%3E%3Cpath d='M3.8 1.6L6 3.8 3.8 6 1.6 3.8ZM26.2 1.6L28.4 3.8 26.2 6 24 3.8ZM26.2 24L28.4 26.2 26.2 28.4 24 26.2ZM3.8 24L6 26.2 3.8 28.4 1.6 26.2Z' fill='%238a857a'/%3E%3C/svg%3E");
-  --lac: linear-gradient(180deg, rgba(22, 27, 38, 0.9), rgba(10, 12, 18, 0.9));
+  --lac: linear-gradient(180deg, rgb(22, 27, 38), rgb(10, 12, 18));
 }
 
 :root[data-ui="r6"][data-theme="b"] .panel,
@@ -841,7 +842,7 @@
 }
 :root[data-ui="r6"][data-theme="b"] .b::before {
   clip-path: var(--cut-s);
-  background: linear-gradient(180deg, rgba(38, 44, 60, 0.96), rgba(18, 22, 31, 0.96));
+  background: linear-gradient(180deg, rgb(38, 44, 60), rgb(18, 22, 31));
 }
 :root[data-ui="r6"][data-theme="b"] .b::after {
   border-image-width: 7px;
