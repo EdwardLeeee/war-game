@@ -308,6 +308,20 @@ export class Hud {
     this.dialog = el("div", root, "dialog");
     this.dialog.setAttribute("role", "dialog");
     this.dialog.hidden = true;
+    // 正式介面 (R6-20, R6-21): every button a dialog puts up (at once or later) the interface's, in its tone.
+    if (this.formal) {
+      const dress = () => {
+        for (const b of this.dialog.querySelectorAll<HTMLButtonElement>("button:not(.b)")) {
+          b.classList.add("b");
+          if (b.classList.contains("danger")) b.classList.add("red");
+          else if (b.classList.contains("choice-plunder")) b.classList.add("plunder");
+          else if (b.classList.contains("choice-govern")) b.classList.add("govern");
+          else if (!b.classList.contains("secondary")) b.classList.add("pri");
+        }
+      };
+      // Buttons only (class changes are not watched: dressing them sets none of this off again).
+      new MutationObserver(dress).observe(this.dialog, { childList: true, subtree: true });
+    }
   }
 
   destroy(): void {
@@ -728,7 +742,7 @@ export class Hud {
     this.dialog.className = `dialog ${cls}`;
     this.dialog.hidden = false;
     this.dialog.setAttribute("aria-label", title);
-    const card = el("div", this.dialog, "dialog-card");
+    const card = el("div", this.dialog, this.formal ? "dialog-card panel" : "dialog-card");
     el("h2", card, "", title);
     return card;
   }
@@ -873,6 +887,13 @@ export class Hud {
         show();
       });
       b.setAttribute("role", "radio");
+      // 正式介面 (R6-20 NEW-07): what each looks like, under its name.
+      if (this.formal) {
+        b.classList.add("theme-card");
+        b.textContent = "";
+        el("span", b, "lb", THEME_LABEL[t] + (t === "a" ? "（預設）" : ""));
+        el("span", b, "sub", t === "a" ? "深色木頭、銅邊" : "深黑漆面、金色細線");
+      }
       return b;
     });
     const show = () => {
@@ -880,6 +901,12 @@ export class Hud {
       THEMES.forEach((t, i) => {
         buttons[i].setAttribute("aria-checked", t === now ? "true" : "false");
         buttons[i].classList.toggle("secondary", t !== now);
+        // 正式介面: the one on lit, both wood (the main button's gold is for 關閉).
+        if (this.formal) {
+          buttons[i].classList.add("secondary");
+          buttons[i].classList.remove("pri");
+          buttons[i].classList.toggle("is-active", t === now);
+        }
       });
     };
     show();
