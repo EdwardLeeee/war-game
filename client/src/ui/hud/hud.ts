@@ -438,8 +438,11 @@ export class Hud {
         if (this.formal && this.homeHit(ev)) this.homeHitUntil = performance.now() + HOME_HIT_MS;
         break;
       case "town_captured":
-        if (ev.by === me) this.openTownChoice(ev.town);
-        else this.game.toast("敵方攻下了一座城鎮");
+        // Ours: 搶還是治理, but not while measuring (ceo 2026-11-06: it covered the 量測 panel and its
+        // result): the town waits for a choice as the player's would (tapping it still opens this);
+        // nothing is sent, nothing said. The enemy's: said.
+        if (ev.by !== me) this.game.toast("敵方攻下了一座城鎮");
+        else if (!this.game.measuring) this.openTownChoice(ev.town);
         break;
       case "town_plundered":
         this.game.toast(ev.by === me ? `搶完了：糧 ${ev.food}、金 ${ev.gold}、魔晶 ${ev.crystal}` : "敵方搶完了一座城鎮");

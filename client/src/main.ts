@@ -511,6 +511,7 @@ async function newGame(scenario: ScenarioName = "standard", measure = false, var
     maxTicks,
     map,
     watch: params.watch && !measure,
+    measure,
     env: env(scenario, gameText(level, maxTicks, enemyAi, map, params.watch && !measure)),
     checkPort: params.mock ? null : () => createSimPort(showError),
     art,

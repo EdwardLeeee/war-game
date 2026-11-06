@@ -129,6 +129,11 @@ export interface GameOptions {
   map: MapMode;
   /** Test pages (`?test=1&watch=1`): the computer plays both sides, the page only watches. */
   watch: boolean;
+  /**
+   * A game that measures itself (量測: perf, perf200, perf360, art-v7 量測): nothing pops up over its
+   * panel and result (攻下城鎮's choice; 開局提示 is not shown either, main.ts). Absent: false.
+   */
+  measure?: boolean;
   env: () => Record<string, unknown>;
   /** A fresh simulation Worker for the determinism check, or null (the fake world has none). */
   checkPort: (() => SimPort) | null;
@@ -295,6 +300,15 @@ export class Game implements GestureHost {
   private readonly port: SimPort;
   private readonly overlays: Overlays;
   private readonly options: GameOptions;
+  /**
+   * 量測: a game that measures itself (GameOptions.measure), or the game on screen while the panel
+   * measures it (量測 N 人 in that perf scenario already, or the fake world): no dialog of the game's
+   * own over the panel.
+   */
+  get measuring(): boolean {
+    const phase = this.lab.lab.phase;
+    return this.options.measure === true || phase === "warmup" || phase === "measuring";
+  }
   private readonly recognizer: GestureRecognizer;
   private renderer: WorldRenderer | null = null;
   /** 浮空大陸's edge round the map (render/edge.ts), with the diamond and ui's edge pictures. */
