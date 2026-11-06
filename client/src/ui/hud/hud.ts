@@ -32,7 +32,7 @@ import { TILE_PX } from "../../tuning.ts";
 import { FIXED_TO_PX } from "../../view/view.ts";
 import { applyTheme, loadTheme, saveTheme, THEME_LABEL, THEMES } from "../../theme.ts";
 import { formalUi } from "../formal.ts";
-import { dress } from "../icons.ts";
+import { dress, icon } from "../icons.ts";
 import { ORDER_TONE } from "../overlays.ts";
 import { adjustRatio, type Ratio } from "./economy-ratio.ts";
 import { loadTownHintOff, saveTownHintOff } from "../../hint-pref.ts";
@@ -634,7 +634,8 @@ export class Hud {
       ["food", "糧", 10],
       ["wood", "木", 10],
       ["gold", "金", 10],
-      ["crystal", "晶", 5],
+      // 正式介面 (R6-20 INV-121): 魔晶 written out.
+      ["crystal", this.formal ? "魔晶" : "晶", 5],
     ];
     for (const [key, name, step] of rows) {
       const row = el("div", card, "ratio-row");
@@ -834,10 +835,12 @@ export class Hud {
     // 全體回城 (D-087): always here; while the farmers hide, 回去工作.
     if (this.formal) {
       const recall = this.game.view?.header?.[H.recall] === 1;
-      btn(list, recall ? "回去工作" : "全體回城", () => {
+      const home = btn(list, recall ? "回去工作" : "全體回城", () => {
         this.closeDialog();
         this.tapRecall();
-      }, "secondary");
+      }, recall && this.formal ? "" : "secondary");
+      // 正式介面 (R6-20 INV-116, NEW-06): the home; 回去工作 gold (the farmers hiding), with the work icon.
+      if (this.formal) home.prepend(icon(recall ? "work" : "home"));
     }
     // 寫實地面 開／關 (ceo 2026-10-25): the player's, at once, remembered on this device; with the ground loaded only.
     const ground = this.game.groundSwitch();
@@ -856,7 +859,7 @@ export class Hud {
     }, "secondary");
     gb.setAttribute("aria-pressed", grade ? "true" : "false");
     // 介面風格 comes with 正式介面 (ceo 2026-10-19).
-    if (this.formal) btn(list, "設定", () => this.openSettings(), "secondary");
+    if (this.formal) btn(list, "設定", () => this.openSettings(), "secondary").prepend(icon("gear"));
     btn(list, "量測與確定性檢查", () => {
       this.closeDialog();
       this.game.lab.show();
@@ -880,6 +883,8 @@ export class Hud {
     row.setAttribute("role", "radiogroup");
     row.setAttribute("aria-label", "介面風格");
     el("span", row, "", "介面風格");
+    // 正式介面 (R6-20 NEW-07): what a tap does, at the right of the heading.
+    if (this.formal) el("span", row, "theme-note", "換了馬上生效，下次打開也照這個");
     const buttons = THEMES.map((t) => {
       const b = btn(row, THEME_LABEL[t], () => {
         saveTheme(t);
@@ -891,6 +896,12 @@ export class Hud {
       if (this.formal) {
         b.classList.add("theme-card");
         b.textContent = "";
+        // A small picture of the look: a bar, a panel and three buttons in its colours (ui/r6.css).
+        const thumb = el("span", b, `theme-thumb look-${t}`);
+        thumb.setAttribute("aria-hidden", "true");
+        el("i", thumb, "tt-bar");
+        el("i", thumb, "tt-panel");
+        for (const k of ["red", "blue", "gold"]) el("i", thumb, `tt-btn ${k}`);
         el("span", b, "lb", THEME_LABEL[t] + (t === "a" ? "（預設）" : ""));
         el("span", b, "sub", t === "a" ? "深色木頭、銅邊" : "深黑漆面、金色細線");
       }
@@ -983,6 +994,11 @@ export class Hud {
     }, "secondary");
     toggle.classList.toggle("active", e.on);
     const row = el("div", card, "dialog-buttons");
+    // 正式介面 (R6-20 INV-120): 自動分配 at the start of the buttons' line, the dialog no taller.
+    if (this.formal) {
+      toggle.classList.add("eco-toggle");
+      row.appendChild(toggle);
+    }
     btn(row, "套用", () => {
       this.game.command({ c: "eco_ratio", food: e.food, wood: e.wood, gold: e.gold, on: e.on });
       this.closeDialog();
@@ -1027,8 +1043,16 @@ export class Hud {
     this.dialogTick = showShort;
     if (once) el("p", card, "small plundered-note", PLUNDERED_TEXT);
     const keeps = el("div", card, "keep-row");
-    if (!once) this.keepStepper(keeps, "搶", town, keep.plunder, (n) => (keep.plunder = n));
-    this.keepStepper(keeps, "治理", town, keep.govern, (n) => (keep.govern = n));
+    // 正式介面 (R6-20, the user 2026-10-19: 「留守只需要一個統一的就好，反正也只能選一種」): one 留守 for either.
+    if (this.formal) {
+      this.keepStepper(keeps, null, town, keep.govern, (n) => {
+        keep.plunder = n;
+        keep.govern = n;
+      });
+    } else {
+      if (!once) this.keepStepper(keeps, "搶", town, keep.plunder, (n) => (keep.plunder = n));
+      this.keepStepper(keeps, "治理", town, keep.govern, (n) => (keep.govern = n));
+    }
     // Still their groups' (the user 2026-10-26): 出城歸隊 brings them back.
     el("p", card, "small", "留守的兵守在城裡，敵人來了會反擊、不追出城，不跟「全軍」走；還算原本的編隊，軍團畫面按「出城歸隊」就回來。");
     btn(card, "稍後再決定（點城鎮也能選）", () => this.closeDialog(), "secondary later");
@@ -1043,19 +1067,23 @@ export class Hud {
     return Math.max(0, this.game.garrisonNeeded(town) - this.game.army.garrisonOf(town).length);
   }
 
-  /** 留守 − N + 名 under one of the two choices. The most is the soldiers inside the town when the button is pressed. */
-  private keepStepper(parent: HTMLElement, name: string, town: number, initial: number, set: (n: number) => void): void {
+  /**
+   * 留守 − N + 名 under one of the two choices, or (name null: 正式介面) one for both. The most is the
+   * soldiers inside the town when the button is pressed.
+   */
+  private keepStepper(parent: HTMLElement, name: string | null, town: number, initial: number, set: (n: number) => void): void {
     let n = initial;
+    const of = name === null ? "" : `（${name}）`;
     const box = el("div", parent, "keep");
     box.setAttribute("role", "group");
-    box.setAttribute("aria-label", `留守（${name}）`);
-    el("span", box, "", `${name}：留守`);
+    box.setAttribute("aria-label", `留守${of}`);
+    el("span", box, "", name === null ? "留守" : `${name}：留守`);
     const minus = btn(box, "−", null, "secondary step");
-    minus.setAttribute("aria-label", `少留守 1 名（${name}）`);
+    minus.setAttribute("aria-label", `少留守 1 名${of}`);
     const out = el("output", box, "", `${n}`);
-    out.setAttribute("aria-label", `留守幾名（${name}）`);
+    out.setAttribute("aria-label", `留守幾名${of}`);
     const plus = btn(box, "+", null, "secondary step");
-    plus.setAttribute("aria-label", `多留守 1 名（${name}）`);
+    plus.setAttribute("aria-label", `多留守 1 名${of}`);
     el("span", box, "", "名");
     const show = (v: number) => {
       n = v;

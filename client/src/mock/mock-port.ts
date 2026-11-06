@@ -654,6 +654,16 @@ export class MockPort implements SimPort {
   }
 
   /** Tests: a building's hit points now (a gate damaged, D-096). */
+  /** The game over: `winner` won for `reason` (surrender, or a test page's end: the fake world has no other way to win). */
+  endGame(winner: number, reason: number): void {
+    this.over = true;
+    const zero = { food: 0, wood: 0, gold: 0, crystal: 0 };
+    const player = { gathered: { ...zero }, unitsTrained: [0, 0, 0, 0], unitsLost: [0, 0, 0, 0], magesTrained: 0, magesLost: 0, townsPlundered: 0, townsGoverned: 0 };
+    this.events.push({ k: "game_over", winner, reason: reason as 0 | 1 | 2 });
+    this.emit(this.snapshot(false));
+    this.emit({ type: "game_over", winner, reason: reason as 0 | 1 | 2, stats: { ticks: this.tick, winner, reason: reason as 0 | 1 | 2, perPlayer: [player, { ...player }] } });
+  }
+
   damage(id: number, hp: number): void {
     const b = this.buildings.find((v) => v.id === id);
     if (b !== undefined) b.hp = hp;
@@ -1609,15 +1619,9 @@ export class MockPort implements SimPort {
       case "trade":
         this.trade(cmd, reject);
         break;
-      case "surrender": {
-        this.over = true;
-        const zero = { food: 0, wood: 0, gold: 0, crystal: 0 };
-        const player = { gathered: { ...zero }, unitsTrained: [0, 0, 0, 0], unitsLost: [0, 0, 0, 0], magesTrained: 0, magesLost: 0, townsPlundered: 0, townsGoverned: 0 };
-        this.events.push({ k: "game_over", winner: FOE, reason: 1 });
-        this.emit(this.snapshot(false));
-        this.emit({ type: "game_over", winner: FOE, reason: 1, stats: { ticks: this.tick, winner: FOE, reason: 1, perPlayer: [player, { ...player }] } });
+      case "surrender":
+        this.endGame(FOE, 1);
         break;
-      }
       default:
         reject(Reject.NotAvailable);
     }
