@@ -92,6 +92,24 @@ const fits = (page: Page) =>
     return { missing: false, inside, small, cut, wide, charts, tabsIn, row: card.classList.contains("tabs-row"), taps, more };
   });
 
+/** Words under the ⌄'s picture: text boxes of the page (HTML and the charts' SVG) that its icon's box meets. */
+const overWords = (page: Page) =>
+  page.evaluate(() => {
+    const ic = document.querySelector(".st-more-btn .ic")?.getBoundingClientRect();
+    const body = document.querySelector(".st-page");
+    if (ic === undefined || body === null) return ["no ⌄"];
+    const meets = (r: DOMRect) => r.width > 0 && Math.min(r.right, ic.right) - Math.max(r.left, ic.left) > 0 && Math.min(r.bottom, ic.bottom) - Math.max(r.top, ic.top) > 0;
+    const out: string[] = [];
+    const walk = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+    for (let n = walk.nextNode(); n !== null; n = walk.nextNode()) {
+      if ((n.textContent ?? "").trim() === "" || n.parentElement?.closest(".st-more") != null) continue;
+      const range = document.createRange();
+      range.selectNodeContents(n);
+      if ([...range.getClientRects()].some(meets)) out.push(n.textContent ?? "");
+    }
+    return out;
+  });
+
 async function everyTab(page: Page, label: string, row: boolean): Promise<void> {
   for (const t of TABS) {
     await page.getByRole("tab", { name: t }).tap();
@@ -155,15 +173,17 @@ for (const s of [
   });
 }
 
-test("局後統計（932×336，安全區）：要捲的頁下面淡出加 ⌄，點 ⌄ 往下捲，捲到底收起；矮的圖縱軸頂端剛好高過資料", async ({ page }) => {
+test("局後統計（932×336，安全區）：要捲的頁下面淡出加 ⌄（在右邊留的空白裡，不壓字），點 ⌄ 往下捲，捲到底收起；矮的圖縱軸頂端剛好高過資料", async ({ page }) => {
   test.setTimeout(90_000);
   await endWith(page, { size: { width: 932, height: 336 }, safe: true });
   const body = page.locator(".st-page");
   const down = page.getByRole("button", { name: "往下捲" });
-  for (const t of ["總覽", "城鎮", "法師"]) {
+  for (const t of ["總覽", "戰鬥", "城鎮", "法師"]) {
     await page.getByRole("tab", { name: t }).tap();
     expect(await body.evaluate((e) => e.scrollHeight > e.clientHeight + 2), `${t} scrolls here`).toBe(true);
     await expect(page.locator(".st-more"), t).toBeVisible();
+    // The ⌄ over no words (b2 2026-11-07: in the middle it sat on the right column's first word).
+    expect(await overWords(page), `${t}: the ⌄ over no words`).toEqual([]);
     const before = await body.evaluate((e) => e.scrollTop);
     await down.tap();
     await expect.poll(() => body.evaluate((e) => e.scrollTop), { message: `${t}: the ⌄ scrolls down` }).toBeGreaterThan(before + 20);

@@ -343,6 +343,11 @@ body:has(.dialog.stats-page:not([hidden])) #proto-label {
 
 /* More below (page.ts addMore; ui 2026-11-07, PR 5's 軍團畫面 fade and ⌄): over the page's foot, to its own colour,
    opaque at the bottom; the ⌄ 14 with a line of 2 (24 in the icon's box), A's gold, B's frame gold, the prototype's yellow. */
+/* The strip at the right the ⌄ sits in, while the page scrolls (page.ts draw). */
+.stats-page .st-page.has-more {
+  padding-right: 24px;
+}
+
 .stats-page .st-more {
   position: sticky;
   bottom: 0;
@@ -350,9 +355,9 @@ body:has(.dialog.stats-page:not([hidden])) #proto-label {
   display: flex;
   flex: none;
   align-items: flex-end;
-  justify-content: center;
+  justify-content: flex-end;
   height: 34px;
-  margin-top: -34px;
+  margin: -34px -24px 0 0;
   pointer-events: none;
   background: linear-gradient(180deg, rgba(21, 25, 23, 0), rgb(21, 25, 23) 80%);
 }
@@ -369,16 +374,17 @@ body:has(.dialog.stats-page:not([hidden])) #proto-label {
   background: linear-gradient(180deg, rgba(12, 15, 22, 0), rgb(12, 15, 22) 80%);
 }
 
+/* 44 × 44 to tap, its ⌄ at the right, in the strip (5 from the edge: 24 − 14 − 5 leaves 5 to the words). */
 .dialog.stats-page .stats-card .st-more-btn {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
   width: 44px;
   min-width: 44px;
   height: 44px;
   min-height: 44px;
   margin: 0;
-  padding: 0;
+  padding: 0 5px 0 0;
   border: 0;
   background: none;
   box-shadow: none;

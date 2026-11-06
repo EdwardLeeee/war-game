@@ -114,14 +114,21 @@ export class StatsPage {
   }
 
   private draw(): void {
+    // A page that scrolls keeps a strip at its right for the ⌄ (b2 2026-11-07: in the middle it sat on the right
+    // column's first word), and is laid out again that much narrower.
+    this.page.classList.remove("has-more");
     this.drawPage();
+    if (this.page.scrollHeight > this.page.clientHeight + 2) {
+      this.page.classList.add("has-more");
+      this.drawPage();
+    }
     this.addMore();
   }
 
   /**
-   * More below (932 × 336: 總覽, 城鎮, 法師; ui 2026-11-07, as the 軍團畫面's of PR 5): a fade at the foot of the page,
-   * opaque at the bottom over the row it cuts, and a ⌄ in it that scrolls down; gone at the end. The page has no buttons
-   * down there for the ⌄ to cover (資源's are at its top).
+   * More below (932 × 336: 總覽, 戰鬥, 城鎮, 法師; ui 2026-11-07, as the 軍團畫面's of PR 5): a fade at the foot of the
+   * page, opaque at the bottom over the row it cuts, and a ⌄ in it that scrolls down; gone at the end. The ⌄ in the
+   * strip kept free at the page's right (`.has-more`), over no words; no buttons down there either (資源's are at its top).
    */
   private addMore(): void {
     const p = this.page;
