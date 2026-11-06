@@ -56,7 +56,9 @@ test("下指令的回饋：暫停中先畫出結果（虛線、繼續後…）�
   const frozen = (await header(page)).tick;
   const banner = page.locator(".paused-banner");
   const waiting = page.locator(".paused-banner .pend");
-  const toast = page.locator(".toast");
+  // The strip's messages from the first order on, read from its record: each shows 2.2 s, less than a
+  // few checks take on a busy machine (#409's local run), and the game's own can take its place.
+  await recordToasts(page);
   await expect(banner).toBeVisible();
   await expect(waiting, "no orders yet: no second line").toBeHidden();
 
@@ -65,29 +67,27 @@ test("下指令的回饋：暫停中先畫出結果（虛線、繼續後…）�
   await auto.tap();
   await expect(auto).toContainText("目前：暫停");
   await expect(auto).not.toHaveClass(/\bpending\b/);
-  await expect(toast).toHaveText("已暫停這座兵營的自動訓練");
-  await expect(toast).toHaveClass(/\btoast-ok\b/);
-  await expect(toast.locator(".toast-check")).toBeVisible();
+  // An order taken: dark with the green check (shown on toast-ok only).
+  await expectSaid(page, "已暫停這座兵營的自動訓練", { ok: true });
   await expect(waiting).toBeHidden();
 
   // 訓練槍兵: a dashed cell in the queue at once, 繼續後開始.
   await page.locator(".cmds").getByRole("button", { name: /^訓練槍兵/ }).tap();
   await expect(page.locator(".sel-queue .pending")).toHaveCount(1);
   await expect(page.locator(".sel-queue .pending")).toContainText("繼續後開始");
-  await expect(toast).toHaveText("已下令訓練槍兵，按繼續後開始");
+  await expectSaid(page, "已下令訓練槍兵，按繼續後開始");
   await expect(waiting).toHaveText("已下 1 個指令，按繼續後執行");
   expect(await pending(page, barracks.id)).toMatchObject({ trains: 1 });
 
   // 民居, placed and ✓: its site at once (see-through, dashed, 繼續後開工).
   await placeHouse(page, { x: barracks.cx - 4, y: barracks.cy + 2 }, "確定蓋在這裡");
-  await expect(toast).toHaveText("已下令蓋民居，按繼續後開工");
+  await expectSaid(page, "已下令蓋民居，按繼續後開工");
   await expect(waiting).toHaveText("已下 2 個指令，按繼續後執行");
   expect(await pending(page)).toMatchObject({ sites: 1, waiting: 2 });
   await shot(page, info, "paused-orders");
   expect((await header(page)).tick, "no ticks while paused").toBe(frozen);
 
   // 繼續: the simulation takes them in order; what was shown gives way to what is.
-  await recordToasts(page);
   await page.getByRole("button", { name: "繼續", exact: true }).tap();
   await expect.poll(async () => (await pending(page, barracks.id)).sites, { timeout: 15_000 }).toBe(0);
   // The simulation's own 自動訓練 is off for the player (D-098: the screen sends what to train), from the
@@ -129,12 +129,13 @@ test("下指令的回饋，正式介面和 3 倍美術打開時（R6-31）：暫
   const banner = page.locator(".paused-banner.panel");
   await expect(banner).toBeVisible();
   await expect(banner.locator(".pend")).toBeHidden();
+  await recordToasts(page);
   await page.locator(".cmds").getByRole("button", { name: /^自動訓練/ }).tap();
   await page.locator(".cmds").getByRole("button", { name: /^訓練槍兵/ }).tap();
   await placeHouse(page, { x: barracks.cx - 4, y: barracks.cy + 2 }, "確定蓋在這裡");
   await expect(banner.locator(".pend")).toHaveText("已下 2 個指令，按繼續後執行");
-  await expect(page.locator(".toast")).toHaveText("已下令蓋民居，按繼續後開工");
-  await expect(page.locator(".toast .toast-check")).toBeVisible();
+  // With its green check (the strip's record: it shows 2.2 s, and x3 art makes this page slow).
+  await expectSaid(page, "已下令蓋民居，按繼續後開工", { ok: true });
   await shot(page, info, "paused-orders-r6");
   check();
 });
