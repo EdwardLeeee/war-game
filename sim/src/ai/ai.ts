@@ -2997,6 +2997,39 @@ export interface HardPlan {
    * set out gone) are remembered; after FORT_LOST_MOST lost in a row the memory holds again (0: as before).
    */
   fortExit: number;
+  /**
+   * D-131 (the user 2026-11-06, ceo: about 12 tactical switches measured one by one; docs/research/2026-11-ai-tactics.md).
+   * All at values that leave hard as it was. frontBreak: tenths: its front at the enemy's main city breaks off from the
+   * enemy soldiers in sight by it worth more than this many tenths of the front (12).
+   */
+  frontBreak: number;
+  /**
+   * D-131: the front also breaks off when in the last LOSS_WINDOW ticks this percent of those that set out fell, and it
+   * saw fewer than half that many enemy soldiers fall (only those in its sight): this way arrows, soldiers hiding and
+   * forts count, seen or not. The forts reaching the front are remembered as broken off from (0: never).
+   */
+  lossBreak: number;
+  /**
+   * D-131: with garrisons on those trained after it set out wait at home; with this many, and as many at the front, they
+   * follow as one batch when they can pass the forts on the way themselves, and join within 12 cells of the front. Half of
+   * a batch gone on the way: back home and no more on this march; the front breaking off calls them back too (0: never).
+   */
+  reserveJoin: number;
+  /** D-131: the front gathered: this share (percent) by the gathering point (STAGE_SHARE), or this long after the first got there (STAGE_WAIT). */
+  stageShare: number;
+  stageWait: number;
+  /**
+   * D-131: tenths: the army meets a wave in the open at this many tenths of its worth, else waits by the city (20). Away from
+   * 20 also: not into an enemy fort's reach; once back, not again until none has been near (16 cells) for MEET_CLEAR ticks.
+   */
+  meetRatio: number;
+  /**
+   * D-131: every FOCUS_EVERY ticks its ranged units shoot the enemy soldiers in their reach with the least hp, as many on each
+   * as it takes; from its own view; one whose target left its reach goes back to the army's way (false: each shoots its nearest).
+   */
+  focusFire: boolean;
+  /** D-131: added to this AI's seed: the same plan with its own dice, for measuring how much the same AI's games vary (0: none). */
+  rngSalt: number;
 }
 
 export const HARD: HardPlan = {
@@ -3106,6 +3139,14 @@ export const HARD: HardPlan = {
   // six active groups 10 of 240 as before; push-crush 10/24 -> 10/26. routeFromArmy alone turned back no less (12.7).
   routeFromArmy: true,
   fortExit: 3,
+  frontBreak: 12,
+  lossBreak: 0,
+  reserveJoin: 0,
+  stageShare: STAGE_SHARE,
+  stageWait: STAGE_WAIT,
+  meetRatio: 20,
+  focusFire: false,
+  rngSalt: 0,
 };
 /** D-086 A4 (plan.townScout): a soldier lost scouting, the next goes this much later; told again this often. */
 const TOWN_SCOUT_AGAIN = 2 * 1200;
@@ -3133,6 +3174,12 @@ const BUILD_SAFE = 10;
 const CAVALRY_SEEN = 6;
 /** D-086 A4 (plan.charge): the least cavalry that charge, how far from them the targets may be, spearmen this near count as by them, and how often (ticks) it picks again. */
 const CHARGE_MIN = 3;
+/** D-131 (plan.lossBreak): the falls it counts, ticks. (plan.meetRatio): no enemy near for this long: it may meet a wave again. (plan.focusFire): how often it picks targets, ticks. */
+const LOSS_WINDOW = 30 * 20;
+const MEET_CLEAR = 30 * 20;
+const FOCUS_EVERY = 40;
+/** D-131 (plan.reserveJoin): a batch has joined the front within this many cells of it. */
+const BATCH_JOIN = 12;
 const CHARGE_NEAR = 8;
 const CHARGE_SPEAR = 4;
 const CHARGE_MOVE = 40;
@@ -3241,6 +3288,8 @@ interface HardUnit extends Unit {
   /** Position in fixed point. */
   fx: number;
   fy: number;
+  /** Its hp, as the view shows it (D-131, plan.focusFire). */
+  hp: number;
 }
 interface HardTown extends Town {
   timer: number;
@@ -3265,7 +3314,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   const once = know.rules.features?.plunderOnce === true;
   const hideOn = garrisonOn && plan.hide;
   const governCost = (size: number): Cost => governCostOf(rules, size);
-  const rng = new Rng((seed ^ Math.imul(slot + 1, 0x9e3779b1)) >>> 0 || 1);
+  const rng = new Rng((seed ^ Math.imul(slot + 1, 0x9e3779b1) ^ Math.imul(plan.rngSalt, 0x85ebca6b)) >>> 0 || 1);
   const n = know.map.size;
   // The map as it knows it (scout.ts, D-074): on the fixed map the MapInfo's own objects.
   const mem = mapMemory(know.map, know.frame, player);
@@ -3437,7 +3486,24 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   let chargeMove = -100000;
   const chargeRestAt = new Map<number, number>();
   let waveFrom: { x: number; y: number } | null = null;
-  const counted = { avoidSpots: 0, farmerIdle: 0, lumberLost: 0, governHeld: 0, governTowers: 0, governStayed: 0, governBrokeOff: 0, townsBehind: 0, crystalStopped: 0, goldCavalry: 0, behindThinks: 0, behindTowers: 0, townsHeld: 0, gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
+  /** plan.lossBreak: those of the front alive at the last think, when they fell, when enemy soldiers it saw fell; for the march that set out then. */
+  const frontAlive = new Set<number>();
+  const frontFell: number[] = [];
+  const foeFell: number[] = [];
+  let lossMarch = -1;
+  /** plan.reserveJoin: the batch on its way, how many set out, when last told; none more on this march; for the march that set out then. */
+  const batch = new Set<number>();
+  let batchSize = 0;
+  let batchMove = -100000;
+  let batchOff = false;
+  let batchMarch = -1;
+  /** plan.meetRatio: out meeting a wave; came back from one (not again until none is near for MEET_CLEAR). */
+  let meetOut = false;
+  let meetOff = false;
+  /** plan.focusFire: when it last picked; each ranged unit's target it was told. */
+  let focusMove = -100000;
+  const focusOn = new Map<number, number>();
+  const counted = { marches: 0, marchLast: -1, armyRetreats: 0, lossBreaks: 0, batches: 0, batchesLost: 0, meetOuts: 0, focusOrders: 0, focusBack: 0, avoidSpots: 0, farmerIdle: 0, lumberLost: 0, governHeld: 0, governTowers: 0, governStayed: 0, governBrokeOff: 0, townsBehind: 0, crystalStopped: 0, goldCavalry: 0, behindThinks: 0, behindTowers: 0, townsHeld: 0, gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
 
   /** Nearest spot to (ax, ay) where `type` fits, with a free ring around it (farms may touch); as normal. */
   function spotNear(view: PlayerView, type: BuildingType, ax: number, ay: number, radius: number, fits?: (x: number, y: number) => boolean): { x: number; y: number } | null {
@@ -3568,6 +3634,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           y: fy >> CELL_SHIFT,
           fx,
           fy,
+          hp: view.units[r + UnitField.hp],
           order: view.units[r + UnitField.order],
           orderTarget: view.units[r + UnitField.orderTarget],
           flags: view.units[r + UnitField.flags],
@@ -3698,6 +3765,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         }
         if (tick - e.tick <= 20 && sees(e.x, e.y)) {
           if (netOn) netKilled.push(tick);
+          if (plan.lossBreak > 0) foeFell.push(tick);
           // Fallen (plan.foeMemory: no longer believed in either).
           intel.delete(id);
           if (plan.foeMemory) {
@@ -4429,7 +4497,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       // shot off).
       for (const id of homeSquad) if (!byId.has(id)) homeSquad.delete(id);
       // Hiding in a building (round 7) too: a move would bring it out.
-      const detached = (id: number) => dodging.has(id) || homeSquad.has(id) || rescueSquad.has(id) || chargers.has(id) || id === peekId || byId.get(id)?.order === Order.Cast || byId.get(id)?.order === Order.Garrison;
+      const detached = (id: number) => batch.has(id) || dodging.has(id) || homeSquad.has(id) || rescueSquad.has(id) || chargers.has(id) || id === peekId || byId.get(id)?.order === Order.Cast || byId.get(id)?.order === Order.Garrison;
 
       // --- loose against several mages ---------------------------------------------------------------
       if (plan.looseAt > 0) {
@@ -4480,6 +4548,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       }
       const army =
         guarding.size === 0 && rescueSquad.size === 0 && peekId < 0 && posted.length === 0 ? soldiers : soldiers.filter((u) => !guarding.has(u.id) && !rescueSquad.has(u.id) && u.id !== peekId && u.order !== Order.Post);
+      // D-131 (plan.reserveJoin): the front broke off (all back with it, fallBack) or the march is over.
+      if (mode !== "base") batch.clear();
       const armyIds = army.filter((u) => !detached(u.id)).map((u) => u.id);
       if (mode !== "home") homeSince = -1;
       else if (homeSince < 0) homeSince = tick;
@@ -4508,6 +4578,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       const fallBack = (x: number, y: number) => {
         const ids = army.map((u) => u.id);
         if (ids.length > 0) out.push({ c: "retreat", u: ids, x, y });
+        if (ids.length >= 5) counted.armyRetreats++;
         for (const id of ids) dodging.delete(id);
         lastMove = tick;
         sent = true;
@@ -4800,6 +4871,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         const atHome = foesNear(home.cellX, home.cellY, 16);
         const committed = mode === "base" && dist2(ac.x, ac.y, enemyHome.cellX, enemyHome.cellY) < dist2(ac.x, ac.y, home.cellX, home.cellY);
         if (atHome.length > 0) {
+          // D-131 (plan.meetRatio): this is a new wave: none near for MEET_CLEAR.
+          if (tick - lastThreat >= MEET_CLEAR) {
+            meetOut = false;
+            meetOff = false;
+          }
           lastThreat = tick;
           if (plan.recallAt > 0 && !recalled && atHome.length >= plan.recallAt) {
             out.push({ c: "recall", on: true });
@@ -4833,7 +4909,20 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             const wave = foesNear(home.cellX, home.cellY, WAVE_CELLS);
             const close = atHome.filter((f) => dist2(f.x, f.y, home.cellX, home.cellY) <= 100);
             // Clearly stronger: meet them; otherwise wait for them by the city.
-            const meet = armyWorth >= worth(wave) * 2 ? wave : close;
+            let meetNow = armyWorth >= worth(wave) * 2;
+            // D-131 (plan.meetRatio): not into an enemy fort's reach; once back, not out again for this wave.
+            if (plan.meetRatio !== 20) {
+              const can = armyWorth * 10 >= worth(wave) * plan.meetRatio && !underArrows(centre(wave, post.x, post.y));
+              if (meetOut && !can) {
+                meetOut = false;
+                meetOff = true;
+              } else if (!meetOut && can && !meetOff) {
+                meetOut = true;
+                counted.meetOuts++;
+              }
+              meetNow = meetOut;
+            }
+            const meet = meetNow ? wave : close;
             const c = centre(meet, post.x, post.y);
             // Round 7: ranged units and mages at home hide in the main city and its towers and shoot
             // from there (they cannot be hit inside).
@@ -5225,17 +5314,40 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           const ground = garrisonOn && front.length * 5 < armyAtStart * 2;
           // Forts by the front too strong for it (D-081; not the siege's): it breaks off as from a stronger enemy.
           const byFront = groups.filter((g) => !bySiege(g) && dist2(g.x, g.y, fc.x, fc.y) <= (g.radius + FORT_WAY) * (g.radius + FORT_WAY) && !beats(g, front));
-          if (front.length === 0 || (!endgame && !cityLow && (ground || defenders * 10 > worth(front) * 12 || (front.length < 6 && defenders > 0) || byFront.length > 0))) {
+          // D-131 (plan.lossBreak): falling fast and not taking as many with it, whatever it is that kills them.
+          let lossy = false;
+          if (plan.lossBreak > 0) {
+            if (lossMarch !== setOut) {
+              lossMarch = setOut;
+              frontAlive.clear();
+              frontFell.length = 0;
+              foeFell.length = 0;
+            }
+            for (const id of frontAlive) {
+              if (byId.has(id)) continue;
+              frontAlive.delete(id);
+              frontFell.push(tick);
+            }
+            for (const id of marched) if (byId.has(id)) frontAlive.add(id);
+            while (frontFell.length > 0 && tick - frontFell[0] > LOSS_WINDOW) frontFell.shift();
+            while (foeFell.length > 0 && tick - foeFell[0] > LOSS_WINDOW) foeFell.shift();
+            lossy = frontFell.length > 0 && frontFell.length * 100 >= armyAtStart * plan.lossBreak && foeFell.length * 2 < frontFell.length;
+          }
+          if (front.length === 0 || (!endgame && !cityLow && (ground || defenders * 10 > worth(front) * plan.frontBreak || (front.length < 6 && defenders > 0) || byFront.length > 0 || lossy))) {
             cityFailed = armyAtStart;
             cityFailedAt = tick;
+            // D-131 (plan.lossBreak): the forts that reach the front count as what it broke off from, too strong on paper or not: not straight back at them.
+            const lossForts = lossy ? groups.filter((g) => !bySiege(g) && !byFront.includes(g) && dist2(g.x, g.y, fc.x, fc.y) <= (g.radius + FORT_WAY) * (g.radius + FORT_WAY)) : [];
+            if (lossy) counted.lossBreaks++;
+            const brokeFrom = lossForts.length > 0 ? [...byFront, ...lossForts] : byFront;
             // D-081 / A4 (plan.fortStage): broke off from the forts it gathered for: remembered too.
             const stopped = fortStop;
-            if (fought(front)) remember(front, stopped !== null && stopped.go ? [...byFront, ...groups.filter((g) => g.ids.some((id) => stopped.ids.includes(id)))] : byFront);
+            if (fought(front)) remember(front, stopped !== null && stopped.go ? [...brokeFrom, ...groups.filter((g) => g.ids.some((id) => stopped.ids.includes(id)))] : brokeFrom);
             fortStop = null;
             counterReady = false;
             razing = -1;
             reservesRazing = -1;
-            fallBackPast(byFront, fc);
+            fallBackPast(brokeFrom, fc);
             return;
           }
           // Forts too strong for the front ahead (seen only now, D-081): back, and remember.
@@ -5291,7 +5403,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           if (at !== null && !staged) {
             const by = front.filter((u) => dist2(u.x, u.y, at.x, at.y) <= STAGE_NEAR * STAGE_NEAR).length;
             if (by > 0 && stageFirst < 0) stageFirst = tick;
-            if (by * 100 >= STAGE_SHARE * front.length || (stageFirst >= 0 && tick - stageFirst >= STAGE_WAIT) || tick - setOut >= STAGE_MAX) staged = true;
+            if (by * 100 >= plan.stageShare * front.length || (stageFirst >= 0 && tick - stageFirst >= plan.stageWait) || tick - setOut >= STAGE_MAX) staged = true;
           }
           if (way !== undefined) {
             razeWith(frontIds, way);
@@ -5337,7 +5449,39 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             sent = true;
             target = { x: enemyHome.cellX, y: enemyHome.cellY };
           }
-          const wait = reserves.filter((u) => !marched.has(u.id) && dist2(u.x, u.y, post.x, post.y) > 9).map((u) => u.id);
+          // D-131 (plan.reserveJoin): those trained since go as one batch.
+          if (plan.reserveJoin > 0 && garrisonOn) {
+            if (batchMarch !== setOut) {
+              batchMarch = setOut;
+              batch.clear();
+              batchOff = false;
+            }
+            for (const id of batch) if (!byId.has(id)) batch.delete(id);
+            if (batch.size > 0 && batch.size * 2 < batchSize) {
+              out.push({ c: "retreat", u: [...batch], x: post.x, y: post.y });
+              batch.clear();
+              batchOff = true;
+              counted.batchesLost++;
+            } else if (batch.size > 0) {
+              for (const id of batch) {
+                const u = byId.get(id)!;
+                if (dist2(u.x, u.y, fc.x, fc.y) > BATCH_JOIN * BATCH_JOIN) continue;
+                marched.add(id);
+                batch.delete(id);
+              }
+              if (batch.size > 0 && tick - batchMove >= 100) {
+                out.push({ c: "move", u: [...batch], x: fc.x, y: fc.y });
+                batchMove = tick;
+              }
+            } else if (!batchOff && reservesRazing < 0 && reserves.length >= plan.reserveJoin && front.length >= plan.reserveJoin && routeFor({ x: home.cellX, y: home.cellY }, fc, reserves).go) {
+              for (const u of reserves) batch.add(u.id);
+              batchSize = batch.size;
+              batchMove = tick;
+              out.push({ c: "move", u: [...batch], x: fc.x, y: fc.y });
+              counted.batches++;
+            }
+          }
+          const wait = reserves.filter((u) => !marched.has(u.id) && !batch.has(u.id) && dist2(u.x, u.y, post.x, post.y) > 9).map((u) => u.id);
           if (wait.length > 0 && tick % 100 === 0 && reservesRazing < 0) out.push({ c: "move", u: wait, x: post.x, y: post.y });
           return;
         }
@@ -5426,6 +5570,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         const toBase = go ? routeFor(routeFrom, { x: enemyHome.cellX, y: enemyHome.cellY }, army) : null;
         if (go && toBase!.go) {
           labels[HEAD_ARMY] = 2;
+          counted.marches++;
+          counted.marchLast = tick;
           armyAtStart = army.length;
           marchWorth = vsForts(army);
           marched.clear();
@@ -5540,6 +5686,49 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       const on = back.filter((id) => !late.includes(id));
       if (on.length > 0 && !sent) out.push({ c: "move", u: on, x: target.x, y: target.y });
       if (late.length > 0) out.push({ c: "move", u: late, x: post.x, y: post.y });
+      // D-131 (plan.focusFire): from its view only: the enemy soldiers in reach with the least hp first, as many on each as it takes.
+      if (plan.focusFire && tick - focusMove >= FOCUS_EVERY) {
+        focusMove = tick;
+        const info = rules.units[UnitType.Ranged];
+        const reach2 = info.range * info.range;
+        const inReach = (u: HardUnit, f: HardUnit) => (u.fx - f.fx) * (u.fx - f.fx) + (u.fy - f.fy) * (u.fy - f.fy) <= reach2;
+        const shooters = army.filter((u) => u.type === UnitType.Ranged && !detached(u.id) && u.order !== Order.Garrison && u.order !== Order.Retreat);
+        const targets = foes.filter((f) => f.order !== Order.Garrison).sort((a, b) => a.hp - b.hp || rank(a.fx, a.fy) - rank(b.fx, b.fy) || a.id - b.id);
+        const free = new Set(shooters.map((u) => u.id));
+        for (const f of targets) {
+          const need = Math.max(1, Math.ceil(f.hp / Math.max(1, info.attack)));
+          const on = shooters
+            .filter((u) => free.has(u.id) && inReach(u, f))
+            .sort((a, b) => (a.fx - f.fx) * (a.fx - f.fx) + (a.fy - f.fy) * (a.fy - f.fy) - (b.fx - f.fx) * (b.fx - f.fx) - (b.fy - f.fy) * (b.fy - f.fy) || rank(a.fx, a.fy) - rank(b.fx, b.fy) || a.id - b.id)
+            .slice(0, need);
+          for (const u of on) free.delete(u.id);
+          const fresh = on.filter((u) => focusOn.get(u.id) !== f.id).map((u) => u.id);
+          if (fresh.length === 0) continue;
+          out.push({ c: "attack", u: fresh, target: f.id });
+          counted.focusOrders++;
+          for (const id of fresh) focusOn.set(id, f.id);
+        }
+        // Told to shoot one that left its reach, or fell: back to the army's way (an attack order would run after it).
+        const foeById = new Map(foes.map((f) => [f.id, f]));
+        const back: number[] = [];
+        for (const [id, t] of focusOn) {
+          const u = byId.get(id);
+          if (u === undefined || u.order !== Order.Attack) {
+            focusOn.delete(id);
+            if (u !== undefined && free.has(id) && u.order === Order.None) back.push(id);
+            continue;
+          }
+          if (!free.has(id)) continue;
+          const f = foeById.get(t);
+          if (f !== undefined && inReach(u, f)) continue;
+          focusOn.delete(id);
+          back.push(id);
+        }
+        if (back.length > 0) {
+          out.push({ c: "move", u: back, x: target.x, y: target.y });
+          counted.focusBack += back.length;
+        }
+      }
       if (plan.netLog !== undefined && netX.length > 0) plan.netLog(netX, labels);
       return out;
     },
