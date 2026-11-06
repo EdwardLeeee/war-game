@@ -461,7 +461,8 @@ export class Game implements GestureHost {
     const wasPaused = this.paused;
     this.pause();
     this.hud.openTownHint(
-      townHintLines(town, home, hint?.passed ?? false, features(view.rules).plunderOnce),
+      // Directions as the camera shows the map (D-132).
+      townHintLines(town, home, hint?.passed ?? false, features(view.rules).plunderOnce, view.projection),
       town === null ? null : { id: town.id, cx: town.cellX, cy: town.cellY, radius: town.radius },
       () => {
         if (town !== null) this.camera?.centerOn((town.cellX + 0.5) * TILE_PX, (town.cellY + 0.5) * TILE_PX);

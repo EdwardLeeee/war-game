@@ -166,7 +166,7 @@ test("開局提示：開局時說魔晶從城鎮來、最近的城鎮在哪裡�
   await expect(hint).toContainText("魔晶主要從城鎮來");
   await expect(hint).toContainText("搶：馬上拿到一筆糧、金和魔晶");
   // The fake world's nearest small town, (18, 62), is ours already: the next one, which we can take.
-  await expect(hint).toContainText(/離你的主城最近、可以攻下的小鎮在主城的.{1,2}方，約 \d+ 格/);
+  await expect(hint).toContainText(/離你的主城最近、可以攻下的小鎮在主城的(右邊|右上方|上方|左上方|左邊|左下方|下方|右下方)，約 \d+ 格/);
   const town = await hintTownOf(page);
   expect(await page.evaluate(() => window.__proto?.game?.townHint())).toEqual({ town: town.id, open: true, flashing: true });
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused), { message: "the game waits while the hint is open" }).toBe(true);
