@@ -516,17 +516,131 @@
   background: rgba(0, 0, 0, 0.4);
 }
 
-/* 市場: 買／賣 the words over the gold. */
+/* 市場 (R14-03): 買／賣 糧 and 買／賣 木 on one line, each its words over the gold, the two pairs apart;
+   how prices move under them. */
+:root[data-ui="r6"] .sel-info .market {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+:root[data-ui="r6"] .sel-info .market-row {
+  display: contents;
+}
+
+:root[data-ui="r6"] .sel-info .market-word {
+  display: none;
+}
+
+:root[data-ui="r6"] .sel-info .market-row + .market-row .market-buy {
+  margin-left: 6px;
+}
+
 :root[data-ui="r6"] .sel-info .market-row .b {
-  flex: 1;
+  flex: 1 1 0;
   flex-direction: column;
   gap: 0;
-  padding: 0 6px;
+  min-width: 0;
+  padding: 0 4px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+:root[data-ui="r6"] .sel-info .market-row .b .sub {
+  font-size: 11px;
+  font-weight: 400;
+}
+
+:root[data-ui="r6"] .sel-info .market-note {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 11px;
+  line-height: 15px;
+  opacity: 1;
+  color: var(--ink2);
 }
 
 /* 治理 without its cost: what is missing, readable on the blue. */
 :root[data-ui="r6"] .sel-info .b .choice-short {
   color: #ffe0d6;
+}
+
+/* 進駐's squares (R13-01 B, R14-05, R14-06): 18 a side on the line with their count; those on their way
+   outlined in gold. */
+:root[data-ui="r6"] .sel-info .seat {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+
+:root[data-ui="r6"] .sel-info .seat.coming {
+  background: rgba(231, 195, 90, 0.18);
+  border: 1.5px dashed #e7c35a;
+  color: #f2d78a;
+}
+
+:root[data-ui="r6"] .sel-info .seat-row {
+  gap: 4px 6px;
+  margin-right: -46px;
+}
+
+:root[data-ui="r6"] .sel-info .seat-row .garrison-count {
+  font-weight: 400;
+}
+
+:root[data-ui="r6"] .sel-info .seat-row .garrison-count b {
+  font-size: 13px;
+}
+
+:root[data-ui="r6"] .sel-info .outpost-coming {
+  margin-left: 6px;
+  font-size: 12px;
+}
+
+/* 哨所 (R14-05): 「5 名出去打」 in a gold dashed box; what the mode on means; whose, with 召回, last. */
+:root[data-ui="r6"] .sel-info .outpost-out {
+  padding: 1px 6px;
+  border: 1.5px dashed #e7c35a;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+:root[data-ui="r6"] .sel-info .outpost-note {
+  margin: 4px -46px 0 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink2);
+}
+
+:root[data-ui="r6"] .sel-info .outpost-groups {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 14px;
+  margin-top: 4px;
+}
+
+/* A town's 留守 (R14-06): − N + 名, then 歸隊 and 全部帶走 on the same line. */
+:root[data-ui="r6"] .sel-info .sel-keep {
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+:root[data-ui="r6"] .sel-info .sel-keep .keep-groups {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+
+:root[data-ui="r6"] .sel-info .keep-group {
+  gap: 5px;
+}
+
+:root[data-ui="r6"] .sel-info b.seat-label {
+  color: var(--rim-hi, #f0cf8a);
 }
 
 /* 軍團畫面 (R6-17): the name, 現有 N, then − N + at the end of the line. */

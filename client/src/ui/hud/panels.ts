@@ -121,7 +121,7 @@ export interface PanelHost {
   hidingComing(building: number): number;
   callToHide(building: number, type: number): void;
   /** 進駐's squares (R13-01 B 7a, 7b): who is inside a building of ours by kind, on their way, by group. */
-  buildingSeats(building: number): { kinds: number[]; coming: number; groups: { group: number | null; ids: number[] }[] };
+  buildingSeats(building: number): { kinds: number[]; coming: number; out: number; groups: { group: number | null; ids: number[] }[] };
   /** 召回 on a building's panel: these come out and walk back to their group. */
   buildingRecall(building: number, ids: readonly number[]): void;
   /** A town of ours (7c): its 留守 on the walls and inside, by kind. */
@@ -178,6 +178,16 @@ export const ORDER_TEXT = {
   retreat: "移動：點地面或小地圖走過去，路上不還手；點主城回家",
   hold: "堅守：停在原地，敵人進到射程就打，不追出去",
 } as const;
+/**
+ * 正式介面's words for the orders (R14, ceo 2026-11-06: 「正式介面照 R14 的稿換字…原型不改」), the same
+ * meaning as D-094's; and 進駐 under several (R13-01 B).
+ */
+export const FORMAL_ORDER_TEXT = {
+  advance: "攻擊：點地面或敵人：邊走邊打，或集中打它",
+  retreat: "移動：點地面：只管走，到了再打靠近的敵人",
+  hold: ORDER_TEXT.hold,
+  enter: "進駐：再點自己的城、主城、箭樓或哨所：那棟決定誰進去",
+} as const;
 /** A mage's crystal cannon (D-095: only automatic; 「把消耗放進說明裡面」), its numbers the simulation's own. */
 export const CANNON_TEXT = `自動晶砲：每發 ${CANNON.crystal} 魔晶、冷卻 ${CANNON.cooldownTicks / TICKS_PER_SECOND} 秒，炸到 ${CANNON.autocastMinTargets} 名以上才放，移動中不放`;
 /** Under a town plundered this game (round 7, D-061): only 治理 is offered. */
@@ -233,15 +243,21 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, parent: HTMLElement, 
 /** 進駐's squares (R13-01 B): one a place, the kind of who is in it, the empty ones hatched. */
 const SEAT_CHAR: Record<number, string> = { [UnitType.Spearman]: "槍", [UnitType.Ranged]: "遠", [UnitType.Mage]: "法", [UnitType.Cavalry]: "騎", [UnitType.Siege]: "砲", [UnitType.Farmer]: "民" };
 
-/** The squares in `e`: `kinds` in their order, then empty ones up to `cap`; redrawn only when they change. */
-function seats(e: HTMLElement, kinds: readonly number[], cap: number): void {
-  const key = `${kinds.join(",")}/${cap}`;
+/**
+ * The squares in `e`: `kinds` in their order, then `coming` of kind `comingKind` on their way
+ * (正式介面, R14-05: outlined in gold), then empty ones up to `cap`; redrawn only when they change.
+ */
+function seats(e: HTMLElement, kinds: readonly number[], cap: number, coming = 0, comingKind: number = UnitType.Spearman): void {
+  const key = `${kinds.join(",")}/${cap}/${coming}`;
   if (e.dataset.key === key) return;
   e.dataset.key = key;
   e.replaceChildren();
+  const near = Math.min(coming, Math.max(0, cap - kinds.length));
   for (let k = 0; k < Math.max(cap, kinds.length); k++) {
     const kind = kinds[k];
-    el("span", e, kind === undefined ? "seat empty" : "seat", kind === undefined ? "" : (SEAT_CHAR[kind] ?? "兵"));
+    if (kind !== undefined) el("span", e, "seat", SEAT_CHAR[kind] ?? "兵");
+    else if (k - kinds.length < near) el("span", e, "seat coming", SEAT_CHAR[comingKind] ?? "兵");
+    else el("span", e, "seat empty");
   }
 }
 
@@ -268,7 +284,7 @@ function bar(parent: HTMLElement, cls: string): (frac: number) => void {
 type Updater = () => void;
 
 /** 正式介面 (R6-14 to R6-16): the number after these words in bold (生命 100/100 and 剩下 80, their 100 and 80). */
-const BOLD_AFTER = /((?:生命|防護罩|搬運|剩下|附近有|建造中|躲了|駐守) )(\d+(?::\d\d)?)/g;
+const BOLD_AFTER = /((?:生命|防護罩|搬運|剩下|附近有|建造中|躲了|駐守|主堡|城裡有) )(\d+(?::\d\d)?)/g;
 
 /** A line's text, its numbers in bold under 正式介面; rebuilt only when the text changes. */
 function rich(e: HTMLElement, text: string): void {
@@ -552,8 +568,23 @@ export class SelectionInfo {
       const autocast = mine && (u[o + U.flags] & UnitFlag.Autocast) !== 0 ? "　自動施放開" : "";
       status.textContent = `${ACTION_NAME[u[o + U.action]] ?? ""}${autocast}`;
     });
-    this.counterNote(view, [view.unitType(id)]);
-    this.orderNote(view, [id]);
+    // 正式介面 (R14-04): 剋怕 among the lines under one's own; else on a line of its own, before them.
+    if (this.formal) {
+      if (!this.orderNote(view, [id], null, [type])) this.counterNote(view, [type]);
+    } else {
+      this.counterNote(view, [type]);
+      this.orderNote(view, [id]);
+    }
+  }
+
+  /** A gate's town and whose (正式介面, R14-01): 「中立小鎮」「我方大城」; nothing when not known. */
+  private gateWord(view: GameView, b: Int32Array, o: number): string {
+    const town = view.gateTown(b, o);
+    if (town === null) return "";
+    const row = view.townRow(town.id);
+    const owner = row < 0 ? NO_OWNER : (view.curr?.snap.towns[row + T.owner] ?? NO_OWNER);
+    const who = owner === view.me ? "我方" : owner === NEUTRAL || owner === NO_OWNER ? "中立" : "敵方";
+    return `${who}${town.size === TownSize.Large ? "大城" : "小鎮"}`;
   }
 
   /** 正式介面 (R6-14 INV-51, R6-15 INV-69): 「敵方」 before the name of another player's unit or building. */
@@ -573,21 +604,24 @@ export class SelectionInfo {
    * Small lines under an own selection with soldiers: which of 進攻／撤退／堅守 they are in,
    * what each of the three does (D-050), then what their formation means (D-027).
    */
-  private orderNote(view: GameView, ids: number[], nowIn: HTMLElement | null = null): void {
+  private orderNote(view: GameView, ids: number[], nowIn: HTMLElement | null = null, counterOf: readonly number[] = []): boolean {
     const u = view.curr?.snap.units;
     const mine = (id: number): boolean => {
       const o = view.unitRow(id);
       return o >= 0 && u !== undefined && u[o + U.owner] === view.me;
     };
-    if (!ids.every(mine) || orderCounts(view, ids) === null) return;
+    if (!ids.every(mine) || orderCounts(view, ids) === null) return false;
     const note = el("p", this.el, "sel-note");
     // 正式介面 (R6-14): 「目前：」 at the end of the chips' line (nowIn) for several; none for one
     // (his state is in the title line, his order lit in the command area).
     const now = !this.formal ? el("span", note, "order-now") : nowIn === null ? null : el("span", nowIn, "order-now now");
     const line = (cls: string, text: string) => meaning(el("span", note, cls), text);
-    line("order-meaning", ORDER_TEXT.advance);
-    line("order-meaning", ORDER_TEXT.retreat);
-    line("order-meaning", ORDER_TEXT.hold);
+    const words = this.formal ? FORMAL_ORDER_TEXT : ORDER_TEXT;
+    line("order-meaning", words.advance);
+    line("order-meaning", words.retreat);
+    line("order-meaning", words.hold);
+    // 進駐 (R14-01): what a second tap does, for several at once.
+    if (this.formal && ids.length > 1 && enterOn(view.rules)) line("order-meaning enter-meaning", FORMAL_ORDER_TEXT.enter);
     // D-095 (the user: 「把消耗放進說明裡面」): the mages' cannon, always on its own.
     if (ids.some((id) => view.unitType(id) === UnitType.Mage)) line("order-meaning cannon-meaning", CANNON_TEXT);
     // D-115: 攻城砲's two reaches, the two rings round it.
@@ -596,6 +630,9 @@ export class SelectionInfo {
     if (reach !== null) line("order-meaning siege-reach", reach);
     const formation = el("span", note, "formation-meaning");
     const formationMore = el("span", note, "formation-more");
+    // 正式介面 (R14-04): 剋怕 for one kind of soldier, the last line.
+    const counters = counterOf.filter((t) => isSoldier(t)).map((t) => counterShort(view.rules, t)).filter((t) => t !== "");
+    if (this.formal && counters.length === 1) line("order-meaning counter-meaning", `剋怕：${counters[0]}`);
     this.updaters.push(() => {
       const counts = orderCounts(view, ids);
       const text = counts === null ? "" : orderNowText(counts);
@@ -606,6 +643,7 @@ export class SelectionInfo {
       // An empty line takes no height (the spans are blocks).
       if (formationMore.textContent !== (lines[1] ?? "")) formationMore.textContent = lines[1] ?? "";
     });
+    return true;
   }
 
   private manyUnits(view: GameView, ids: number[]): void {
@@ -624,8 +662,13 @@ export class SelectionInfo {
     }
     // One type only: its 剋／怕 (a mixed selection has the chips: a tap on one shows its line; the
     // panel would not fit a line for each at 380 pt).
-    if (counts.size === 1) this.counterNote(view, [...counts.keys()]);
-    this.orderNote(view, ids, chips);
+    const one = counts.size === 1 ? [...counts.keys()] : [];
+    if (this.formal) {
+      if (!this.orderNote(view, ids, chips, one)) this.counterNote(view, one);
+    } else {
+      this.counterNote(view, one);
+      this.orderNote(view, ids, chips);
+    }
   }
 
   private building(view: GameView, id: number): void {
@@ -749,7 +792,12 @@ export class SelectionInfo {
       }
       const remembered = (b[o + B.flags] & BuildingFlag.Remembered) !== 0 ? "（上次看到的樣子）" : "";
       const locked = (b[o + B.flags] & BuildingFlag.RepairLocked) !== 0 ? "剛被攻擊，暫時不能修理" : "";
-      status.textContent = `${own ? locked : remembered}${inside}${shoots}`;
+      // 正式介面: a gate says whose town it is in (R14-01: 「城門 中立小鎮」); our outpost, 攻擊中 while some are out (R14-05).
+      const gate = this.formal && type === BuildingType.Gate && locked === "" ? this.gateWord(view, b, o) : "";
+      const sortie = this.formal && own && type === BuildingType.Outpost && this.host.buildingSeats(id).out > 0 ? "攻擊中" : "";
+      const first = [sortie, own ? locked : remembered, gate].filter((t) => t !== "").join("　");
+      const words = `${first}${inside}${shoots}`;
+      if (status.textContent !== words) status.textContent = words;
       // 自動訓練 by the screen (D-098): why it trains or not, on a line of its own.
       if (autoLine !== null) {
         const line = type === BuildingType.MainCity ? this.host.villagerLine() : this.host.trainingLine(id);
@@ -766,8 +814,10 @@ export class SelectionInfo {
     const top = el("div", this.el, "sel-garrison seat-row");
     const places = el("span", top, "seats");
     const count = el("span", top, "garrison-count outpost-count");
+    // 正式介面 (R14-05): those out fighting in a dashed box after the count; whose they are on the last line.
+    const out = this.formal ? el("span", top, "outpost-out") : null;
     // Whose they are (ceo 2026-10-26): 「編隊 1：2 名［召回］」; those in no group leave with 全部離開.
-    const whose = el("span", top, "keep-groups");
+    const whose = this.formal ? el("div", this.el, "keep-groups outpost-groups") : el("span", top, "keep-groups");
     const row = el("div", this.el, "sel-garrison");
     const call = button(row, `＋${UNIT_NAME[POST_TYPE] ?? "槍兵"}`, "", () => this.host.callToHide(id, POST_TYPE), "chip secondary");
     call.setAttribute("aria-label", "叫 1 名槍兵來駐守");
@@ -776,6 +826,7 @@ export class SelectionInfo {
     const attack = button(row, "攻擊", "", () => this.host.command({ c: "outpost_mode", building: id, hold: false }), `chip ${ORDER_TONE.advance}${this.formal ? " red" : ""}`);
     const hold = button(row, "堅守", "", () => this.host.command({ c: "outpost_mode", building: id, hold: true }), this.formal ? "chip gold" : "chip");
     const note = el("p", this.el, "garrison-count outpost-note");
+    if (this.formal) this.el.appendChild(whose);
     whose.setAttribute("role", "group");
     whose.setAttribute("aria-label", "駐守的編隊");
     return () => {
@@ -794,11 +845,25 @@ export class SelectionInfo {
       const s = this.host.outpostState(id);
       if (s === null) return;
       // 3 × 3 (D-119): n/9 and its squares, and those on their way.
-      const line = s.inside === null ? `駐守 ${s.posted} 名槍兵（最多 ${s.slots} 名）` : `${s.inside}/${s.slots}${s.posted > s.inside ? `，${s.posted - s.inside} 名正過來` : ""}`;
-      rich(count, line);
+      const at = s.inside !== null && this.formal ? this.host.buildingSeats(id) : null;
+      if (at !== null && out !== null && s.inside !== null) {
+        // 正式介面 (R14-05): 「5/9」 in bold, 「2 名正過來」 after it; 「5 名出去打」 in its box.
+        const coming = at.coming > 0 ? `${at.coming} 名正過來` : "";
+        const key = `${s.inside}/${s.slots}/${coming}`;
+        if (count.dataset.text !== key) {
+          count.dataset.text = key;
+          count.replaceChildren(el("b", count, "", `${s.inside}/${s.slots}`), ...(coming === "" ? [] : [el("span", count, "outpost-coming", coming)]));
+        }
+        const outText = at.out > 0 ? `${at.out} 名出去打` : "";
+        if (out.textContent !== outText) out.textContent = outText;
+        out.hidden = outText === "";
+      } else {
+        const line = s.inside === null ? `駐守 ${s.posted} 名槍兵（最多 ${s.slots} 名）` : `${s.inside}/${s.slots}${s.posted > s.inside ? `，${s.posted - s.inside} 名正過來` : ""}`;
+        rich(count, line);
+      }
       if (s.inside !== null) count.setAttribute("aria-label", `躲了 ${s.inside} 名槍兵（最多 ${s.slots} 名）`);
       places.hidden = s.inside === null;
-      if (s.inside !== null) seats(places, this.host.buildingSeats(id).kinds, s.slots);
+      if (s.inside !== null) seats(places, (at ?? this.host.buildingSeats(id)).kinds, s.slots, at?.coming ?? 0, POST_TYPE);
       call.disabled = s.posted >= s.slots;
       off.disabled = s.posted === 0;
       attack.classList.toggle("active", !s.hold);
@@ -982,10 +1047,11 @@ export class SelectionInfo {
       const plus = button(row, "+", "", () => this.host.garrisonMore(id), "secondary step");
       plus.setAttribute("aria-label", "多留守 1 名");
       el("span", row, "", "名");
-      el("p", this.el, "sel-note", "留守的兵守在城裡，敵人來了會反擊、不追出城，不跟全軍走");
+      const explain = el("p", this.el, "sel-note", "留守的兵守在城裡，敵人來了會反擊、不追出城，不跟全軍走");
       // Whose they are (the user 2026-10-26): 「編隊 1：5 名［歸隊］」, 「沒編隊：2 名［解除留守］」 (back to
-      // 全軍), each leaving the town the least it needs; 全部帶走 takes everyone.
-      const whose = el("div", this.el, "sel-chips keep-groups");
+      // 全軍), each leaving the town the least it needs; 全部帶走 takes everyone. 正式介面 (R14-06): on the
+      // 留守 line, the group's name only when there are several, and no line on what 留守 means then.
+      const whose = this.formal ? el("span", row, "keep-groups") : el("div", this.el, "sel-chips keep-groups");
       whose.setAttribute("role", "group");
       whose.setAttribute("aria-label", "留守的編隊");
       this.updaters.push(() => {
@@ -997,9 +1063,10 @@ export class SelectionInfo {
         whose.dataset.key = key;
         whose.replaceChildren();
         whose.hidden = groups.length === 0;
+        if (this.formal) explain.hidden = groups.length > 0;
         for (const g of groups) {
           const entry = el("span", whose, "keep-group");
-          el("span", entry, "keep-group-name", g.group === null ? `沒編隊：${g.n} 名` : `編隊 ${g.group + 1}：${g.n} 名`);
+          if (!this.formal || groups.length > 1) el("span", entry, "keep-group-name", g.group === null ? `沒編隊：${g.n} 名` : `編隊 ${g.group + 1}：${g.n} 名`);
           const back = button(entry, g.group === null ? "解除留守" : "歸隊", "", () => this.host.townOut(id, g.group), "chip secondary");
           back.setAttribute("aria-label", g.group === null ? "沒編隊的留守解除留守" : `編隊 ${g.group + 1} 的留守歸隊`);
         }
@@ -1039,7 +1106,14 @@ export class SelectionInfo {
       const line = parts.join("　");
       if (text.dataset.line !== line) {
         text.dataset.line = line;
-        text.replaceChildren(...parts.flatMap((p, i) => [...(i > 0 ? ["　"] : []), el("span", text, this.formal && tone[i] !== undefined ? `nowrap ${tone[i]}` : "nowrap", p)]));
+        text.replaceChildren(
+          ...parts.flatMap((p, i) => {
+            const part = el("span", text, this.formal && tone[i] !== undefined ? `nowrap ${tone[i]}` : "nowrap");
+            // 正式介面 (R14-06): 主堡 1000/1000, 城裡有 12 名兵, their numbers in bold.
+            rich(part, p);
+            return [...(i > 0 ? ["　"] : []), part];
+          }),
+        );
       }
     });
   }
