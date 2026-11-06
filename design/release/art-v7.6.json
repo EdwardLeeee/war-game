@@ -57,6 +57,14 @@
   "artifact": "production-effects-atlas"
  },
  "buildings": {
+  "run": 42088643559,
+  "artifact": "production-buildings"
+ },
+ "castle_src": {
+  "run": 42226591262,
+  "artifact": "production-buildings"
+ },
+ "buildings_json_src": {
   "run": 42226591262,
   "artifact": "production-buildings"
  },

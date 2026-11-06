@@ -158,6 +158,26 @@ def atlas_files(src, folder, scale):
     return {n: (read_png(d / n) if n.endswith(".png") else (d / n).read_bytes()) for n in names}
 
 
+POINTS = ("shoot_at_m", "stand_m")
+
+
+def with_points(fs, other):
+    """art-v7.6 (spec "buildings_json_src"): the buildings/ files `fs`, each buildings_<c>.json taken from `other` (the
+    run that turned the buildings' points to the client's projection, design/b1/common/atlas_b1.turn_point), the pages
+    kept: a CI run packs some pixels a last bit off another's, and the release keeps those of the run before. The two
+    manifests must agree in everything but the buildings' points, so that the one taken names exactly the pages kept."""
+    out = dict(fs)
+    for n in sorted(fs):
+        if not (n.startswith("buildings_") and n.endswith(".json")):
+            continue
+        a, b = json.loads(fs[n]), json.loads(other[n])
+        strip = lambda m: dict(m, buildings={k: {f: v for f, v in e.items() if f not in POINTS} for k, e in m["buildings"].items()})
+        if strip(a) != strip(b):
+            die(f"buildings_json_src: {n} differs from the buildings run's in more than the points {POINTS}")
+        out[n] = other[n]
+    return out
+
+
 def ground_files(src, scale):
     """{name: bytes} of ground/ at one scale (design/r8/common/ground_r8.py export): ground.json, its layers, memory.json."""
     found = sorted(p.parent for p in src.rglob(f"atlas_{scale}/ground/ground.json"))
@@ -292,6 +312,10 @@ def main():
         sources["buildings"] = spec["buildings"]
     if "terrain_src" in spec:             # art-v7.3: terrain/ alone from another run, the rest as the buildings' run
         sources["terrain"] = spec["terrain_src"]
+    if "castle_src" in spec:              # art-v7.6: castle/ alone from another run
+        sources["castle"] = spec["castle_src"]
+    if "buildings_json_src" in spec:      # art-v7.6: the buildings' manifests (their points) from another run
+        sources["buildings_json"] = spec["buildings_json_src"]
     base = {"format": "war-game art release 1", "tag": a.tag, "commit": a.commit, "sources": sources,
             **({"view": spec["view"]} if spec.get("view") else {})}     # D-118: "diamond" from art-v7 on
     notes = [f"{a.tag}：{spec.get('note', '')}", "", f"commit {a.commit or '(local)'}", ""]
@@ -301,6 +325,9 @@ def main():
     unit_src = {u: fetch(s["run"], s["artifact"], dl) for u, s in sources["units"].items()}
     bld_src = fetch(spec["buildings"]["run"], spec["buildings"]["artifact"], dl) if "buildings" in spec else None
     ter_src = fetch(spec["terrain_src"]["run"], spec["terrain_src"]["artifact"], dl) if "terrain_src" in spec else bld_src
+    cas_src = fetch(spec["castle_src"]["run"], spec["castle_src"]["artifact"], dl) if "castle_src" in spec else bld_src
+    bjs_src = (fetch(spec["buildings_json_src"]["run"], spec["buildings_json_src"]["artifact"], dl)
+               if "buildings_json_src" in spec else None)
     for scale in SCALES:
         files, rgba, astc_b = {}, 0, 0
         for u, src in unit_src.items():
@@ -312,7 +339,9 @@ def main():
         extra = ""
         if bld_src:
             for folder in ("buildings", "nodes") + tuple(k for k in ("castle", "terrain") if spec.get(k)):
-                fs = atlas_files(ter_src if folder == "terrain" else bld_src, folder, scale)
+                fs = atlas_files({"terrain": ter_src, "castle": cas_src}.get(folder, bld_src), folder, scale)
+                if folder == "buildings" and bjs_src:
+                    fs = with_points(fs, atlas_files(bjs_src, folder, scale))
                 files.update({f"{folder}/{n}": b for n, b in fs.items()})
                 m = json.loads(fs["memory.json"])
                 rgba += m["total_rgba8_bytes"]

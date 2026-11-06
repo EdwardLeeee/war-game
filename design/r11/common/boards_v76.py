@@ -80,7 +80,7 @@ def b03(c):
                   units=on_wall(c, small, "spear")))]
 
 
-B04 = [("ArrowTower", (34, 46)), ("MainCity", (38.5, 41.5)), ("Keep", (43, 37)), ("Outpost", (47, 33))]
+B04 = [("ArrowTower", (35, 45.5)), ("MainCity", (38.5, 42)), ("Keep", (42, 38.5)), ("Outpost", (45.5, 35))]
 
 
 def b04(c):
@@ -96,9 +96,9 @@ def b05(_):
 
 
 def b06(c):
-    return [("小鎮的擺設：白框是每件擺設佔的地", dict(zoom=0.86, focus=[40.5, 40.5, 407, 195], culture=c,
-                                         towns=[town("small_d100")])),
-            ("大城的擺設", dict(zoom=0.7, focus=[40.5, 40.5, 407, 195], culture=c, towns=[town("large_d100")]))]
+    return [("小鎮北角的擺設（小屋兩種、棚子、柴堆、推車）；白框是每件擺設佔的地",
+             dict(zoom=1.55, focus=[36.2, 36.2, 407, 205], culture=c, towns=[town("small_d100")])),
+            ("大城北角的擺設", dict(zoom=1.35, focus=[34.6, 34.6, 407, 205], culture=c, towns=[town("large_d100")]))]
 
 
 BOARDS = {
@@ -136,7 +136,7 @@ def marks(art, sc, im):
         info = art.buildings(b.get("culture", sc.get("culture", "E"))).j["buildings"][b["b"]]
         for mx, my, mz in info.get("shoot_at_m", []):
             x, y = cam.pt(b["at"][0] + mx / 2, b["at"][1] + my / 2, mz * S.PT_PER_M * S.UP_PER_M)
-            r = 8
+            r = 11
             d.ellipse((x * K - r, y * K - r, x * K + r, y * K + r), fill=(235, 40, 40), outline=(255, 255, 255), width=3)
     if sc.get("decor_outline"):
         ca = art.castle(sc.get("culture", "E"))
@@ -145,7 +145,7 @@ def marks(art, sc, im):
                 w, h = CASTLE.DECOR_SIZE[dd["piece"]]
                 ax, ay = T[0] + dd["at"][0], T[1] + dd["at"][1]
                 pts = [cam.pt(ax + sx * w / 4, ay + sy * h / 4) for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
-                d.line([(x * K, y * K) for x, y in pts + pts[:1]], fill=(255, 255, 255), width=3)
+                d.line([(x * K, y * K) for x, y in pts + pts[:1]], fill=(255, 236, 120), width=4)
 
 
 def panel(art, name, sc, out):
