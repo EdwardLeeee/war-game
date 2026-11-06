@@ -41,8 +41,13 @@ for (const [ui, name] of [["", "原型"], ["&ui=r6", "正式介面"]] as const) 
     await expect.poll(async () => (await page.evaluate((t) => window.__proto?.game?.garrison(t) ?? [], OUR_TOWN.id)).length, { timeout: 30_000 }).toBeGreaterThan(0);
     const city = (await buildings(page)).find((b) => b.type === 0 && b.owner === me);
     if (city === undefined) throw new Error("no main city");
-    await page.evaluate(([u, b]) => window.__proto?.game?.send({ c: "garrison", u, building: b }), [own.filter((u) => u.type === 2).map((u) => u.id).slice(0, 3), city.id] as const);
-    await expect.poll(async () => (await buildings(page)).find((b) => b.id === city.id)?.soldiers ?? 0, { timeout: 60_000 }).toBeGreaterThan(0);
+    // Three of them hide in the main city. They stand in the town now, some 20 cells from it: a walk
+    // of 400 ticks, a minute and more on a busy CI machine (main's run 42131164969). So put them
+    // at its door first (the fake world's set-up); they slip in at the next tick, however fast it runs.
+    const ranged = own.filter((u) => u.type === 2).map((u) => u.id).slice(0, 3);
+    await page.evaluate(([u, b]) => window.__proto?.game?.send({ c: "garrison", u, building: b }), [ranged, city.id] as const);
+    await page.evaluate(([u, cells]) => window.__proto?.game?.place(u, cells), [ranged, [0, 1, 2].map((i) => ({ x: city.cx + 1 + i, y: city.cy + city.size }))] as const);
+    await expect.poll(async () => (await buildings(page)).find((b) => b.id === city.id)?.soldiers ?? 0, { timeout: 30_000 }).toBeGreaterThan(0);
     // 軍團畫面, open.
     await page.evaluate(() => window.__proto?.game?.select([]));
     await page.locator(GROUP_1).tap();
