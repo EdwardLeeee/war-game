@@ -3,7 +3,7 @@
 // of two TilingSprites. The same picture: the same frame (the game paused, the battlefield's clock held) drawn
 // both ways at the map's corner, compared pixel by pixel: at most 0.05% off by more than 2, none by more than 8
 // (b2; client measured at most 4, the blend rounded once instead of twice); at two moments of the cross-fade;
-// with the test page's stand-ins and with art-lab.lock.json's clouds.
+// with the test page's stand-ins and with art.lock.json's clouds.
 
 import { expect, type Page, test } from "@playwright/test";
 import { watchErrors } from "./helpers.ts";
@@ -42,7 +42,7 @@ async function compare(page: Page, a: Buffer, b: Buffer): Promise<{ off: number;
 
 for (const [name, query] of [
   ["測試圖", "scenario=e2e&ai=0&tps=60&art=test&view=diamond&edge=1"],
-  ["art-lab 的雲（art-lab.lock.json）", "watch=1&ai=0&art=x2&artlab=1"],
+  ["美術的雲（art.lock.json）", "watch=1&ai=0&art=x2"],
 ] as const) {
   test(`雲海一層一次畫完（${name}）：地圖下角同一格，兩張疊和一次畫比一比，看不出差別；淡入淡出的兩個時刻`, async ({ page }) => {
     test.setTimeout(180_000);
