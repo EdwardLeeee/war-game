@@ -8,6 +8,7 @@ import { hex8 } from "../src/core/fixed.ts";
 import { BUILDINGS, DODGE, GARRISON, GARRISON_TYPES, OUTPOST, OUTPOST_HIDE, rules, TIMELINE, TOWNS } from "../src/core/rules.ts";
 import { HitCause, UNIT_KINDS } from "../src/core/world.ts";
 import { BuildingType, CELL_SHIFT, NEUTRAL, NO_OWNER, Resource, TownState, UnitType } from "../src/protocol.ts";
+import { Game } from "../src/core/game.ts";
 import { Runner } from "../src/runner.ts";
 import { cmd, emptyGame, put, run, slotOf, switchedOff } from "./helpers.ts";
 
@@ -66,6 +67,39 @@ test("near: soldiers by a town and by a main city, both sides, farmers not, and 
   assert.deepEqual(rows.get(0), [1, 1], "8 cells out counts, 9 does not, the farmer does not");
   assert.ok(rows.get(places + 0) !== undefined && rows.get(places + 0)![1] >= 1, "by player 0's main city");
   assert.equal(rows.get(places + 1), undefined, "nobody by player 1's");
+});
+
+test("places (R13, the post-game statistics' names): every town by id with its size and centre, both main cities; near[]'s main city rows", () => {
+  for (const g of [emptyGame(), new Game({ seed: 3, scenario: "standard", map: "random" })]) {
+    const w = g.w;
+    const places = g.timeline.result(w).places!;
+    assert.deepEqual(
+      places.towns,
+      w.map.towns.map((t) => ({ size: t.size, cellX: t.cellX, cellY: t.cellY })),
+      `${w.map.mode}`,
+    );
+    assert.equal(places.towns.length, w.townState.length, "as many as the towns");
+    places.towns.forEach((t, i) => {
+      assert.equal(t.cellX, w.townX[i]);
+      assert.equal(t.cellY, w.townY[i]);
+    });
+    // A main city's 4 x 4 cells are round its centre.
+    const b = w.buildings.col;
+    for (let p = 0; p < 2; p++) {
+      const c = places.cities[p];
+      const s = Array.from({ length: w.buildings.count }, (_, k) => k).find((k) => b.type[k] === BuildingType.MainCity && b.owner[k] === p)!;
+      const size = BUILDINGS[BuildingType.MainCity].size;
+      assert.ok(c.cellX >= b.cellX[s] && c.cellX < b.cellX[s] + size && c.cellY >= b.cellY[s] && c.cellY < b.cellY[s] + size, `${w.map.mode} player ${p}'s main city`);
+    }
+  }
+  // near[]: from towns.length on, the main cities in player order.
+  const g = emptyGame();
+  const w = g.w;
+  const home = g.timeline.result(w).places!.cities[1];
+  put(g, 0, UnitType.Spearman, home.cellX, home.cellY - 2 - TIMELINE.nearCity);
+  run(g, 1);
+  const t = g.timeline.result(w);
+  assert.deepEqual(t.samples.at(-1)!.near.map((r) => r[0]), [t.places!.towns.length + 1]);
 });
 
 test("towns: a row for each change of state or holder, none at the start; a plunder pays into earned", () => {
