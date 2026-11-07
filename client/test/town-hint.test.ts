@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DIAMOND, OBLIQUE, TOP } from "../src/camera/projection.ts";
-import { hintTown, nearestTown, screenDirection, townHintLines } from "../src/game/town-hint.ts";
+import { hintTown, nearestTown, screenDirection, TOWN_GIVES_TEXT, townHintLines, townHintMenu, townHintTitle } from "../src/game/town-hint.ts";
 import { NEUTRAL, TownSize, TownState } from "../src/sim.ts";
 
 const ME = 0;
@@ -112,4 +112,19 @@ test("開局提示：三行字寫魔晶從哪裡來、到了要做什麼、最�
 test("開局提示：城鎮只能搶一次開著時（第七輪，D-061），第二行加上每座城一局只能搶一次；關著時不提", () => {
   assert.equal(townHintLines(town(0, 29, 29), home, false, true)[1], "搶：馬上拿到一筆糧、金和魔晶，每座城一局只能搶一次。治理：修好之後，每分鐘都有魔晶。");
   assert.doesNotMatch(townHintLines(town(0, 29, 29), home)[1], /只能搶一次/);
+});
+
+test("沒有魔晶時（D-135，ceo 2026-11-08）開局提示改寫城鎮給什麼：標題「先拿附近的城鎮」、選單「城鎮怎麼拿」；位置那行照舊，整張沒有「魔晶」", () => {
+  const town = { id: 3, size: TownSize.Small, cellX: 30, cellY: 70 };
+  const home = { cellX: 10, cellY: 80 };
+  const lines = townHintLines(town, home, false, true, DIAMOND, false);
+  assert.deepEqual(lines, [TOWN_GIVES_TEXT, townHintLines(town, home, false, true, DIAMOND)[2]]);
+  assert.equal(lines[0], "城鎮給糧和金：帶兵打倒城裡的民兵，就能選搶或治理。治理還會加人口上限。");
+  assert.match(lines[1], /^離你的主城最近的小鎮在主城的.+，約 \d+ 格。小地圖上閃的圓圈就是它。$/);
+  assert.equal(townHintTitle(false), "先拿附近的城鎮");
+  assert.equal(townHintMenu(false), "城鎮怎麼拿");
+  assert.ok([...lines, townHintTitle(false), townHintMenu(false)].every((l) => !l.includes("魔晶")));
+  // With crystal (an older simulation): as before.
+  assert.equal(townHintTitle(true), "魔晶從城鎮來");
+  assert.match(townHintLines(town, home)[0], /魔晶/);
 });

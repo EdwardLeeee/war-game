@@ -37,6 +37,8 @@ import { dress, icon } from "../icons.ts";
 import { ORDER_TONE } from "../overlays.ts";
 import { adjustRatio, type Ratio } from "./economy-ratio.ts";
 import { loadTownHintOff, saveTownHintOff } from "../../hint-pref.ts";
+import { hasCrystal } from "../../game/features.ts";
+import { townHintMenu, townHintTitle } from "../../game/town-hint.ts";
 import { costText } from "../../game/govern-wait.ts";
 import { Minimap } from "./minimap.ts";
 import { armyText, buildingName, clock, GAME_OVER_REASON, UNIT_NAME } from "./names.ts";
@@ -450,7 +452,7 @@ export class Hud {
         else if (!this.game.measuring) this.openTownChoice(ev.town);
         break;
       case "town_plundered":
-        this.game.toast(ev.by === me ? `搶完了：糧 ${ev.food}、金 ${ev.gold}、魔晶 ${ev.crystal}` : "敵方搶完了一座城鎮");
+        this.game.toast(ev.by === me ? `搶完了：糧 ${ev.food}、金 ${ev.gold}${this.crystal ? `、魔晶 ${ev.crystal}` : ""}` : "敵方搶完了一座城鎮");
         break;
       case "town_repaired":
         this.game.toast(ev.by === me ? "城鎮修繕完成，開始產出" : "敵方的城鎮修繕完成");
@@ -462,7 +464,7 @@ export class Hud {
         this.game.toast(`${buildingName(ev.type, this.game.view?.rules) ?? "建築"}蓋好了`);
         break;
       case "mage_killed":
-        this.game.toast(ev.owner === me ? "我方法師陣亡" : `擊殺敵方法師，得到魔晶 ${ev.crystal}`);
+        this.game.toast(ev.owner === me ? "我方法師陣亡" : this.crystal ? `擊殺敵方法師，得到魔晶 ${ev.crystal}` : "擊殺敵方法師");
         break;
       // 市場 (D-101): only ours come.
       case "traded":
@@ -629,12 +631,17 @@ export class Hud {
 
   private reserve: { food: number; wood: number; gold: number; crystal: number } | null = null;
 
+  /** Whether this game has crystal (D-135: without it, the screen shows it nowhere). */
+  private get crystal(): boolean {
+    return hasCrystal(this.game.view?.rules);
+  }
+
   private drawReserve(): void {
     const r = this.reserve;
     if (r === null) return;
     const card = this.openDialog("預留", "economy reserve");
     // One line, so that four rows fit a phone held sideways without scrolling.
-    el("p", card, "small", "自動訓練只用超過這些的資源；預設留的夠蓋法術營、放 3 發晶砲。");
+    el("p", card, "small", this.crystal ? "自動訓練只用超過這些的資源；預設留的夠蓋法術營、放 3 發晶砲。" : "自動訓練只用超過這些的資源；預設留的夠蓋法術營。");
     // 等錢治理 (ceo 2026-10-21): the reserve in effect is raised to the waiting 治理's cost.
     const raised = this.game.raisedReserveText();
     if (raised !== "") el("p", card, "small reserve-raised", `預留暫時提高到 ${raised}（等治理）`);
@@ -645,6 +652,8 @@ export class Hud {
       // 正式介面 (R6-20 INV-121): 魔晶 written out.
       ["crystal", this.formal ? "魔晶" : "晶", 5],
     ];
+    // D-135: no crystal, no row (its reserve stays 0).
+    if (!this.crystal) rows.pop();
     for (const [key, name, step] of rows) {
       const row = el("div", card, "ratio-row");
       el("span", row, "ratio-name", name);
@@ -785,7 +794,7 @@ export class Hud {
    * and no 看那座城鎮.
    */
   openTownHint(lines: string[], town: { id: number; cx: number; cy: number; radius: number } | null, look: () => void, done: () => void): void {
-    const card = this.openDialog("魔晶從城鎮來", "town-hint");
+    const card = this.openDialog(townHintTitle(this.crystal), "town-hint");
     for (const line of lines) el("p", card, "", line);
     this.flash = town === null ? null : { ...town, until: Number.POSITIVE_INFINITY };
     this.dialogGone = () => {
@@ -803,7 +812,7 @@ export class Hud {
       () => {
         saveTownHintOff(!off);
         this.closeDialog();
-        this.game.toast(off ? "之後每一局開局都會提示" : "之後開局不會再提示；選單裡的「魔晶怎麼拿」可以再看");
+        this.game.toast(off ? "之後每一局開局都會提示" : `之後開局不會再提示；選單裡的「${townHintMenu(this.crystal)}」可以再看`);
       },
       "secondary",
     );
@@ -835,7 +844,7 @@ export class Hud {
     const card = this.openDialog("選單", "menu");
     const list = el("div", card, "dialog-buttons column");
     // 開局提示 again (D-044), also after 不再提示.
-    btn(list, "魔晶怎麼拿", () => {
+    btn(list, townHintMenu(this.crystal), () => {
       this.closeDialog();
       this.game.showTownHint();
     }, "secondary");
@@ -977,7 +986,7 @@ export class Hud {
     if (e === null) return;
     const card = this.openDialog("經濟分配", "economy");
     // D-050 (core #105): the ratio now moves the farmers already gathering too, but not those sent by hand.
-    el("p", card, "small", "自動分配開著時，改比例後，正在採糧、木、金的村民會照新比例重新分配；你親手派去採的不會動。晶脈要自己派。");
+    el("p", card, "small", `自動分配開著時，改比例後，正在採糧、木、金的村民會照新比例重新分配；你親手派去採的不會動。${this.crystal ? "晶脈要自己派。" : ""}`);
     const rows: [keyof Ratio, string][] = [
       ["food", "糧"],
       ["wood", "木"],
@@ -1035,7 +1044,7 @@ export class Hud {
     if (!once) {
       const plunder = btn(row, "", () => this.chooseTown(town, TownChoice.Plunder, keep.plunder), "choice-plunder");
       el("b", plunder, "", "搶");
-      el("span", plunder, "", `部隊留下搶 ${sec(rule?.plunderTicks, big ? 25 : 15)} 秒，拿一大筆糧、金、魔晶；城鎮變成廢墟 ${Math.round(sec(rule?.ruinsTicks, 240) / 60)} 分鐘`);
+      el("span", plunder, "", `部隊留下搶 ${sec(rule?.plunderTicks, big ? 25 : 15)} 秒，拿一大筆${this.crystal ? "糧、金、魔晶" : "糧和金"}；城鎮變成廢墟 ${Math.round(sec(rule?.ruinsTicks, 240) / 60)} 分鐘`);
     }
     const govern = btn(row, "", () => this.chooseTown(town, TownChoice.Govern, keep.govern), "choice-govern");
     el("b", govern, "", "治理");
@@ -1152,7 +1161,7 @@ export class Hud {
     const other = me === 0 ? 1 : 0;
     const sum = (a: number[]) => a.reduce((x, y) => x + y, 0);
     const rows: [string, (i: number) => string][] = [
-      ["採集", (i) => `糧 ${p[i].gathered.food}、木 ${p[i].gathered.wood}、金 ${p[i].gathered.gold}、魔晶 ${p[i].gathered.crystal}`],
+      ["採集", (i) => `糧 ${p[i].gathered.food}、木 ${p[i].gathered.wood}、金 ${p[i].gathered.gold}${this.crystal ? `、魔晶 ${p[i].gathered.crystal}` : ""}`],
       ["訓練", (i) => `${sum(p[i].unitsTrained)}`],
       ["損失", (i) => `${sum(p[i].unitsLost)}`],
       ["法師（訓練／陣亡）", (i) => `${p[i].magesTrained}／${p[i].magesLost}`],

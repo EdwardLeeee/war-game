@@ -160,7 +160,7 @@ test("正式介面的選單和設定（R6-20 INV-116、NEW-07）：全體回城�
   await expect(dialog.getByRole("radio", { name: /A 銅木/ })).toHaveClass(/\bis-active\b/);
 });
 
-test("正式介面的經濟分配、預留（R6-20 INV-120、INV-121）：自動分配和取消、套用同一列；預留第 4 行寫魔晶", async ({ page }) => {
+test("正式介面的經濟分配、預留（R6-20 INV-120、INV-121）：自動分配和取消、套用同一列；預留只有糧、木、金三行（D-135 沒有魔晶）", async ({ page }) => {
   const me = await startFake(page);
   const city = (await page.evaluate(() => window.__proto?.game?.buildings() ?? [])).find((b) => b.owner === me && b.type === 0);
   if (city === undefined) throw new Error("no main city");
@@ -176,7 +176,7 @@ test("正式介面的經濟分配、預留（R6-20 INV-120、INV-121）：自動
   expect((toggle?.x ?? 0) < (apply?.x ?? 0), "自動分配 at the left").toBe(true);
   await dialog.getByRole("button", { name: "取消" }).tap();
   await page.locator(".cmds").getByRole("button", { name: /^預留/ }).tap();
-  await expect(dialog.locator(".ratio-name").nth(3)).toHaveText("魔晶");
+  await expect(dialog.locator(".ratio-name")).toHaveText(["糧", "木", "金"]);
 });
 
 test("正式介面的攻下城鎮（R6-20 INV-122、INV-124）：搶和治理共用一個留守，選搶照這個數字留；只能治理時卡片半寬、稍後再決定在右邊", async ({ page }) => {

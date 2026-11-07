@@ -171,7 +171,8 @@ test("建築展示（art-v5.1，3 倍，方形斜看）：每種建築（art-v5.
     await page.waitForFunction(() => window.__proto?.game?.header().tick === 36, null, { timeout: 30_000 });
     const a = await art(page);
     expect(a?.rubble, "a rubble a type, the field none (it leaves no rubble)").toBe(12);
-    expect(a?.nodes ?? 0).toBeGreaterThanOrEqual(30);
+    // Trees 18, mines 6, berries 4 (no crystal veins since D-135).
+    expect(a?.nodes ?? 0).toBeGreaterThanOrEqual(28);
     // Rows of 4 types each (the gallery's cell (4 + 5c, 4 + 7r)), the outpost (art-v5.1) alone in the last; the nodes beside.
     for (let g = 0; g < 4; g++) {
       // A little above the rows' middle: the pictures stand above their footprints (13 rows: the last group one).

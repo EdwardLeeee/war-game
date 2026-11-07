@@ -68,7 +68,7 @@ export interface PageParams {
   keep: boolean;
   /** `?test=1&mock=1&market=1`: the fake world with D-101's market on (features.market). */
   market: boolean;
-  /** `?test=1&mock=1&mine=1`: the fake world with two mines of ours, a crystal vein by one (the mine's 晶 row). */
+  /** `?test=1&mock=1&mine=1`: the fake world with two mines of ours (D-135: no crystal vein any more). */
   mine: boolean;
   /**
    * `?test=1&art=test|x3|x2|off`: the units' atlases (D-085) instead of the 量測 panel's choice;

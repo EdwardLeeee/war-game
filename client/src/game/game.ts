@@ -94,7 +94,7 @@ import { ArmyBook, type ArmyUnit, groupWantMax, isSoldier, mostlyLoose, movedTex
 import { MILITIA_WARNING, militiaTownNear } from "./militia.ts";
 import { crystalSentText, type Depot, type DepotFarm, type DepotNode, DEPOT_RESOURCES, DEPOT_WORD, depotFor, panelResources, pickToSend, pickToTake, sendTarget, type Worker, workersAt } from "./depot.ts";
 import { type DispatchPool, dispatchCount, dispatchPool, NODE_RESOURCE, RESOURCE_WORD, type Villager } from "./dispatch.ts";
-import { autoTrainBuildings, features, garrisonTypes, holdsOf, outpostHide, outpostSlots } from "./features.ts";
+import { autoTrainBuildings, features, garrisonTypes, hasCrystal, holdsOf, outpostHide, outpostSlots } from "./features.ts";
 import { stoneOf } from "./siege.ts";
 import { Charges } from "./follow.ts";
 import { SentStances } from "./stances.ts";
@@ -488,7 +488,7 @@ export class Game implements GestureHost {
     this.pause();
     this.hud.openTownHint(
       // Directions as the camera shows the map (D-132).
-      townHintLines(town, home, hint?.passed ?? false, features(view.rules).plunderOnce, view.projection),
+      townHintLines(town, home, hint?.passed ?? false, features(view.rules).plunderOnce, view.projection, hasCrystal(view.rules)),
       town === null ? null : { id: town.id, cx: town.cellX, cy: town.cellY, radius: town.radius },
       () => {
         if (town !== null) this.camera?.centerOn((town.cellX + 0.5) * TILE_PX, (town.cellY + 0.5) * TILE_PX);
@@ -1859,7 +1859,7 @@ export class Game implements GestureHost {
     const o = view?.buildingRow(building) ?? -1;
     const b = view?.curr?.snap.buildings;
     if (view === null || d === undefined || o < 0 || b === undefined) return [];
-    return panelResources(b[o + BuildingField.type], d.accepts);
+    return panelResources(b[o + BuildingField.type], d.accepts, hasCrystal(view.rules));
   }
 
   /** How many of our villagers bring `resource` back to this building (D-066). */

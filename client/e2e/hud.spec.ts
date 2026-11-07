@@ -173,19 +173,19 @@ for (const size of [
     const [armyBtn] = await visibleBoxes(page, ".army-btn");
     const apart = Math.max(armyBtn.x - (retreatAll.x + retreatAll.width), retreatAll.x - (armyBtn.x + armyBtn.width), armyBtn.y - (retreatAll.y + retreatAll.height), retreatAll.y - (armyBtn.y + armyBtn.height));
     expect(apart, "全軍撤退 far from 全軍").toBeGreaterThan(100);
-    await expect.poll(() => resText(page)).toMatch(/^糧 200　木 200　金 100　晶 20　人口 \d+\/20　時間 \d+:\d\d$/);
+    await expect.poll(() => resText(page)).toMatch(/^糧 200　木 200　金 100　人口 \d+\/20　時間 \d+:\d\d$/);
     await shot(page, info, `hud-${size.who}-${width}x${height}`);
   });
 }
 
-test("開局提示：開局時說魔晶從城鎮來、最近的城鎮在哪裡；遊戲先暫停，小地圖閃那座城鎮；看那座城鎮會跳過去（D-044）", async ({ page }, info) => {
+test("開局提示：開局時說城鎮給什麼（D-135：先拿附近的城鎮，沒有魔晶）、最近的城鎮在哪裡；遊戲先暫停，小地圖閃那座城鎮；看那座城鎮會跳過去（D-044）", async ({ page }, info) => {
   await page.goto("./?test=1&mock=1&hint=1");
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true);
-  const hint = page.getByRole("dialog", { name: "魔晶從城鎮來" });
+  const hint = page.getByRole("dialog", { name: "先拿附近的城鎮" });
   await expect(hint).toBeVisible();
-  await expect(hint).toContainText("魔晶主要從城鎮來");
-  await expect(hint).toContainText("搶：馬上拿到一筆糧、金和魔晶");
+  await expect(hint).toContainText("城鎮給糧和金：帶兵打倒城裡的民兵，就能選搶或治理。治理還會加人口上限。");
+  await expect(hint).not.toContainText("魔晶");
   // The fake world's nearest small town, (18, 62), is ours already: the next one, which we can take.
   await expect(hint).toContainText(/離你的主城最近、可以攻下的小鎮在主城的(右邊|右上方|上方|左上方|左邊|左下方|下方|右下方)，約 \d+ 格/);
   const town = await hintTownOf(page);
@@ -214,7 +214,7 @@ test("開局提示：每局一次；繼續這局不再出現，重來是新的�
   await page.goto("./?test=1&mock=1&hint=1");
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true);
-  const hint = page.getByRole("dialog", { name: "魔晶從城鎮來" });
+  const hint = page.getByRole("dialog", { name: "先拿附近的城鎮" });
   await hint.getByRole("button", { name: "知道了" }).tap();
   await expect(hint).toBeHidden();
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused)).toBe(false);
@@ -232,11 +232,11 @@ test("開局提示：每局一次；繼續這局不再出現，重來是新的�
   await expect(hint).toBeVisible();
 });
 
-test("開局提示：按不再提示，記在這台裝置上，重來、重新整理都不再跳；選單的魔晶怎麼拿打得開，在那裡可以改回開局時要提示（D-044）", async ({ page }) => {
+test("開局提示：按不再提示，記在這台裝置上，重來、重新整理都不再跳；選單的城鎮怎麼拿打得開，在那裡可以改回開局時要提示（D-044）", async ({ page }) => {
   await page.goto("./?test=1&mock=1&hint=1");
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true);
-  const hint = page.getByRole("dialog", { name: "魔晶從城鎮來" });
+  const hint = page.getByRole("dialog", { name: "先拿附近的城鎮" });
   const stored = () => page.evaluate(() => window.localStorage.getItem("war-game.proto.townHint"));
   await expect(hint).toBeVisible();
   expect(await stored(), "nothing kept before 不再提示").toBeNull();
@@ -260,11 +260,11 @@ test("開局提示：按不再提示，記在這台裝置上，重來、重新�
   await page.waitForTimeout(500);
   await expect(hint).toBeHidden();
   expect(await page.evaluate(() => window.__proto?.game?.townHint())).toBeNull();
-  // 選單 → 魔晶怎麼拿: the same hint, the game waits while it is open.
+  // 選單 → 城鎮怎麼拿: the same hint, the game waits while it is open.
   await page.getByRole("button", { name: "選單" }).tap();
-  await page.getByRole("button", { name: "魔晶怎麼拿" }).tap();
+  await page.getByRole("button", { name: "城鎮怎麼拿" }).tap();
   await expect(hint).toBeVisible();
-  await expect(hint).toContainText("魔晶主要從城鎮來");
+  await expect(hint).toContainText("城鎮給糧和金");
   const town = await hintTownOf(page);
   expect(await page.evaluate(() => window.__proto?.game?.townHint())).toEqual({ town: town.id, open: true, flashing: true });
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused), { message: "the game waits while the hint is open" }).toBe(true);
@@ -286,11 +286,11 @@ test("開局提示：按知道了、看那座城鎮不算不再提示，重新�
   await page.goto("./?test=1&mock=1&hint=1");
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true);
-  const hint = page.getByRole("dialog", { name: "魔晶從城鎮來" });
+  const hint = page.getByRole("dialog", { name: "先拿附近的城鎮" });
   await hint.getByRole("button", { name: "看那座城鎮" }).tap();
   await expect(hint).toBeHidden();
   await page.getByRole("button", { name: "選單" }).tap();
-  await page.getByRole("button", { name: "魔晶怎麼拿" }).tap();
+  await page.getByRole("button", { name: "城鎮怎麼拿" }).tap();
   await hint.getByRole("button", { name: "知道了" }).tap();
   await expect(hint).toBeHidden();
   expect(await page.evaluate(() => window.localStorage.getItem("war-game.proto.townHint"))).toBeNull();
@@ -314,7 +314,7 @@ for (const viewport of [null, FULL_SCREEN]) {
     const boxes = await visibleBoxes(page, ".menu button");
     // 正式介面 (D-087, R6-20): 全體回城 always here, and 設定.
     const formal = await formalOn(page);
-    expect(boxes.map((b) => b.label)).toEqual(formal ? ["魔晶怎麼拿", "兵種相剋", "全體回城", "電影色調：關", "設定", "量測與確定性檢查", "重來（開新的一局）", "投降", "回開局畫面", "關閉"] : ["魔晶怎麼拿", "兵種相剋", "電影色調：關", "量測與確定性檢查", "重來（開新的一局）", "投降", "回開局畫面", "關閉"]);
+    expect(boxes.map((b) => b.label)).toEqual(formal ? ["城鎮怎麼拿", "兵種相剋", "全體回城", "電影色調：關", "設定", "量測與確定性檢查", "重來（開新的一局）", "投降", "回開局畫面", "關閉"] : ["城鎮怎麼拿", "兵種相剋", "電影色調：關", "量測與確定性檢查", "重來（開新的一局）", "投降", "回開局畫面", "關閉"]);
     for (const b of boxes) {
       expect(Math.min(b.width, b.height), `${b.label} size`).toBeGreaterThanOrEqual(44);
       expect(b.x, `${b.label} left`).toBeGreaterThanOrEqual(IPHONE_SAFE.left);
@@ -695,7 +695,7 @@ test("經濟分配：選主城 → 經濟分配 → 金多一點 → 套用", as
   const dialog = page.getByRole("dialog", { name: "經濟分配" });
   await expect(dialog).toBeVisible();
   // What the ratio does now (D-050, core #105).
-  await expect(dialog).toContainText("自動分配開著時，改比例後，正在採糧、木、金的村民會照新比例重新分配；你親手派去採的不會動。晶脈要自己派。");
+  await expect(dialog).toContainText("自動分配開著時，改比例後，正在採糧、木、金的村民會照新比例重新分配；你親手派去採的不會動。");
   expect(await dialog.locator(".dialog-card").evaluate((c) => c.scrollHeight - c.clientHeight), "no scrolling at 814 × 380").toBeLessThanOrEqual(1);
   await page.getByRole("button", { name: "金多一點" }).tap();
   await expect(page.locator(".ratio-value").nth(2)).toHaveText("30%");
@@ -827,7 +827,7 @@ test("等錢治理：自動訓練開著時預留暫時提高到大城的花費�
   await expect.poll(() => governWaits(page)).toEqual([3]);
   await expect.poll(async () => (await garrison(page, 3)).length).toBe(3);
   // The reserve in effect goes up to 150 each for the wait; 預留 says so, and keeps the player's own.
-  await expect.poll(async () => (await reserves(page)).at(-1)).toMatchObject({ food: 0, wood: 150, gold: 150, crystal: 15, auto: true });
+  await expect.poll(async () => (await reserves(page)).at(-1)).toMatchObject({ food: 0, wood: 150, gold: 150, crystal: 0, auto: true });
   await centre(page, MAIN_CITY.x + 2, MAIN_CITY.y + 2);
   await tap(page, await at(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 }));
   await expect(page.getByRole("button", { name: /^預留/ })).toContainText("暫時提高");
@@ -844,7 +844,7 @@ test("等錢治理：自動訓練開著時預留暫時提高到大城的花費�
   await expectSaid(page, "開始治理大城", {}, { timeout: 20_000 });
   expect((await townChoices(page)).at(-1)).toMatchObject({ town: 3, choice: 1, auto: true });
   await expect.poll(() => governWaits(page)).toEqual([]);
-  await expect.poll(async () => (await reserves(page)).at(-1)).toMatchObject({ food: 0, wood: 150, gold: 100, crystal: 15 });
+  await expect.poll(async () => (await reserves(page)).at(-1)).toMatchObject({ food: 0, wood: 150, gold: 100, crystal: 0 });
   // TownState.Repairing = 3.
   await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.towns() ?? [])).find((t) => t.id === 3)?.state).toBe(3);
 });
@@ -890,7 +890,9 @@ test("攻擊、移動、堅守：第一列是這三顆和停止，選取資訊�
   const army = await ownIds(page, [1, 2, 3]);
   await expect.poll(async () => (await selection(page))?.units).toEqual(army);
   await expect(now).toHaveText(`目前：攻擊中 1、堅守 6、待命 ${army.length - 7}`);
-  await expect(panel).toContainText("自動晶砲：每發 5 魔晶、冷卻 8 秒，炸到 3 名以上才放，移動中不放");
+  // D-135: a shot costs nothing (no crystal); the rest as before.
+  await expect(panel).toContainText("自動晶砲：冷卻 8 秒，炸到 3 名以上才放，移動中不放");
+  await expect(panel).not.toContainText("魔晶");
   expect(await lines(panel.locator(".cannon-meaning")), "the cannon line on one line").toBe(1);
   await expect(page.locator(".cmds").getByRole("button", { name: /晶砲|自動施放/ })).toHaveCount(0);
   for (const b of [advance, retreat, hold]) await expect(b).not.toHaveClass(/active/);
@@ -1281,7 +1283,7 @@ test("搶的留守（D-084）：稍後再決定、點城鎮按搶，也留最少
   const army = await ownIds(page, [1, 2, 3]);
   await expect(armyButton(page)).toHaveAccessibleName(`全軍 ${army.length - 1}`);
   // Plundered: ruins. He goes back to 積極 and 全軍, and walks back to group 1.
-  await page.evaluate(() => window.__proto?.game?.inject({ k: "town_plundered", town: 0, by: 0, food: 300, gold: 300, crystal: 75 }));
+  await page.evaluate(() => window.__proto?.game?.inject({ k: "town_plundered", town: 0, by: 0, food: 300, gold: 300, crystal: 0 }));
   await expect.poll(() => garrison(page, 0)).toEqual([]);
   await expect.poll(async () => (await sent(page)).filter((c) => c.c === "stance").at(-1)).toMatchObject({ c: "stance", u: [inside[0]], stance: 0, auto: true });
   await expect(armyButton(page)).toHaveAccessibleName(`全軍 ${army.length}`);
@@ -1699,35 +1701,33 @@ test("自動訓練（D-098）：主城自動補村民到目標（預設 40，−
   await expect(panel.locator(".auto-train-line")).toHaveText(/^村民 [78]／40，自動訓練暫停$/);
 });
 
-test("預留：選主城 → 預留 → 對話框寫現在的預留額（預設木 150、金 100、晶 15），−／+ 後套用送出 reserve；預設鈕回到預設（D-054）", async ({ page }, info) => {
+test("預留：選主城 → 預留 → 對話框寫現在的預留額（預設木 150、金 100；D-135 沒有魔晶那行），−／+ 後套用送出 reserve；預設鈕回到預設（D-054）", async ({ page }, info) => {
   await centre(page, MAIN_CITY.x + 2, MAIN_CITY.y + 2);
   await tap(page, await at(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 }));
   await injectSafeArea(page);
   await page.locator(".cmds").getByRole("button", { name: /^預留/ }).tap();
   const dialog = page.getByRole("dialog", { name: "預留" });
   await expect(dialog).toBeVisible();
-  await expect(dialog).toContainText("自動訓練只用超過這些的資源；預設留的夠蓋法術營、放 3 發晶砲。");
+  await expect(dialog).toContainText("自動訓練只用超過這些的資源；預設留的夠蓋法術營。");
+  await expect(dialog).not.toContainText("晶");
   const value = (name: string) => dialog.getByRole("status", { name: `${name}預留` });
   await expect(value("糧")).toHaveText("0");
   await expect(value("木")).toHaveText("150");
   await expect(value("金")).toHaveText("100");
-  await expect(value("晶")).toHaveText("15");
+  await expect(value("晶")).toHaveCount(0);
   expect(await dialog.locator(".dialog-card").evaluate((c) => c.scrollHeight - c.clientHeight), "no scrolling").toBeLessThanOrEqual(1);
   await shot(page, info, "reserve-dialog");
   await dialog.getByRole("button", { name: "木少留 10" }).tap();
-  await dialog.getByRole("button", { name: "晶多留 5" }).tap();
   await dialog.getByRole("button", { name: "糧少留 10" }).tap();
   await expect(value("木")).toHaveText("140");
-  await expect(value("晶")).toHaveText("20");
   await expect(value("糧")).toHaveText("0", { timeout: 1000 });
   await dialog.getByRole("button", { name: "套用" }).tap();
-  await expect.poll(() => lastSent(page)).toMatchObject({ c: "reserve", food: 0, wood: 140, gold: 100, crystal: 20 });
+  await expect.poll(() => lastSent(page)).toMatchObject({ c: "reserve", food: 0, wood: 140, gold: 100, crystal: 0 });
   // Open again: what the simulation reports now; 預設 puts the defaults back.
   await page.locator(".cmds").getByRole("button", { name: /^預留/ }).tap();
   await expect(value("木")).toHaveText("140");
   await dialog.getByRole("button", { name: "預設" }).tap();
   await expect(value("木")).toHaveText("150");
-  await expect(value("晶")).toHaveText("15");
   await dialog.getByRole("button", { name: "取消" }).tap();
   await expect(dialog).toBeHidden();
 });
