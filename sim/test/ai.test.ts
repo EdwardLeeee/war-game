@@ -3813,3 +3813,68 @@ test("D-099: an enemy siege engine in sight counts in the enemy's strength (it s
   assert.equal(backs(false), false, "14 against 14: on");
   assert.equal(backs(true), true, "14 and an engine against 14: stronger, back");
 }));
+
+// --- D-131: its ranged units' targets ---------------------------------------------------------------------------
+
+/** Hard at minute 12, 6 ranged units and 6 spearmen at home; 3 enemy spearmen 4 cells off, one hurt; `hidden`: 30 more far off in the fog. */
+function focusScene(hidden: boolean, focusFire = true) {
+  const g = emptyGame();
+  const w = g.w;
+  w.tick = 12 * 1200;
+  const s0 = w.map.spawns[0];
+  const s1 = w.map.spawns[1];
+  for (let k = 0; k < 6; k++) put(g, 0, UnitType.Ranged, s0.cellX + 6 + k, s0.cellY - 6);
+  for (let k = 0; k < 6; k++) put(g, 0, UnitType.Spearman, s0.cellX + 6 + k, s0.cellY - 7);
+  const foes = [0, 1, 2].map((k) => put(g, 1, UnitType.Spearman, s0.cellX + 8 + k, s0.cellY - 10));
+  w.units.col.hp[slotOf(g, foes[2])] = 10;
+  if (hidden) for (let k = 0; k < 30; k++) put(g, 1, UnitType.Spearman, s1.cellX - 6 + (k % 6), s1.cellY + 6 + Math.trunc(k / 6));
+  g.fog.update(w);
+  const ai = hardAi(g, { dodge: false, focusFire });
+  return { g, w, ai, foes, out: ai.think(buildView(g, 0)) };
+}
+
+test("D-131 (plan.focusFire): its ranged units shoot the weakest enemy in reach, from its own view: enemies in the fog change nothing", () => {
+  const a = focusScene(false);
+  const b = focusScene(true);
+  assert.deepEqual(b.out, a.out, "the same commands");
+  const shots = a.out.filter((c) => c.c === "attack") as { u: number[]; target: number }[];
+  assert.ok(shots.length > 0, "it picks targets");
+  assert.equal(shots[0].target, a.foes[2], "the hurt one first");
+  assert.ok(shots[0].u.length <= 2, `as many on it as it takes (${shots[0].u.length})`);
+  assert.equal(focusScene(false, false).out.filter((c) => c.c === "attack").length, 0, "off: no such orders");
+  assert.equal(HARD.focusFire, true, "on for hard");
+});
+
+test("D-131 (plan.focusFire): a target that left its reach: nobody runs after it; back to the army's way or another target in reach", () => {
+  const { g, w, ai, foes, out } = focusScene(false);
+  const shots = out.filter((c) => c.c === "attack" && c.target === foes[2]) as { u: number[]; target: number }[];
+  assert.ok(shots.length > 0);
+  const told = shots[0].u;
+  // They took the order; the target runs far off, still in the view (kept in sight by a scout of ours beside it).
+  for (const id of told) {
+    const s = slotOf(g, id);
+    w.units.col.order[s] = Order.Attack;
+    w.units.col.orderTarget[s] = foes[2];
+  }
+  const t = slotOf(g, foes[2]);
+  w.units.col.x[t] += 30 * CELL;
+  put(g, 0, UnitType.Spearman, Math.trunc(w.units.col.x[t] / CELL) + 1, Math.trunc(w.units.col.y[t] / CELL));
+  w.tick += 40;
+  g.fog.update(w);
+  const next = ai.think(buildView(g, 0));
+  assert.equal(next.filter((c) => c.c === "attack" && c.target === foes[2]).length, 0, "nobody is told to go after it");
+  // Each of them goes back to the army's way, or is given another target in its reach.
+  const reach = rules().units[UnitType.Ranged].range;
+  for (const id of told) {
+    const moved = next.some((c) => c.c === "move" && (c as { u: number[] }).u.includes(id));
+    const shot = next.find((c) => c.c === "attack" && (c as { u: number[] }).u.includes(id)) as { target: number } | undefined;
+    const s = slotOf(g, id);
+    const inReach = shot !== undefined && (() => {
+      const o = slotOf(g, shot.target);
+      const dx = w.units.col.x[o] - w.units.col.x[s];
+      const dy = w.units.col.y[o] - w.units.col.y[s];
+      return dx * dx + dy * dy <= reach * reach;
+    })();
+    assert.ok(moved || inReach, `${id}: back to the army's way or a target in reach`);
+  }
+});
