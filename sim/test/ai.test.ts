@@ -3939,3 +3939,33 @@ test("D-131 (plan.meetRatio): out to meet a wave when strong enough; back once i
   step(20);
   assert.equal(outs(), 2, "a new wave: out again");
 });
+
+test("D-131 (plan.townQuickRest): broken off as soon as it set out for a town, it leaves that town alone; without it, it goes again at once", () => {
+  /** Hard with 30 spearmen far from home and 50 enemy spearmen in sight by them; a minute of thinks (orders not played). */
+  const run = (plan: Partial<HardPlan>) => {
+    const g = emptyGame();
+    const w = g.w;
+    w.tick = 15 * 1200;
+    const s0 = w.map.spawns[0];
+    const sx = s0.cellX + 34;
+    const sy = s0.cellY - 34;
+    for (let k = 0; k < 30; k++) put(g, 0, UnitType.Spearman, sx + (k % 6), sy - Math.trunc(k / 6));
+    for (let k = 0; k < 50; k++) put(g, 1, UnitType.Spearman, sx + 7 + (k % 5), sy + 2 - Math.trunc(k / 5));
+    g.fog.update(w);
+    const ai = hardAi(g, { dodge: false, peekFirst: 0, ...plan });
+    const stats = () => (ai as unknown as { stats: () => Record<string, number> }).stats();
+    let retreats = 0;
+    for (let t = 0; t < 1200; t += 10) {
+      w.tick += 10;
+      g.fog.update(w);
+      for (const c of ai.think(buildView(g, 0))) if (c.c === "retreat" && c.u.length >= 5) retreats++;
+    }
+    return { retreats, quick: stats().townQuickRests };
+  };
+  const off = run({});
+  const on = run({ townQuickRest: 1 });
+  assert.ok(off.retreats >= 20, `off: back and forth (${off.retreats} retreats in a minute)`);
+  assert.equal(off.quick, 0);
+  assert.ok(on.retreats * 3 <= off.retreats, `on: far fewer (${on.retreats} against ${off.retreats})`);
+  assert.ok(on.quick >= 1, `it counted (${on.quick})`);
+});
