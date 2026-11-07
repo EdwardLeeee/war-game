@@ -2,8 +2,10 @@
 // timeline. The header (勝利／失敗／平手, why, the time, the opponent and the map, 回開局畫面 and 重來), six tabs down
 // the left (總覽、資源、兵力、戰鬥、城鎮、法師) and one page beside them, a chart a page. Both interfaces have it
 // (D-127: in the prototype's colours until the formal one is the default); the lines in R6-24's player colours.
-// Where the six tabs do not fit down the left (932 × 336, Safari with its tab bar), measured, not by device, they go in
-// a row under the header and the charts get shorter (b2 2026-11-07 point 5).
+// Where the six tabs do not fit under the header (932 × 336, Safari with its tab bar), measured, not by device, they run
+// down the card's whole height with the header beside them (the user 2026-11-07: 「那些頁面標籤都跑到上方了」; D-125's
+// tabs are on the left). Only on a screen shorter still (card inner under 6 × 44 + 5 × 2: at the iPhone's safe area 21,
+// under 330) they go in a row under the header.
 
 import { butterfly, keyLine, lineChart, townsChart } from "./charts.ts";
 import { RESOURCE_NAME, RESOURCES, type ResourceKey, type StatsModel } from "./model.ts";
@@ -106,10 +108,14 @@ export class StatsPage {
     this.fit();
   }
 
-  /** Lay out: the tabs down the left if they fit there, else in a row; then the page, its chart sized to the room left. */
+  /** Lay out: the tabs under the header if they fit there, else down the card's whole height, else in a row; then the page, its chart sized to the room left. */
   fit(): void {
-    this.card.classList.remove("tabs-row");
-    if (this.tabs.scrollHeight > this.tabs.clientHeight + 1) this.card.classList.add("tabs-row");
+    const over = () => this.tabs.scrollHeight > this.tabs.clientHeight + 1;
+    this.card.classList.remove("tabs-tall", "tabs-row");
+    if (over()) {
+      this.card.classList.add("tabs-tall");
+      if (over()) this.card.classList.replace("tabs-tall", "tabs-row");
+    }
     this.draw();
   }
 
@@ -276,7 +282,7 @@ export class StatsPage {
         const h = el("div", cd, "st-bfhead");
         h.innerHTML = `<span>${keyLine("me")}我方損失 <b>${m.fight.lost}</b></span><span class="c">兵種</span><span>我方擊殺 <b>${m.fight.killed}</b>${keyLine("foe")}</span>`;
         const host = chartHost(cd);
-        host.innerHTML = butterfly({ ...boxOf(host, 30 * m.fight.rows.length), rows: m.fight.rows, label: m.fight.rows.map((r) => `${r.name}：我方損失 ${r.lost}、我方擊殺 ${r.killed}`).join("；") });
+        host.innerHTML = butterfly({ ...boxOf(host, 24 * m.fight.rows.length + 8), rows: m.fight.rows, label: m.fight.rows.map((r) => `${r.name}：我方損失 ${r.lost}、我方擊殺 ${r.killed}`).join("；") });
         return;
       }
       case "城鎮": {
@@ -295,7 +301,7 @@ export class StatsPage {
           '<span class="st-lg"><i class="st-evk">治</i>治理</span><span class="st-lg"><i class="st-evk">搶</i>搶</span><span class="st-lg"><i class="st-evk">叛</i>叛離</span>' +
           '<span class="st-lg muted">圓圈的框色＝誰做的</span>';
         momentKey();
-        host.innerHTML = townsChart({ ...boxOf(host, 40 * m.towns.length + 48), ticks: m.ticks, axisMinutes: m.axisMinutes, moments, bars: m.towns, label: m.towns.map((b) => `${b.name}：${b.events.map((e) => `${clock(e.tick)} ${e.who === "me" ? "我方" : "敵方"}${e.mark === "治" ? "治理" : e.mark === "搶" ? "搶" : "叛離"}`).join("、") || "沒有變化"}`).join("；") });
+        host.innerHTML = townsChart({ ...boxOf(host, (m.towns.some((b) => b.note !== "") ? 36 : 26) * m.towns.length + 48), ticks: m.ticks, axisMinutes: m.axisMinutes, moments, bars: m.towns, label: m.towns.map((b) => `${b.name}：${b.events.map((e) => `${clock(e.tick)} ${e.who === "me" ? "我方" : "敵方"}${e.mark === "治" ? "治理" : e.mark === "搶" ? "搶" : "叛離"}`).join("、") || "沒有變化"}`).join("；") });
         return;
       }
       case "法師": {
