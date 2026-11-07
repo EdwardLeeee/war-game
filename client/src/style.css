@@ -237,6 +237,17 @@ a {
   text-shadow: 0 1px 2px #000;
 }
 
+/* A short screen (932 × 336, Safari with its tab bar; ceo 2026-11-07): 重設 and the column under it are laid from the
+   bottom up, and reach the label (at the iPhone's safe area 21, under 354 high). On the battlefield it goes beside 編隊 1,
+   right of the 暫停 banner, clear of them all. The start card and the dialogs would cover that: with them up it stays. */
+@media (max-height: 353px) {
+  body:not(:has(> #start:not([hidden]), #hud > .dialog:not([hidden]))) #proto-label {
+    top: calc(var(--safe-t) + 54px);
+    right: calc(var(--safe-r) + 114px);
+    left: auto;
+  }
+}
+
 /* Portrait: cover everything and ask for landscape. */
 #rotate {
   display: none;
