@@ -1242,6 +1242,23 @@
   background: rgba(0, 0, 0, 0.35);
 }
 
+/* The battlefield behind the card when the page opens (INV-01; ceo: from the new art, once #400 was in): no art is
+   loaded yet, so a still of the game itself, small and a little soft, darkened as the board's scrim. Over the whole
+   screen, the safe areas too (#start stops at them). Over a game, 回開局畫面 shows the game itself (INV-12: `.over-battle`,
+   main.ts). Fetched only here: the prototype never asks for it. The still: art-v7.6, 觀戰, the big town (48, 48) at 0.75,
+   932 × 430, a blur of 1, WebP 60; its 中立 falls under the card. */
+:root[data-ui="r6"] #start::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.55)), url("./start-field.webp") center / cover no-repeat;
+}
+
+:root[data-ui="r6"] #start.over-battle::before {
+  display: none;
+}
+
 :root[data-ui="r6"] #start .card.panel {
   position: relative;
   display: grid;

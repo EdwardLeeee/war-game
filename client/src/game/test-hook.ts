@@ -162,6 +162,8 @@ export interface GameHook {
   edge(): { on: boolean; shown: boolean; pieces: number; falls: number; onePass: boolean };
   /** The sea of clouds a layer in one pass (cloud-pass.ts), or two TilingSprites as before. */
   setEdgeOnePass(on: boolean): void;
+  /** The clouds over the battlefield drawn or not (their pixels are none of the map's). */
+  setEdgeOver(on: boolean): void;
   /** How the ground is laid this game (projection.ts: diamond, oblique, top). */
   projection(): string | null;
   setGroundQuality(q: "high" | "low"): void;
@@ -402,6 +404,7 @@ export function gameHook(game: Game): GameHook {
     filmGrade: () => game.filmGradeForTest,
     edge: () => game.edgeForTest,
     setEdgeOnePass: (on) => game.setEdgeOnePassForTest(on),
+    setEdgeOver: (on) => game.setEdgeOverForTest(on),
     projection: () => game.view?.projection.kind ?? null,
     setGroundQuality: (q) => game.setGroundQuality(q),
     terrain: () => game.terrainForTest,

@@ -1,6 +1,6 @@
 // 浮空大陸的邊緣（R11 C, D-118; render/edge.ts）with make-test-atlas.ts's stand-ins: the diamond
-// draws the sea of clouds, the cliff under the two lower edges, the waterfalls and the clouds over
-// the upper edges; only round the map (in the middle of it nothing is drawn); a tap still falls on
+// draws the sea of clouds, the cliff under the two lower edges and the waterfalls; only round the
+// map (in the middle of it nothing is drawn); a tap still falls on
 // the map. Square on, or without the art asking for it (art-release.json's view), it is not drawn.
 
 import { expect, type Page, test } from "@playwright/test";
