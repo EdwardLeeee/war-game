@@ -267,6 +267,8 @@ interface GameRecord {
   cannonKills: [number, number];
   /** The cannon's shots and kills each side by minute 20 (D-135: are mages stronger early without crystal). */
   cannonAt20: { shots: [number, number]; kills: [number, number] };
+  /** Each side's mages alive at minute 20 (D-135; the AI's is player 1's); null if the game ended before. */
+  magesAt20: [number, number] | null;
   rejected: number;
   /** Round 7 cavalry raids (--raid): raids sent, the first; the AI's farmers lost by minute 10 and in all. */
   raids: number;
@@ -446,6 +448,7 @@ function play(seed: number): GameRecord {
   let myMage = -1;
   let crystalForMage = -1;
   let cannonAt20: { shots: [number, number]; kills: [number, number] } | null = null;
+  let magesAt20: [number, number] | null = null;
   let hallDone = -1;
   let aiMage = -1;
   let cityHit = -1;
@@ -616,6 +619,7 @@ function play(seed: number): GameRecord {
     if (w.tick === 20 * 1200) {
       armyAt.m20 = [soldiersOf(0), soldiersOf(1)];
       cannonAt20 = { shots: [w.cannonShots[0], w.cannonShots[1]], kills: [w.cannonKills[0], w.cannonKills[1]] };
+      magesAt20 = [count(0, UnitType.Mage), count(1, UnitType.Mage)];
     }
     if (w.tick === 30 * 1200) towersAt.m30 = [towersOf(0), towersOf(1)];
     if (w.tick === 45 * 1200) towersAt.m45 = [towersOf(0), towersOf(1)];
@@ -887,6 +891,7 @@ function play(seed: number): GameRecord {
     cannonShots: [w.cannonShots[0], w.cannonShots[1]],
     cannonKills: [w.cannonKills[0], w.cannonKills[1]],
     cannonAt20: cannonAt20 ?? { shots: [w.cannonShots[0], w.cannonShots[1]], kills: [w.cannonKills[0], w.cannonKills[1]] },
+    magesAt20,
     rejected,
     ...(mapMode !== "fixed" ? { layout: (map as RandomMap).layout, found: st.found } : {}),
     finalHash: (g.hash() >>> 0).toString(16).padStart(8, "0"),
