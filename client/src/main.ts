@@ -4,6 +4,7 @@
 
 import "./style.css";
 import "./ui/r6.css";
+import "./ui/stats/stats.css";
 import { type Application, type Texture, VERSION } from "pixi.js";
 import { Game } from "./game/game.ts";
 import type { HudLifecycle } from "./ui/hud/hud.ts";
