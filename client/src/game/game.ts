@@ -725,8 +725,13 @@ export class Game implements GestureHost {
   }
 
   /** 浮空大陸's edge (the test page): drawn or not, its cliff pieces and waterfalls. */
-  get edgeForTest(): { on: boolean; shown: boolean; pieces: number; falls: number } {
-    return { on: this.edge !== null, shown: this.edge?.shown ?? false, pieces: this.edge?.pieceCount ?? 0, falls: this.edge?.fallCount ?? 0 };
+  get edgeForTest(): { on: boolean; shown: boolean; pieces: number; falls: number; onePass: boolean } {
+    return { on: this.edge !== null, shown: this.edge?.shown ?? false, pieces: this.edge?.pieceCount ?? 0, falls: this.edge?.fallCount ?? 0, onePass: this.edge?.onePass ?? false };
+  }
+
+  /** The sea of clouds a layer in one pass (cloud-pass.ts) or two TilingSprites as before (the test page compares them). */
+  setEdgeOnePassForTest(on: boolean): void {
+    if (this.edge !== null) this.edge.onePass = on;
   }
 
   /** Whether the film grade is over the battlefield now (the test page). */
