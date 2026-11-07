@@ -19,6 +19,7 @@ import { TILE_PX } from "../tuning.ts";
 import { CELL_M, CORNER_LEGS_M, cliffFromBottom, cliffPieces, type EdgeJson, type EdgeSide, edgeFalls, edgeFiles, edgeLight, edgePoint, parseEdge } from "./edge-layout.ts";
 import type { Compressed } from "../art/compressed.ts";
 import { json, keepOnGpu, spritePage } from "./unit-art.ts";
+import { CloudPass } from "./cloud-pass.ts";
 
 /** The edge's pictures, as loaded. */
 export interface EdgeArt {
@@ -67,6 +68,8 @@ interface Cloud {
   a: TilingSprite;
   b: TilingSprite;
   spec: EdgeJson["clouds"]["far"];
+  /** Both tiles in one pass (cloud-pass.ts): drawn instead of a and b while `onePass`. */
+  pass: CloudPass;
 }
 
 interface Lit {
@@ -91,6 +94,8 @@ export class EdgeRenderer {
   private readonly fallLoops: TilingSprite[] = [];
   private readonly puffs: { sprite: Sprite; x: number; y: number; dx: number; dy: number; phase: number }[] = [];
   private fogVersion = -1;
+  /** The sea of clouds a layer in one pass (cloud-pass.ts; ceo b2 2026-11-07); off, two TilingSprites as before (the test page compares them). */
+  onePass = true;
   private groundVersion = -1;
   /** Plane points a picture pixel (the pictures are pxPerM, the plane PT_PER_M a metre). */
   private readonly k: number;
@@ -123,8 +128,9 @@ export class EdgeRenderer {
     const t = this.tex(spec.file);
     const a = new TilingSprite({ texture: t, width: 1, height: 1 });
     const b = new TilingSprite({ texture: t, width: 1, height: 1 });
-    this.back.addChild(a, b);
-    return { a, b, spec };
+    const pass = new CloudPass(t);
+    this.back.addChild(a, b, pass.mesh);
+    return { a, b, spec, pass };
   }
 
   /** A plane point (pt at zoom 1) of a world point in cells. */
@@ -338,6 +344,12 @@ export class EdgeRenderer {
       // Not drawn while it does not show (a pass over the whole screen saved).
       layer.b.visible = b > 0.01;
       layer.a.visible = layer.a.alpha > 0.01;
+      // Both in one pass (cloud-pass.ts): the same tiles, alphas and order, the two sprites not drawn.
+      if (this.onePass) {
+        layer.pass.set(w, h, layer.a.tilePosition, layer.a.visible ? layer.a.alpha : 0, layer.b.tilePosition, layer.b.visible ? layer.b.alpha : 0, zoom);
+        layer.a.visible = false;
+        layer.b.visible = false;
+      } else layer.pass.mesh.visible = false;
     }
     for (const isl of this.islands) {
       const p = this.far.spec.parallax;
