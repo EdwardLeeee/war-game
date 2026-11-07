@@ -1,9 +1,11 @@
 // 正式介面's start card and dialogs (D-127, ?ui=r6): R6-10's card in two columns (你的陸, 難度, 地圖 on
 // the left with 電腦：… after 你的陸; 開始 on the right), its title without 原型; R6-20's dialogs panels
 // with the interface's buttons, the main (gold) or 投降 (red) at the right end; B's lacquer on the card,
-// not over the whole screen. The prototype's start card as it was.
+// not over the whole screen. The prototype's start card as it was. The formal start over a darkened still of the
+// battlefield when the page opens (INV-01), over the game itself when one is on (INV-12).
 
 import { expect, type Page, test } from "@playwright/test";
+import { injectSafeArea } from "./helpers.ts";
 
 const box = async (page: Page, selector: string) => {
   const b = await page.locator(selector).first().boundingBox();
@@ -75,6 +77,76 @@ async function startFake(page: Page, flags = ""): Promise<number> {
   await page.waitForFunction(() => window.__proto?.ready === true);
   return page.evaluate(() => window.__proto?.game?.me() ?? 0);
 }
+
+/** Pixels of the screen as [r, g, b] at these CSS points. */
+async function pixels(page: Page, points: [number, number][]): Promise<number[][]> {
+  const shot = (await page.screenshot()).toString("base64");
+  return page.evaluate(
+    async ([s, pts]) => {
+      const img = new Image();
+      img.src = `data:image/png;base64,${s as string}`;
+      await img.decode();
+      const c = document.createElement("canvas");
+      c.width = img.width;
+      c.height = img.height;
+      const x = c.getContext("2d") as CanvasRenderingContext2D;
+      x.drawImage(img, 0, 0);
+      const k = img.width / innerWidth;
+      return (pts as [number, number][]).map(([a, b]) => [...x.getImageData(Math.round(a * k), Math.round(b * k), 1, 1).data].slice(0, 3));
+    },
+    [shot, points] as const,
+  );
+}
+
+const startBefore = (page: Page) =>
+  page.evaluate(() => {
+    const s = getComputedStyle(document.querySelector("#start") as Element, "::before");
+    return { display: s.display, content: s.content };
+  });
+
+test("開局背景（R6-10 INV-01）：第一次打開，卡片疊在暗下來的戰場上，蓋滿整個畫面、安全區也是；對局中回開局畫面看到的是真的戰場（INV-12）", async ({ page }) => {
+  test.setTimeout(120_000);
+  const asked: string[] = [];
+  page.on("response", (r) => {
+    if (r.url().includes("start-field")) asked.push(`${r.status()}`);
+  });
+  await page.setViewportSize({ width: 932, height: 336 });
+  await page.goto("./?test=1&mock=1&tps=20&ui=r6");
+  await injectSafeArea(page);
+  await expect(page.locator("#start .card")).toBeVisible();
+  await expect.poll(() => asked, { message: "the still loads" }).toEqual(["200"]);
+  // The still, then the dark over it: at the four corners and in the safe areas, neither the page's colour nor black.
+  const w = await page.evaluate(() => innerWidth);
+  const h = await page.evaluate(() => innerHeight);
+  const at = await pixels(page, [[3, 3], [w - 3, 3], [3, h - 3], [w - 3, h - 3], [30, h / 2], [w - 30, h / 2]]);
+  expect(new Set(at.map((p) => p.join())).size, `the picture, not one colour: ${JSON.stringify(at)}`).toBeGreaterThan(1);
+  for (const p of at) {
+    expect(Math.max(...p), `not black: ${JSON.stringify(at)}`).toBeGreaterThan(12);
+    expect(Math.max(...p), `darkened: ${JSON.stringify(at)}`).toBeLessThan(150);
+  }
+  // The card above it, its buttons in reach.
+  const start = await box(page, "#start-game");
+  expect(await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.id, [start.x + start.width / 2, start.y + start.height / 2] as const)).toBe("start-game");
+  // Over a game: the game itself.
+  await page.getByRole("button", { name: "開始" }).tap();
+  await page.waitForFunction(() => window.__proto?.ready === true);
+  await page.getByRole("button", { name: "選單" }).tap();
+  await page.getByRole("button", { name: "回開局畫面" }).tap();
+  await expect(page.locator("#start")).toHaveClass(/\bover-battle\b/);
+  expect((await startBefore(page)).display).toBe("none");
+});
+
+test("開局背景：原型介面沒有這張圖，也不會去抓", async ({ page }) => {
+  const asked: string[] = [];
+  page.on("request", (r) => {
+    if (r.url().includes("start-field")) asked.push(r.url());
+  });
+  await page.goto("./?test=1&mock=1&tps=20&ui=proto");
+  await expect(page.locator("#start .card")).toBeVisible();
+  await page.waitForTimeout(500);
+  expect((await startBefore(page)).content).toBe("none");
+  expect(asked).toEqual([]);
+});
 
 test("正式介面的選單和設定（R6-20 INV-116、NEW-07）：全體回城、設定有圖示；設定有兩種風格的縮圖和「換了馬上生效」那行", async ({ page }) => {
   await startFake(page);

@@ -957,6 +957,8 @@ function showStart(): void {
   $("about-note").hidden = true;
   $("start-game").textContent = "繼續這局";
   $("restart-game").hidden = false;
+  // 正式介面: the game itself behind the card, not the still of when the page opens (ui/r6.css).
+  $("start").classList.toggle("over-battle", game !== null);
   $("start").hidden = false;
 }
 
