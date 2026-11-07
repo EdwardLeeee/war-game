@@ -734,6 +734,11 @@ export class Game implements GestureHost {
     if (this.edge !== null) this.edge.onePass = on;
   }
 
+  /** The clouds over the battlefield drawn or not (the test page). */
+  setEdgeOverForTest(on: boolean): void {
+    if (this.edge !== null) this.edge.overOn = on;
+  }
+
   /** Whether the film grade is over the battlefield now (the test page). */
   get filmGradeForTest(): boolean {
     return filmGradeOn(this.app);
