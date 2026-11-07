@@ -45,7 +45,7 @@ import {
   WALL_SHIFT,
   HOME_GUARD,
   COUNTER_ATTACK,
-  MAGE_BOUNTY,
+  mageBounty,
   SHIELD,
   SHIELD_REGEN,
   SLOT_GIVE_UP,
@@ -3099,7 +3099,7 @@ export class UnitSystem {
         if (u.type[i] === UnitType.Mage) {
           // The killer's side picks up the bounty (none for the neutral side).
           const killer = u.hitBy[i];
-          const bounty = killer >= 0 && killer < PLAYER_COUNT && killer !== u.owner[i] ? MAGE_BOUNTY : 0;
+          const bounty = killer >= 0 && killer < PLAYER_COUNT && killer !== u.owner[i] ? mageBounty() : 0;
           if (bounty > 0) {
             w.res[killer * 4 + Resource.Crystal] += bounty;
             w.earnedExtra[killer * 4 + Resource.Crystal] += bounty;

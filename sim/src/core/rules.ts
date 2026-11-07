@@ -203,6 +203,7 @@ export function rules(map?: { towerSize?: number } & Partial<CastleMap>): Requir
       ...(CAV_FLANK.on ? { cavalryFlank: true } : {}), ...(SIEGE.on ? { siege: true } : {}), ...(KEEP.on ? { keep: true } : {}), ...(MARKET.on ? { market: true } : {}),
       ...(WALL_SHIFT.on && WALLS.on ? { wallShift: true } : {}),
       ...(OUTPOST.on && OUTPOST_HIDE.on ? { outpostHide: true } : {}),
+      ...(NO_CRYSTAL.on ? { noCrystal: true } : {}),
     },
     arrows: {
       mainCity: MAIN_ARROW,
@@ -802,3 +803,36 @@ export const AUTO_REPAIR_RANGE = 6;
 export const START_REVEAL = 16;
 /** Gathering accumulates per-minute rates each tick; one unit is gathered per this many. */
 export const GATHER_UNIT = 60 * S;
+
+/**
+ * No crystal (D-135; the user 2026-11-08: 「魔晶感覺很雞肋都用不到 好像可以拿掉」, chose 「拿掉魔晶（推薦）」): food, wood
+ * and gold only. A mage costs `mageGold` gold and nothing else; the cannon costs nothing (its cooldown only); main cities
+ * give no crystal (MAIN_CRYSTAL), a mage's killer gets none (mageBounty), the auto-train reserve and the scenarios start
+ * with none; towns pay none (with `townGold`, their crystal as as much gold instead: plunder, per minute, governing's
+ * boost); the maps have no crystal vein. Resource.Crystal stays in the tables, always 0 (protocol: features.noCrystal).
+ * Off: as before. The tables read it (getters).
+ */
+export const NO_CRYSTAL = { on: true, mageGold: 140, townGold: false };
+/** What a mage's killer gets (MAGE_BOUNTY; none with NO_CRYSTAL on). */
+export function mageBounty(): number {
+  return NO_CRYSTAL.on ? 0 : MAGE_BOUNTY;
+}
+/** A town's crystal taken out of `c` (NO_CRYSTAL), as gold with `townGold`. */
+function noTownCrystal(c: Cost): Cost {
+  return cost(c.food, c.wood, c.gold + (NO_CRYSTAL.townGold ? c.crystal : 0), 0);
+}
+{
+  const mage = UNITS[UnitType.Mage].cost;
+  switched(UNITS[UnitType.Mage], "cost", NO_CRYSTAL, () => cost(mage.food, mage.wood, NO_CRYSTAL.mageGold, 0));
+  switched(CANNON, "crystal", NO_CRYSTAL, () => 0);
+  switched(AUTO_TRAIN.reserve, "crystal", NO_CRYSTAL, () => 0);
+  for (const size of [TownSize.Small, TownSize.Large]) {
+    const t = TOWNS[size];
+    const plunder = t.plunder;
+    const perMinute = t.perMinute;
+    switched(t, "plunder", NO_CRYSTAL, () => noTownCrystal(plunder));
+    switched(t, "perMinute", NO_CRYSTAL, () => noTownCrystal(perMinute));
+  }
+  const boost = GOVERN_INCOME.boost;
+  switched(GOVERN_INCOME, "boost", NO_CRYSTAL, () => boost.map(noTownCrystal));
+}

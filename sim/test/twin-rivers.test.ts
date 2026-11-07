@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import { test } from "node:test";
 import { Game } from "../src/core/game.ts";
 import { KEEP } from "../src/core/keep.ts";
+import { NO_CRYSTAL } from "../src/core/rules.ts";
 import { twinRiversMap } from "../src/core/twin-rivers.ts";
 import { toCanon } from "../src/frame.ts";
 import { NEUTRAL, NodeKind, Terrain, TownSize } from "../src/protocol.ts";
@@ -21,7 +22,7 @@ function digest(m: ReturnType<typeof twinRiversMap>): string {
   return h.digest("hex").slice(0, 16);
 }
 
-test("twin-rivers is locked: cells and resources by hash; two rivers' worth of water, 4 crossings, an adjacent layout", switchedOn(KEEP, () => {
+test("twin-rivers is locked: cells and resources by hash; two rivers' worth of water, 4 crossings, an adjacent layout", switchedOn(KEEP, switchedOff(NO_CRYSTAL, () => {
   const m = twinRiversMap(2);
   assert.equal(digest(m), "ccd9a10bfe59388e");
   const count = (t: number) => m.terrain.reduce((a, v) => a + (v === t ? 1 : 0), 0);
@@ -30,7 +31,29 @@ test("twin-rivers is locked: cells and resources by hash; two rivers' worth of w
   assert.equal(count(Terrain.Ford) + count(Terrain.BridgeNS) + count(Terrain.BridgeEW), 36, "4 crossings of 9 cells");
   assert.deepEqual(m.towns.filter((t) => t.size === TownSize.Large).map((t) => [t.cellX, t.cellY]), [[68, 64]]);
   assert.ok(m.nodes.filter((x) => x.kind === NodeKind.GoldMine).every((x) => x.amount === 600));
+})));
+
+test("no crystal (D-135): twin-rivers as it is but for its vein, open ground there", switchedOn(KEEP, () => {
+  const off = switchedOffMap();
+  const on = twinRiversMap(2);
+  const veins = off.nodes.filter((x) => x.kind === NodeKind.CrystalVein);
+  assert.ok(veins.length > 0, "it had a vein");
+  assert.deepEqual(on.nodes, off.nodes.filter((x) => x.kind !== NodeKind.CrystalVein));
+  const n = on.size;
+  for (let i = 0; i < n * n; i++) {
+    const vein = veins.some((x) => x.cellY * n + x.cellX === i);
+    assert.equal(on.terrain[i], vein ? Terrain.Open : off.terrain[i], `cell ${i % n},${Math.trunc(i / n)}`);
+  }
+  assert.deepEqual([on.towns, on.spawns, on.tower, on.towerSize, on.posts], [off.towns, off.spawns, off.tower, off.towerSize, off.posts]);
 }));
+
+function switchedOffMap(): ReturnType<typeof twinRiversMap> {
+  let m: ReturnType<typeof twinRiversMap> | null = null;
+  switchedOff(NO_CRYSTAL, () => {
+    m = twinRiversMap(2);
+  })();
+  return m!;
+}
 
 test("an odd seed swaps the two starts and their frames, nothing else; each start is the other's mirror image", switchedOn(KEEP, () => {
   const even = twinRiversMap(10);

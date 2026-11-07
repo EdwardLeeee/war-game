@@ -6,7 +6,7 @@ import test from "node:test";
 import { KEEP } from "../src/core/keep.ts";
 import { Game } from "../src/core/game.ts";
 import { PERF } from "../src/core/scenarios.ts";
-import { BUILDINGS, governPerMinute, MAIN_CRYSTAL, rules, TOWNS } from "../src/core/rules.ts";
+import { BUILDINGS, governPerMinute, MAIN_CRYSTAL, NO_CRYSTAL, rules, TOWNS } from "../src/core/rules.ts";
 import { UNIT_KINDS } from "../src/core/world.ts";
 import {
   BuildingType,
@@ -111,7 +111,7 @@ test("a town with militia alive, or the big city with its tower standing, is not
   assert.equal(g.w.townState[0], TownState.Neutral);
 }));
 
-test("plunder: counts only while the holder's army is inside, pays out, ruins for 4 minutes, back to neutral with half the militia", townIncomeOnly(switchedOff(KEEP, () => {
+test("plunder: counts only while the holder's army is inside, pays out, ruins for 4 minutes, back to neutral with half the militia", townIncomeOnly(switchedOff([KEEP, NO_CRYSTAL], () => {
   const { g, t, x, y } = smallTown();
   const spear = put(g, 0, UnitType.Spearman, x + 1, y);
   run(g, 2);
@@ -171,7 +171,7 @@ test("plundering is cancelled when the enemy takes the town", switchedOff(KEEP, 
   assert.equal(g.w.townOwner[t], 1);
 }));
 
-test("govern: pays at the choice, repairs with the minimum garrison, then produces and raises the cap; revolts after 60 s without it", townIncomeOnly(switchedOff(KEEP, () => {
+test("govern: pays at the choice, repairs with the minimum garrison, then produces and raises the cap; revolts after 60 s without it", townIncomeOnly(switchedOff([KEEP, NO_CRYSTAL], () => {
   const { g, t, x, y } = smallTown();
   const rule = TOWNS[TownSize.Small];
   const spear = put(g, 0, UnitType.Spearman, x + 1, y);

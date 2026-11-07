@@ -136,6 +136,11 @@ export interface Plan {
    * after a plunder. Set together with `bigTown` by scripted-games' --user-eco.
    */
   userEco: boolean;
+  /**
+   * The mage hall first, as soon as it can pay for it, and mages whenever it can (D-135: how early a mage may come
+   * without crystal); with crystal, the hall still waits for a mage's crystal (hallFirst).
+   */
+  mageRush: boolean;
   /** The plan's town is the big town, not the small town nearest home (D-072: the user's one trip, plundered). */
   bigTown: boolean;
   /**
@@ -435,6 +440,12 @@ GOVERN_COST[TownSize.Small] = { food: 0, wood: 80, gold: 80, crystal: 0 };
 GOVERN_COST[TownSize.Large] = { food: 0, wood: 150, gold: 150, crystal: 0 };
 /** Ruins last 240 s; a person would go back a little after that. */
 const RUINS_TICKS = 240 * 20 + 100;
+/**
+ * No crystal (D-135, rules.features.noCrystal): its mage hall goes up when the crystal for a mage used to come in, so the
+ * plan's first mage comes as before: on its first plunder (a small town paid 75), else by the main city's crystal alone
+ * (1 every 16 s: a mage's 50 at 13:20; the hall's 40 at 10:40).
+ */
+const CRYSTAL_FOR_MAGE_TICKS = 50 * 16 * 20;
 
 /**
  * How the player plays (brief 2026-10-core-scripted-player): `push` takes the nearest small town
@@ -486,6 +497,7 @@ export function planFor(strategy: Strategy, speed: Speed, formation: Formation):
     raceSeen: 12,
     raceBy: 20 * 1200,
     userEco: false,
+    mageRush: false,
     bigTown: false,
     raceStage: false,
     towerRush: 0,
@@ -542,6 +554,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
   const known: { id: number; size: TownSize; cellX: number; cellY: number }[] = [...know.map.towns];
   const townOf = (id: number) => known.find((t) => t.id === id)!;
   const rules = know.rules;
+  const noCrystal = rules.features?.noCrystal === true;
   const real = (u: number, v: number) => fromCanon(know.frame, u, v);
   const frame = (x: number, y: number) => toCanon(know.frame, x, y);
   const mid = n >> 1;
@@ -972,7 +985,8 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         const granary = done(BuildingType.Granary)[0];
         const base = { x: home.cellX, y: home.cellY };
         const add = (type: BuildingType, at: { x: number; y: number } | null, here = false) => plans.push({ type, at, here });
-        if (!plan.noMage && plan.hallFirst && !has(BuildingType.MageHall) && res.crystal >= mageCost.crystal) add(BuildingType.MageHall, base);
+        const crystalForMage = noCrystal ? plan.mageRush || plunders > 0 || tick >= CRYSTAL_FOR_MAGE_TICKS : res.crystal >= mageCost.crystal;
+        if (!plan.noMage && plan.hallFirst && !has(BuildingType.MageHall) && crystalForMage) add(BuildingType.MageHall, base);
         if (cap < ceiling && cap - pop - queued <= houseRoom) add(BuildingType.House, base);
         if (!has(BuildingType.LumberCamp) && farmers.length >= 6) add(BuildingType.LumberCamp, nearestNode(NodeKind.Tree));
         if (!has(BuildingType.Granary) && farmers.length >= 8) add(BuildingType.Granary, base);
@@ -982,7 +996,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         if (plan.raid > 0 && !has(BuildingType.Mine) && farmers.length >= 8) add(BuildingType.Mine, nearestNode(NodeKind.GoldMine));
         if (!has(BuildingType.Barracks) && farmers.length >= (plan.userEco ? 9 : 10)) add(BuildingType.Barracks, rally);
         if (!plan.noRange && !has(BuildingType.Range) && farmers.length >= (plan.userEco ? 10 : 12)) add(BuildingType.Range, rally);
-        const hallTime = plan.userEco ? plunders > 0 : res.crystal >= 40 || tick > 10 * 1200;
+        const hallTime = plan.userEco ? plunders > 0 : (noCrystal ? plunders > 0 : res.crystal >= 40) || tick > 10 * 1200;
         if (!plan.noMage && !has(BuildingType.MageHall) && has(BuildingType.Range) && hallTime) add(BuildingType.MageHall, base);
         // D-086 A: towers by home and a stable, as the user had them in the long wins.
         if (plan.homeTowers > 0 && has(BuildingType.Range) && count(BuildingType.ArrowTower) < plan.homeTowers) add(BuildingType.ArrowTower, towerAt);
@@ -1058,7 +1072,8 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       const raidFirst = plan.raid > 0 && has(BuildingType.Stable) && cavalry.length + stableQueue < plan.raid;
       if (raidFirst) trainAt(BuildingType.Stable, UnitType.Cavalry);
       const hallQueue = done(BuildingType.MageHall).reduce((a, b) => a + b.queue, 0);
-      if (mages + hallQueue < rules.mageCap && res.crystal >= mageCost.crystal + plan.mageReserve * mages) trainAt(BuildingType.MageHall, UnitType.Mage);
+      // Crystal kept for the cannon (mageReserve) only while there is crystal; without it, gold alone (trainAt).
+      if (mages + hallQueue < rules.mageCap && (noCrystal || res.crystal >= mageCost.crystal + plan.mageReserve * mages)) trainAt(BuildingType.MageHall, UnitType.Mage);
       // plan.lateSiege: its engines before the rest, what they cost kept from it.
       if (plan.lateSiege && done(BuildingType.SiegeWorks).length > 0) {
         const c = rules.units[UnitType.Siege].cost;

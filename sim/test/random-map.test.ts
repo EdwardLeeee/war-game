@@ -7,10 +7,10 @@ import { type Frame, IDENTITY, MIRROR_XY, footprintCentre, fromCanon, toCanon } 
 import { Game } from "../src/core/game.ts";
 import { generateMap } from "../src/core/map.ts";
 import { generateRandomMap, RANDOM_MAP, type RandomMap } from "../src/core/random-map.ts";
-import { BUILDINGS, KEEP, rules, TOWNS } from "../src/core/rules.ts";
+import { BUILDINGS, KEEP, NO_CRYSTAL, rules, TOWNS } from "../src/core/rules.ts";
 import { BuildingType, CELL, CELL_SHIFT, NEUTRAL, NODE_STRIDE, NodeField, NodeKind, Order, PlaceBit, Terrain, TOWN_STRIDE, TownField, TownSize, UnitType, walkableTerrain } from "../src/protocol.ts";
 import { buildView, mapInfo } from "../src/view/view.ts";
-import { cmd, put, slotOf } from "./helpers.ts";
+import { cmd, put, slotOf, switchedOff } from "./helpers.ts";
 
 const SEEDS = Array.from({ length: 40 }, (_, k) => k + 1);
 
@@ -77,7 +77,7 @@ test("both sides see the same map through their frames", () => {
   assert.deepEqual([...layouts].sort(), ["adjacent", "diagonal"]);
 });
 
-test("7 towns: the big city on the axis, each side's home town 26-34 cells away, centres 20 apart", () => {
+test("7 towns: the big city on the axis, each side's home town 26-34 cells away, centres 20 apart", switchedOff(NO_CRYSTAL, () => {
   for (const s of SEEDS) {
     const m = generateRandomMap(s);
     assert.equal(m.towns.length, 7);
@@ -96,7 +96,7 @@ test("7 towns: the big city on the axis, each side's home town 26-34 cells away,
     const vein = m.nodes.filter((x) => x.kind === NodeKind.CrystalVein);
     assert.equal(vein.length, 4, `seed ${s}: one crystal vein`);
   }
-});
+}));
 
 test("every town, the other main city and every resource can be reached", () => {
   for (const s of SEEDS) {
