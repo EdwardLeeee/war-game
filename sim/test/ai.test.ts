@@ -2630,6 +2630,67 @@ test("D-086 A4 (plan.charge): cavalry charge an enemy ranged unit in sight; not 
   assert.ok(!charged(chargeAt(4, 0, { charge: false })), "off: no charge, as before");
 });
 
+// --- D-099: hard's siege engines; its cavalry after the enemy's --------------------------------------------------
+
+test("D-099 (plan.siegeUse): with 6 enemy towers known, hard puts up a siege works; 5, or off, none", () => {
+  const works = (towers: number, siegeUse: boolean) => {
+    const g = behindGame(0);
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    // Towers in sight of a farmer of its own, away from its buildings.
+    for (let k = 0; k < towers; k++) {
+      w.addBuilding(1, BuildingType.ArrowTower, s0.cellX + 20 + 3 * (k % 3), s0.cellY - 20 + 3 * Math.trunc(k / 3), 600, 1000);
+      put(g, 0, UnitType.Farmer, s0.cellX + 20 + 3 * (k % 3), s0.cellY - 17 + 3 * Math.trunc(k / 3));
+    }
+    w.res.set([900, 900, 900, 0], 0);
+    g.fog.update(w);
+    return hardAi(g, { dodge: false, goldCavalry: 0, siegeUse }).think(buildView(g, 0)).some((c) => c.c === "build" && c.type === BuildingType.SiegeWorks);
+  };
+  assert.equal(works(6, true), true, "6 towers: a siege works");
+  assert.equal(works(5, true), false, "5: none yet");
+  assert.equal(works(6, false), false, "off: none, as before");
+});
+
+test("D-099 (plan.cavalryHunt): cavalry charge an enemy siege engine before a ranged unit by it; off, the ranged unit", () => {
+  const hunt = (cavalryHunt: boolean) => {
+    const g = emptyGame();
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    const x = s0.cellX + 8;
+    const y = s0.cellY - 12;
+    const ids: number[] = [];
+    for (let k = 0; k < 4; k++) ids.push(put(g, 0, UnitType.Cavalry, x + k, y));
+    const ranged = put(g, 1, UnitType.Ranged, x + 1, y - 5);
+    const engine = put(g, 1, UnitType.Siege, x + 2, y - 6);
+    g.fog.update(w);
+    const out = hardAi(g, { dodge: false, charge: true, cavalryHunt }).think(buildView(g, 0));
+    const c = out.find((x) => x.c === "attack" && ids.every((id) => x.u.includes(id))) as { target: number } | undefined;
+    return c === undefined ? -1 : c.target === engine ? 1 : c.target === ranged ? 0 : -1;
+  };
+  assert.equal(hunt(true), 1, "on: the engine");
+  assert.equal(hunt(false), 0, "off: the ranged unit, as before");
+});
+
+test("D-099: an enemy siege engine in sight counts in the enemy's strength (it summed to NaN, and hard never broke off for it)", switchedOff([KEEP, RULES.RICH, RULES.MARKET], () => {
+  // Keeps off, as the D-081 town-trip test (with keeps a town asks keepTownArmy); the siege rules on.
+  const backs = (engine: boolean) => {
+  const g = emptyGame();
+  const w = g.w;
+  for (let k = 0; k < 14; k++) put(g, 0, UnitType.Spearman, 40 + (k % 7), 60 + Math.trunc(k / 7));
+  g.fog.update(w);
+  const ai = hardAi(g, { dodge: false, townArmy: 99 });
+  assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.u.length === 14), "off to a town");
+  for (let k = 0; k < 14; k++) put(g, 1, UnitType.Spearman, 44 + (k % 5), 54 + Math.trunc(k / 5));
+  // In sight of its spearmen (6 cells).
+  if (engine) put(g, 1, UnitType.Siege, 46, 57);
+  w.tick += 10;
+  g.fog.update(w);
+  return ai.think(buildView(g, 0)).some((c) => c.c === "retreat" && c.u.length === 14);
+  };
+  assert.equal(backs(false), false, "14 against 14: on");
+  assert.equal(backs(true), true, "14 and an engine against 14: stronger, back");
+}));
+
 test("D-086 A4 (plan.towers): hard's arrow towers in a 15-minute game leave 2 cells open round its main city and production buildings, and none is refused for its place (gates' lanes, crossings)", () => {
   const g = new Game({ seed: 3, scenario: "standard" });
   const w = g.w;
@@ -3813,3 +3874,98 @@ test("D-099: an enemy siege engine in sight counts in the enemy's strength (it s
   assert.equal(backs(false), false, "14 against 14: on");
   assert.equal(backs(true), true, "14 and an engine against 14: stronger, back");
 }));
+
+// --- D-131: the tactical switches ------------------------------------------------------------------------------
+
+test("D-131 (plan.focusFire): its ranged units shoot the weakest enemy in reach, from its own view: enemies in the fog change nothing", () => {
+  /** Hard at minute 12, 6 ranged units and 6 spearmen at home; 3 enemy spearmen 4 cells off, one hurt; `hidden`: 30 more far off in the fog. */
+  const think = (hidden: boolean, focusFire = true) => {
+    const g = emptyGame();
+    const w = g.w;
+    w.tick = 12 * 1200;
+    const s0 = w.map.spawns[0];
+    const s1 = w.map.spawns[1];
+    for (let k = 0; k < 6; k++) put(g, 0, UnitType.Ranged, s0.cellX + 6 + k, s0.cellY - 6);
+    for (let k = 0; k < 6; k++) put(g, 0, UnitType.Spearman, s0.cellX + 6 + k, s0.cellY - 7);
+    const foes = [0, 1, 2].map((k) => put(g, 1, UnitType.Spearman, s0.cellX + 8 + k, s0.cellY - 10));
+    w.units.col.hp[slotOf(g, foes[2])] = 10;
+    if (hidden) for (let k = 0; k < 30; k++) put(g, 1, UnitType.Spearman, s1.cellX - 6 + (k % 6), s1.cellY + 6 + Math.trunc(k / 6));
+    g.fog.update(w);
+    const ai = hardAi(g, { dodge: false, focusFire });
+    return { out: ai.think(buildView(g, 0)), foes };
+  };
+  const a = think(false);
+  const b = think(true);
+  assert.deepEqual(b.out, a.out, "the same commands");
+  const shots = a.out.filter((c) => c.c === "attack") as { u: number[]; target: number }[];
+  assert.ok(shots.length > 0, "it picks targets");
+  assert.equal(shots[0].target, a.foes[2], "the hurt one first");
+  assert.ok(shots[0].u.length <= 2, `as many on it as it takes (${shots[0].u.length})`);
+  assert.equal(think(false, false).out.filter((c) => c.c === "attack").length, 0, "off: no such orders");
+});
+
+test("D-131 (plan.meetRatio): out to meet a wave when strong enough; back once it is not, and not out again till none has been near for 30 s", () => {
+  const g = emptyGame();
+  const w = g.w;
+  w.tick = 12 * 1200;
+  const s0 = w.map.spawns[0];
+  for (let k = 0; k < 16; k++) put(g, 0, UnitType.Spearman, s0.cellX + 4 + (k % 8), s0.cellY - 4 - Math.trunc(k / 8));
+  g.fog.update(w);
+  const ai = hardAi(g, { dodge: false, peekFirst: 0, meetRatio: 13 });
+  const step = (ticks: number) => {
+    let out: CommandBody[] = [];
+    for (let t = 0; t < ticks; t += 10) {
+      w.tick += 10;
+      g.fog.update(w);
+      out = out.concat(ai.think(buildView(g, 0)));
+    }
+    return out;
+  };
+  const outs = () => (ai as unknown as { stats: () => Record<string, number> }).stats().meetOuts;
+  // 10 enemy spearmen in sight by the city: 16 is under 2 x them (it would wait by the city), over 1.3 x (it meets them).
+  const wave = Array.from({ length: 10 }, (_, k) => put(g, 1, UnitType.Spearman, s0.cellX + 7 + (k % 5), s0.cellY - 9 - Math.trunc(k / 5)));
+  step(20);
+  assert.equal(outs(), 1, "out to meet them");
+  // 12 more: too strong now; back, and not out again while they are near, though some fall.
+  const more = Array.from({ length: 12 }, (_, k) => put(g, 1, UnitType.Spearman, s0.cellX + 6 + (k % 6), s0.cellY - 11 - Math.trunc(k / 6)));
+  step(20);
+  kill(g, more);
+  step(200);
+  assert.equal(outs(), 1, "not out again in the same wave");
+  // All gone 30 s: the next wave is a new one.
+  kill(g, wave);
+  step(30 * 20 + 20);
+  Array.from({ length: 10 }, (_, k) => put(g, 1, UnitType.Spearman, s0.cellX + 7 + (k % 5), s0.cellY - 9 - Math.trunc(k / 5)));
+  step(20);
+  assert.equal(outs(), 2, "a new wave: out again");
+});
+
+test("D-131 (plan.townQuickRest): broken off as soon as it set out for a town, it leaves that town alone; without it, it goes again at once", () => {
+  /** Hard with 30 spearmen far from home and 50 enemy spearmen in sight by them; a minute of thinks (orders not played). */
+  const run = (plan: Partial<HardPlan>) => {
+    const g = emptyGame();
+    const w = g.w;
+    w.tick = 15 * 1200;
+    const s0 = w.map.spawns[0];
+    const sx = s0.cellX + 34;
+    const sy = s0.cellY - 34;
+    for (let k = 0; k < 30; k++) put(g, 0, UnitType.Spearman, sx + (k % 6), sy - Math.trunc(k / 6));
+    for (let k = 0; k < 50; k++) put(g, 1, UnitType.Spearman, sx + 7 + (k % 5), sy + 2 - Math.trunc(k / 5));
+    g.fog.update(w);
+    const ai = hardAi(g, { dodge: false, peekFirst: 0, ...plan });
+    const stats = () => (ai as unknown as { stats: () => Record<string, number> }).stats();
+    let retreats = 0;
+    for (let t = 0; t < 1200; t += 10) {
+      w.tick += 10;
+      g.fog.update(w);
+      for (const c of ai.think(buildView(g, 0))) if (c.c === "retreat" && c.u.length >= 5) retreats++;
+    }
+    return { retreats, quick: stats().townQuickRests };
+  };
+  const off = run({});
+  const on = run({ townQuickRest: 1 });
+  assert.ok(off.retreats >= 20, `off: back and forth (${off.retreats} retreats in a minute)`);
+  assert.equal(off.quick, 0);
+  assert.ok(on.retreats * 3 <= off.retreats, `on: far fewer (${on.retreats} against ${off.retreats})`);
+  assert.ok(on.quick >= 1, `it counted (${on.quick})`);
+});
