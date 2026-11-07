@@ -1,0 +1,94 @@
+{
+ "traces": [
+  {
+   "name": "quick1-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "townQuickRest": 1
+   },
+   "b": {}
+  },
+  {
+   "name": "quick1-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "townQuickRest": 1
+   },
+   "b": {}
+  },
+  {
+   "name": "quick1-hh-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "townQuickRest": 1
+   },
+   "b": {}
+  },
+  {
+   "name": "quick1-hh-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "townQuickRest": 1
+   },
+   "b": {}
+  },
+  {
+   "name": "quick1-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "townQuickRest": 1
+   },
+   "b": {}
+  },
+  {
+   "name": "quick1-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "townQuickRest": 1
+   },
+   "b": {}
+  },
+  {
+   "name": "quick1-hhr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "townQuickRest": 1
+   },
+   "b": {}
+  },
+  {
+   "name": "quick1-hhr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "townQuickRest": 1
+   },
+   "b": {}
+  }
+ ],
+ "scripted": [
+  {
+   "name": "quick1",
+   "a": {
+    "townQuickRest": 1
+   },
+   "cap": 120,
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  }
+ ]
+}
