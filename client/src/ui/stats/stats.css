@@ -78,6 +78,11 @@ body:has(.dialog.stats-page:not([hidden])) #proto-label {
   display: none;
 }
 
+/* Nor the interface under the card: its margins would show the resources' bar and the buttons cut in half. */
+#hud:has(> .dialog.stats-page:not([hidden])) > :not(.dialog) {
+  visibility: hidden;
+}
+
 /* The prototype: its dialog card. */
 :root:not([data-ui="r6"]) .stats-page .stats-card {
   background: #151917;
@@ -90,7 +95,7 @@ body:has(.dialog.stats-page:not([hidden])) #proto-label {
 }
 
 /* The tabs down the card's whole height, the header and the page beside them, a little less margin and padding: 6 × 44
-   and at least 2 between them, in a card inner 274 high (at the iPhone's safe area 21: a screen 331 high or more). */
+   and at least 2 between them, in a card inner 274 high (at the iPhone's safe area 21: a screen 330 high or more). */
 .stats-page .stats-card.tabs-tall {
   --st-my: calc(max(var(--safe-t), var(--safe-b)) + 2px);
 }
@@ -726,4 +731,42 @@ body:has(.dialog.stats-page:not([hidden])) #proto-label {
 
 .stats-page .st-evr.foe {
   stroke: var(--st-foe);
+}
+
+/* ---- the short card (.tabs-tall): rows a little closer, so that 總覽, 戰鬥 and 法師 (and 城鎮, with 4 towns) fit without scrolling ---- */
+.stats-page .tabs-tall .st-ctl {
+  min-height: 30px;
+}
+
+.stats-page .tabs-tall .st-cardin {
+  padding: 4px 8px 2px;
+}
+
+.stats-page .tabs-tall .st-two h3 {
+  margin: 2px 0;
+}
+
+.stats-page .tabs-tall .st-moments li {
+  padding: 2px 0;
+}
+
+.stats-page .tabs-tall .st-nums th,
+.stats-page .tabs-tall .st-nums td {
+  padding: 3px 6px;
+}
+
+.stats-page .tabs-tall .st-mr {
+  min-height: 27px;
+}
+
+.stats-page .tabs-tall .st-mr.st-mh {
+  min-height: 22px;
+}
+
+.stats-page .tabs-tall .st-mkey {
+  margin-top: 2px;
+}
+
+.stats-page .tabs-tall .st-foot {
+  margin-top: 4px;
 }
