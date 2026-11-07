@@ -734,11 +734,6 @@ export class Game implements GestureHost {
     if (this.edge !== null) this.edge.onePass = on;
   }
 
-  /** The battlefield's clock held still or running again (the test page: the same frame twice). */
-  freezeClockForTest(on: boolean): void {
-    this.frozenNow = on ? performance.now() : null;
-  }
-
   /** Whether the film grade is over the battlefield now (the test page). */
   get filmGradeForTest(): boolean {
     return filmGradeOn(this.app);
