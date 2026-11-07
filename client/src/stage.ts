@@ -1,4 +1,4 @@
-// The PixiJS application: full-window WebGL canvas at the device's pixel ratio (a test page's ?res=2: battlefield-res.ts).
+// The PixiJS application: full-window WebGL canvas at the battlefield's pixel ratio (no more than 2: battlefield-res.ts).
 
 import { Application } from "pixi.js";
 

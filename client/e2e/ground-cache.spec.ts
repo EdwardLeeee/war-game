@@ -3,7 +3,7 @@
 // eye: the same frame (the game paused, the battlefield's clock held) with the cache off and on, compared pixel by
 // pixel: at most 0.05% off by more than 2, none by more than 32 (b2, over what client measured: up to 110 of 2.8
 // million pixels by more than 2, at most 23, on a river's banks). Taken once while the camera stands still, again
-// once it moved; art-v6's water (art.lock.json) and R9's (art-lab.lock.json). The 量測 panel's row and
+// once it moved; R9's water (art.lock.json; no art-v6 ships since art-v7.6). The 量測 panel's row and
 // ?test=1&gcache=0 turn it off (test pages, to compare on the iPhone).
 
 import { expect, type Page, test } from "@playwright/test";
@@ -45,8 +45,7 @@ const cache = (page: Page) => page.evaluate(() => window.__proto?.game?.groundCa
 const setCache = (page: Page, on: boolean) => page.evaluate((v) => window.__proto?.game?.setGroundCache(v), on);
 
 for (const [name, q, r9] of [
-  ["art-v6 的水（art.lock.json）", "art=x2", false],
-  ["R9 的地面和水（art-lab.lock.json）", "art=x2&artlab=1", true],
+  ["R9 的地面和水（art.lock.json）", "art=x2", true],
 ] as const) {
   test(`地面快取（${name}）：同一格關和開比一比，看不出差別；鏡頭不動只畫一次快取，動了以後重畫一次，畫面照樣對`, async ({ page }) => {
     test.setTimeout(180_000);

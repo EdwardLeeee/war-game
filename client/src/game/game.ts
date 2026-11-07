@@ -180,7 +180,7 @@ export interface GameOptions {
   /** art-v7 量測 (D-128, main.ts): its buttons and what the art costs, the ground apart (added here). */
   artMeasure?: { open(v: ArtVariant): void; cost(): Omit<ArtCost, "ground">; drawn(): string; gpuAstc(): boolean };
   /**
-   * 戰場像素比 (?test=1&res=2, battlefield-res.ts): the device's pixel ratio, what the battlefield is
+   * 戰場像素比 (battlefield-res.ts, ?test=1&res=device): the device's pixel ratio, what the battlefield is
    * drawn at now, and drawing it at 2 or at the device's; test pages only.
    */
   res?: { device: number; now(): number; set(two: boolean): void };

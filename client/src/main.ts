@@ -580,7 +580,7 @@ const resHook = params.test
  * textures are gone before the next. What it cost, for its result.
  */
 const artMeasureHook =
-  __ART_LAB_TAG__ === null && params.art !== "test"
+  __ART_LAB_TAG__ === null && __ART_TAG__ === null && params.art !== "test"
     ? undefined
     : {
         open: (v: ArtVariant) => {
@@ -600,18 +600,17 @@ const artMeasureHook =
  */
 const artAvailable = __ART_TAG__ !== null || params.art === "test";
 /**
- * ASTC 樣本 (D-085): the spearman from the PNG page and from the ASTC one. art-v7 量測's Release
- * (art-lab.lock.json, D-128) at 3×, premultiplied as the game draws them; before it, the Release's
- * own 2× sample (straight); the test page's stand-ins.
+ * ASTC 樣本 (D-085): the spearman from the PNG page and from the ASTC one, at 3×, premultiplied as
+ * the game draws them (art-v7.1 on, D-128): art-lab.lock.json's Release while there is one, else
+ * the game's own; the test page's stand-ins.
  */
+const sampleTag = __ART_LAB_TAG__ ?? __ART_TAG__;
 const astcSample: AstcSample | undefined =
   params.art === "test"
     ? { unit: "spear_e", png: "./art/test/x3/units/spear_e/", astc: "./art/test/x3/units/spear_e/", straight: false }
-    : __ART_LAB_TAG__ !== null
-      ? { unit: "spear_e", png: `./art/${__ART_LAB_TAG__}/x3/units/spear_e/`, astc: `./art/${__ART_LAB_TAG__}/x3/units/spear_e/`, straight: false }
-      : __ART_TAG__ === null
-        ? undefined
-        : { unit: "spear_e", png: `./art/${__ART_TAG__}/x2/units/spear_e/`, astc: `./art/${__ART_TAG__}/astc-sample/units/spear_e/`, straight: true };
+    : sampleTag === null
+      ? undefined
+      : { unit: "spear_e", png: `./art/${sampleTag}/x3/units/spear_e/`, astc: `./art/${sampleTag}/x3/units/spear_e/`, straight: false };
 /**
  * `view`: how the art's Release is drawn (art-release.json, ui's design/r11/edge-format.md): "diamond"
  * for art-v7 on (the user 2026-11-02 chose 菱形斜看 again, D-117), switching the battlefield to the
@@ -627,15 +626,24 @@ function artWanted(variant: ArtVariant | null = null): { choice: ArtChoice | "te
   const choice = params.art === "test" ? "test" : (variant?.scale ?? params.art ?? loadArtChoice());
   const tex = variant?.tex ?? params.tex ?? loadTexChoice();
   // art-v7 量測 (D-128), and a test page's ?artlab=1: art-lab.lock.json's Release (the test page's stand-ins with ?art=test).
-  const tag = (variant !== null || params.artLab) && choice !== "test" ? __ART_LAB_TAG__ : __ART_TAG__;
+  const tag = (variant !== null || params.artLab) && choice !== "test" ? (__ART_LAB_TAG__ ?? __ART_TAG__) : __ART_TAG__;
   return { choice, tex, tag, key: `${choice}|${tex}|${tag}` };
 }
 const artChanged = (): boolean => artWanted().key !== artChoiceUsed;
 let artFailed: string | null = null;
 /** Why 貼圖 ASTC was asked for and the PNGs drawn (D-128), or null. */
 let astcMissing: string | null = null;
-/** The ASTC pages under `base` (art-release-astc.json, art-v7.1 on), or null: none there. */
-async function astcList(base: string): Promise<Compressed | null> {
+/** The ASTC pages under `base` (art-release-astc.json, art-v7.1 on), or null: none there; once a page (a Release's files never change). */
+const astcLists = new Map<string, Promise<Compressed | null>>();
+function astcList(base: string): Promise<Compressed | null> {
+  let list = astcLists.get(base);
+  if (list === undefined) {
+    list = fetchAstcList(base);
+    astcLists.set(base, list);
+  }
+  return list;
+}
+async function fetchAstcList(base: string): Promise<Compressed | null> {
   try {
     const list = (await json(`${base}art-release-astc.json`, loadTimes)) as { files?: Record<string, unknown> };
     const files = Object.keys(list.files ?? {});

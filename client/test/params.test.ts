@@ -7,15 +7,15 @@ test("game speeds are 20, 30 and 40 ticks per second (D-024)", () => {
 });
 
 test("a plain page has no test hook and no tick-rate override", () => {
-  assert.deepEqual(parseParams(""), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null, map: null, watch: false, seed: null, outpost: false, outpostHide: false, walls: false, siege: false, keep: false, market: false, mine: false, art: null, culture: null, gallery: null, ui: null, view: null, ghost: null, loadTimes: false, ground: "real", groundQuality: "high", edge: false, tex: null, measure: null, measureSeconds: null, artLab: false, res: null, groundCache: true });
+  assert.deepEqual(parseParams(""), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null, map: null, watch: false, seed: null, outpost: false, outpostHide: false, walls: false, siege: false, keep: false, market: false, mine: false, art: null, culture: null, gallery: null, ui: null, view: null, ghost: null, loadTimes: false, ground: "real", groundQuality: "high", edge: false, tex: null, measure: null, measureSeconds: null, artLab: false, res: 2, groundCache: true });
 });
 
 test("tps, mock, r7, scenario and ai are ignored without test=1", () => {
-  assert.deepEqual(parseParams("?tps=200&mock=1&r7=1&scenario=e2e&ai=0&hint=0&logs=https://x.test/logs&map=random&watch=1&culture=w&gallery=1"), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null, map: null, watch: false, seed: null, outpost: false, outpostHide: false, walls: false, siege: false, keep: false, market: false, mine: false, art: null, culture: null, gallery: null, ui: null, view: null, ghost: null, loadTimes: false, ground: "real", groundQuality: "high", edge: false, tex: null, measure: null, measureSeconds: null, artLab: false, res: null, groundCache: true });
+  assert.deepEqual(parseParams("?tps=200&mock=1&r7=1&scenario=e2e&ai=0&hint=0&logs=https://x.test/logs&map=random&watch=1&culture=w&gallery=1"), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null, map: null, watch: false, seed: null, outpost: false, outpostHide: false, walls: false, siege: false, keep: false, market: false, mine: false, art: null, culture: null, gallery: null, ui: null, view: null, ghost: null, loadTimes: false, ground: "real", groundQuality: "high", edge: false, tex: null, measure: null, measureSeconds: null, artLab: false, res: 2, groundCache: true });
 });
 
 test("test=1 turns on the hook and allows a faster tick rate and the fake world", () => {
-  assert.deepEqual(parseParams("?test=1&tps=200"), { test: true, tps: 200, mock: false, round7: false, scenario: null, enemyAi: true, hint: false, logsUrl: null, map: null, watch: false, seed: null, outpost: false, outpostHide: false, walls: false, siege: false, keep: false, market: false, mine: false, art: null, culture: null, gallery: null, ui: null, view: null, ghost: null, loadTimes: false, ground: null, groundQuality: "high", edge: false, tex: null, measure: null, measureSeconds: null, artLab: false, res: null, groundCache: true });
+  assert.deepEqual(parseParams("?test=1&tps=200"), { test: true, tps: 200, mock: false, round7: false, scenario: null, enemyAi: true, hint: false, logsUrl: null, map: null, watch: false, seed: null, outpost: false, outpostHide: false, walls: false, siege: false, keep: false, market: false, mine: false, art: null, culture: null, gallery: null, ui: null, view: null, ghost: null, loadTimes: false, ground: null, groundQuality: "high", edge: false, tex: null, measure: null, measureSeconds: null, artLab: false, res: 2, groundCache: true });
   assert.equal(parseParams("?test=1&mock=1").mock, true);
   assert.equal(parseParams("?test=1&mock=1").round7, false);
   assert.equal(parseParams("?test=1&mock=1&r7=1").round7, true);
@@ -113,12 +113,13 @@ test("?test=1&artlab=1：這一局用 art-lab.lock.json 的美術（art-v7 的 R
   assert.equal(parseParams("?artlab=1").artLab, false);
 });
 
-test("?test=1&res=2 draws the battlefield at 2 (ceo 2026-11-06, to measure on the iPhone); anything else, or without test=1, the device's", () => {
+test("戰場像素比 is 2 (the user 2026-11-07); only ?test=1&res=device draws at the device's", () => {
+  assert.equal(parseParams("").res, 2);
+  assert.equal(parseParams("?test=1").res, 2);
   assert.equal(parseParams("?test=1&res=2").res, 2);
-  assert.equal(parseParams("?res=2").res, null);
-  assert.equal(parseParams("?test=1&res=1").res, null);
-  assert.equal(parseParams("?test=1&res=3").res, null);
-  assert.equal(parseParams("?test=1").res, null);
+  assert.equal(parseParams("?test=1&res=1").res, 2);
+  assert.equal(parseParams("?res=device").res, 2);
+  assert.equal(parseParams("?test=1&res=device").res, "device");
 });
 
 test("地面快取 (ceo b2 2026-11-07) is on unless ?test=1&gcache=0; a plain page cannot turn it off", () => {

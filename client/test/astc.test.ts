@@ -32,15 +32,15 @@ test("D-128：3 倍要 ASTC 但顯示卡沒有（或美術沒有壓縮圖）就�
   assert.equal(artScale("test", "astc", false), "test");
 });
 
-test("貼圖的選擇記在這台裝置；沒選過、讀不到或亂寫的都算 PNG（切到 art-v7 前）", () => {
+test("貼圖的選擇記在這台裝置；沒選過、讀不到或亂寫的都算 ASTC（D-128，art-v7.6 起）", () => {
   const kept = new Map<string, string>();
   const store = { getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => void kept.set(k, v) };
-  assert.equal(loadTexChoice(store), "png");
-  saveTexChoice("astc", store);
-  assert.equal(kept.get(TEX_KEY), "astc");
   assert.equal(loadTexChoice(store), "astc");
-  kept.set(TEX_KEY, "etc2");
+  saveTexChoice("png", store);
+  assert.equal(kept.get(TEX_KEY), "png");
   assert.equal(loadTexChoice(store), "png");
+  kept.set(TEX_KEY, "etc2");
+  assert.equal(loadTexChoice(store), "astc");
   const broken = {
     getItem: () => {
       throw new Error("blocked");
@@ -49,8 +49,8 @@ test("貼圖的選擇記在這台裝置；沒選過、讀不到或亂寫的都�
       throw new Error("blocked");
     },
   };
-  assert.equal(loadTexChoice(broken), "png");
-  assert.doesNotThrow(() => saveTexChoice("astc", broken));
+  assert.equal(loadTexChoice(broken), "astc");
+  assert.doesNotThrow(() => saveTexChoice("png", broken));
 });
 
 test("art-v7 量測：三種的順序是 x3 ASTC、x2 PNG、x3 PNG（最可能撐不住的最後）；結果寫實際畫的、貼圖 MB、地面另計、ASTC、瀏覽器", () => {
