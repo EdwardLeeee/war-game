@@ -40,7 +40,10 @@ import {
   UnitField,
   UnitFlag,
   UnitType,
+  WALL_HOLD_STRIDE,
   WALL_SHIFT_STRIDE,
+  WallHold,
+  WallHoldField,
   WallShiftField,
   WARNING_STRIDE,
   WarningField,
@@ -49,7 +52,7 @@ import { townInSight, writeTownRow } from "../core/fog.ts";
 import type { Game } from "../core/game.ts";
 import type { GameMap } from "../core/map.ts";
 import { onWall } from "../core/units.ts";
-import { wallStretch, wayFrame, wayGates } from "../core/wall-walk.ts";
+import { wallStretch, wayFrame, wayGates, wayGatesDown } from "../core/wall-walk.ts";
 import { BUILDINGS, CANNON, FARMLAND_REACH, MAGE_CAP, MAIN_CITY_REPAIR_LOCK, MARKET, OUTPOST, OUTPOST_HIDE, TOWER_REACH, TOWERS, UNITS } from "../core/rules.ts";
 
 export interface PlayerView {
@@ -63,6 +66,8 @@ export interface PlayerView {
   warnings: Int32Array;
   /** R14-07: the viewer's soldiers walking along town walls (WALL_SHIFT_STRIDE rows). */
   wallShifts: Int32Array;
+  /** R14-07: the viewer's wall soldiers that stay instead of shifting, and why (WALL_HOLD_STRIDE rows). */
+  wallHolds: Int32Array;
   /** Every node the player has seen (NODE_STRIDE rows). */
   nodes: Int32Array;
   /** size * size Fog values as of fogTick. */
@@ -170,6 +175,35 @@ function wallShiftRows(game: Game, player: number | null, sees: (cx: number, cy:
     out.set(row, r * WALL_SHIFT_STRIDE);
     r++;
   }
+  return out;
+}
+
+/**
+ * The viewer's wall soldiers that stay instead of shifting along the walls (WALL_SHIFT; a spectator's: everyone's), as the
+ * simulation keeps them (units.ts holdOn), one row per town, owner, kind, from, to and gates (PROTOCOL.md 4.7).
+ */
+function wallHoldRows(game: Game, player: number | null): Int32Array {
+  const w = game.w;
+  const u = w.units.col;
+  const rows = new Map<string, number[]>();
+  for (let s = 0; s < w.units.count; s++) {
+    const kind = u.wallHold[s];
+    if (kind === 0 || !onWall(w, s) || u.owner[s] >= PLAYER_COUNT) continue;
+    if (player !== null && u.owner[s] !== player) continue;
+    const c = u.wall[s];
+    const to = u.wallHoldTo[s];
+    const t = w.wallTown[c];
+    const gates = kind === WallHold.GateDown ? wayGatesDown(w, t, c, to, wayFrame(w, u.owner[s], t)) : 0;
+    const key = [t, u.owner[s], kind, wallStretch(w, c), wallStretch(w, to), gates].join(",");
+    const had = rows.get(key);
+    if (had !== undefined) {
+      had[WallHoldField.n]++;
+      had[WallHoldField.since] = Math.min(had[WallHoldField.since], u.wallHoldSince[s]);
+    } else rows.set(key, [t, u.owner[s], kind, 1, wallStretch(w, c), wallStretch(w, to), gates, u.wallHoldFoes[s], u.wallHoldMine[s], u.wallHoldSince[s]]);
+  }
+  const out = new Int32Array(rows.size * WALL_HOLD_STRIDE);
+  let r = 0;
+  for (const row of rows.values()) out.set(row, r++ * WALL_HOLD_STRIDE);
   return out;
 }
 
@@ -412,6 +446,7 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
   });
 
   const wallShifts = wallShiftRows(game, player, seesCell);
+  const wallHolds = wallHoldRows(game, player);
 
   // Placement: rock, nodes as last seen, and every building the player knows block;
   // unexplored cells are marked; farm land comes from own finished main cities and granaries.
@@ -486,6 +521,7 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
     towns,
     warnings,
     wallShifts,
+    wallHolds,
     nodes,
     fog: fogGrid,
     fogTick: fog.fogTick,
@@ -532,6 +568,7 @@ export class SnapshotEncoder {
       towns: view.towns,
       warnings: view.warnings,
       wallShifts: view.wallShifts,
+      wallHolds: view.wallHolds,
       nodes,
       fog: fogNew ? view.fog : null,
       placement: fogNew ? view.placement : null,
