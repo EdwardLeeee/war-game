@@ -6,6 +6,7 @@
 
 import { FOG_ROUND_SCALE, roundFog } from "./round-fog.ts";
 import { type Application, ColorMatrixFilter, Container, Graphics, type Renderer, Sprite, Text, Texture } from "pixi.js";
+import { GroundCache } from "./ground-cache.ts";
 import type { Camera } from "../camera/camera.ts";
 import { PT_PER_CELL, type Projection, tilted, TOP } from "../camera/projection.ts";
 import {
@@ -348,6 +349,8 @@ export class WorldRenderer {
   private readonly flatGround: Sprite;
   /** 寫實地面 (D-093, ?test=1&ground=real): null while the flat ground is drawn. */
   private groundDraw: GroundDraw | null = null;
+  /** 地面快取 (ground-cache.ts): the land from a picture of the screen while the camera stands still. */
+  private readonly groundCache: GroundCache;
   /** The ground and resource points its weights were made from. */
   private groundKey = "";
   /** 城內 B (castle 2): the snapshot and the towns' and buildings' key the towns' ground was last made for. */
@@ -386,6 +389,7 @@ export class WorldRenderer {
 
   /** `art`: the units' atlases (D-085), `cultureOf` which culture each player wears; `projection` how the ground lies. */
   constructor(app: Application, view: GameView, atlas: Atlas, art: UnitArt | null = null, cultureOf: (owner: number) => Culture = (owner) => (owner === 1 ? "w" : "e"), projection: Projection = TOP) {
+    this.groundCache = new GroundCache(app, true);
     this.view = view;
     this.atlas = atlas;
     this.projection = projection;
@@ -464,7 +468,8 @@ export class WorldRenderer {
     this.placeOuter.addChild(this.placeInner);
     this.groundInner.addChild(ground, this.rails, this.castleBlocks, this.brokenGates, this.zones, this.baseLayer, this.enterRings, this.ringLayer, this.fx, this.craterLayer, this.warnLayer, this.ghost, fog, this.wallGround);
     this.groundOuter.addChild(this.groundInner);
-    this.root.addChild(this.groundOuter, this.terrainGround, this.groundArt, this.wallLayer, this.overGround, this.shadowLayer, this.unitLayer, this.ghostLayers.own, this.ghostLayers.enemy, this.ghostLayers.neutral, this.ghostRings, this.placeOuter, this.airFx, this.airArt, this.barLayer, this.townLayer);
+    // The ground's cache under the ground's layers (the edge's cliff, addEdge, under it).
+    this.root.addChild(this.groundCache.sprite, this.groundOuter, this.terrainGround, this.groundArt, this.wallLayer, this.overGround, this.shadowLayer, this.unitLayer, this.ghostLayers.own, this.ghostLayers.enemy, this.ghostLayers.neutral, this.ghostRings, this.placeOuter, this.airFx, this.airArt, this.barLayer, this.townLayer);
     app.stage.addChild(this.root);
   }
 
@@ -485,6 +490,7 @@ export class WorldRenderer {
     this.updateGround();
     this.updateTownGround();
     this.groundDraw?.tick(now / 1000);
+    this.groundCache.frame(camera, this.groundDraw, this.groundInner);
     this.fx.clear();
     this.airFx.clear();
     this.overGround.clear();
@@ -506,6 +512,7 @@ export class WorldRenderer {
     this.artUnits?.destroy();
     this.castle.destroy();
     this.terrain.destroy();
+    this.groundCache.destroy();
     this.groundDraw?.destroy();
     this.root.parent?.removeChild(this.root);
     this.root.destroy({ children: true });
@@ -1356,6 +1363,16 @@ export class WorldRenderer {
     this.root.addChildAt(over, this.root.getChildIndex(this.groundArt) + 1);
     this.edgeFadeM = fadeM;
     this.groundDraw?.setEdgeFade(fadeM);
+  }
+
+  /** 地面快取 on or off (?test=1&gcache=0, the 量測 panel): from the next frame. */
+  setGroundCache(on: boolean): void {
+    this.groundCache.on = on;
+  }
+
+  /** 地面快取: on, its picture shown this frame, how many times the land was drawn into it, its MB (the test page, the 量測 panel). */
+  get groundCacheState(): { on: boolean; shown: boolean; taken: number; mb: number } {
+    return { on: this.groundCache.on, shown: this.groundCache.shown, taken: this.groundCache.taken, mb: this.groundCache.memoryMB };
   }
 
   /** 寫實地面 in use this game (its switch in 選單 then means something). */

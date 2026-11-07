@@ -148,6 +148,12 @@ export interface GameHook {
   /** 寫實地面 (D-093): drawn or not and its quality; set its quality. */
   /** `r9`: R9's ground (art-v7 on: the relief, the film curve); `r9water`: its banks and water too. */
   groundLook(): { real: boolean; quality: string | null; water: boolean; town: boolean; r9: boolean; r9water: boolean } | null;
+  /** 地面快取 (render/ground-cache.ts): on, its picture shown this frame, times the land was drawn into it, its MB; null before the battlefield. */
+  groundCache(): { on: boolean; shown: boolean; taken: number; mb: number } | null;
+  /** 地面快取 on or off from the next frame. */
+  setGroundCache(on: boolean): void;
+  /** The page's clock as the battlefield draws it held still (true) or running (false): the same frame twice, to compare pictures. */
+  freezeClock(on: boolean): void;
   /** Units drawn with their owner's colour under their feet last frame (寫實地面, ceo 2026-10-25). */
   feet(): number;
   /** 電影色調 (R9-05 B): the film grade over the battlefield now. */
@@ -387,6 +393,9 @@ export function gameHook(game: Game): GameHook {
         return { ...d, sx: at.x, sy: at.y };
       }),
     groundLook: () => game.groundForTest,
+    groundCache: () => game.groundCacheForTest,
+    setGroundCache: (on) => game.setGroundCacheForTest(on),
+    freezeClock: (on) => game.freezeClockForTest(on),
     feet: () => game.feetForTest,
     filmGrade: () => game.filmGradeForTest,
     edge: () => game.edgeForTest,

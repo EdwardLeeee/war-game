@@ -7,15 +7,15 @@ test("game speeds are 20, 30 and 40 ticks per second (D-024)", () => {
 });
 
 test("a plain page has no test hook and no tick-rate override", () => {
-  assert.deepEqual(parseParams(""), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null, map: null, watch: false, seed: null, outpost: false, outpostHide: false, walls: false, siege: false, keep: false, market: false, mine: false, art: null, culture: null, gallery: null, ui: null, view: null, ghost: null, loadTimes: false, ground: "real", groundQuality: "high", edge: false, tex: null, measure: null, measureSeconds: null, artLab: false, res: null });
+  assert.deepEqual(parseParams(""), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null, map: null, watch: false, seed: null, outpost: false, outpostHide: false, walls: false, siege: false, keep: false, market: false, mine: false, art: null, culture: null, gallery: null, ui: null, view: null, ghost: null, loadTimes: false, ground: "real", groundQuality: "high", edge: false, tex: null, measure: null, measureSeconds: null, artLab: false, res: null, groundCache: true });
 });
 
 test("tps, mock, r7, scenario and ai are ignored without test=1", () => {
-  assert.deepEqual(parseParams("?tps=200&mock=1&r7=1&scenario=e2e&ai=0&hint=0&logs=https://x.test/logs&map=random&watch=1&culture=w&gallery=1"), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null, map: null, watch: false, seed: null, outpost: false, outpostHide: false, walls: false, siege: false, keep: false, market: false, mine: false, art: null, culture: null, gallery: null, ui: null, view: null, ghost: null, loadTimes: false, ground: "real", groundQuality: "high", edge: false, tex: null, measure: null, measureSeconds: null, artLab: false, res: null });
+  assert.deepEqual(parseParams("?tps=200&mock=1&r7=1&scenario=e2e&ai=0&hint=0&logs=https://x.test/logs&map=random&watch=1&culture=w&gallery=1"), { test: false, tps: null, mock: false, round7: false, scenario: null, enemyAi: true, hint: true, logsUrl: null, map: null, watch: false, seed: null, outpost: false, outpostHide: false, walls: false, siege: false, keep: false, market: false, mine: false, art: null, culture: null, gallery: null, ui: null, view: null, ghost: null, loadTimes: false, ground: "real", groundQuality: "high", edge: false, tex: null, measure: null, measureSeconds: null, artLab: false, res: null, groundCache: true });
 });
 
 test("test=1 turns on the hook and allows a faster tick rate and the fake world", () => {
-  assert.deepEqual(parseParams("?test=1&tps=200"), { test: true, tps: 200, mock: false, round7: false, scenario: null, enemyAi: true, hint: false, logsUrl: null, map: null, watch: false, seed: null, outpost: false, outpostHide: false, walls: false, siege: false, keep: false, market: false, mine: false, art: null, culture: null, gallery: null, ui: null, view: null, ghost: null, loadTimes: false, ground: null, groundQuality: "high", edge: false, tex: null, measure: null, measureSeconds: null, artLab: false, res: null });
+  assert.deepEqual(parseParams("?test=1&tps=200"), { test: true, tps: 200, mock: false, round7: false, scenario: null, enemyAi: true, hint: false, logsUrl: null, map: null, watch: false, seed: null, outpost: false, outpostHide: false, walls: false, siege: false, keep: false, market: false, mine: false, art: null, culture: null, gallery: null, ui: null, view: null, ghost: null, loadTimes: false, ground: null, groundQuality: "high", edge: false, tex: null, measure: null, measureSeconds: null, artLab: false, res: null, groundCache: true });
   assert.equal(parseParams("?test=1&mock=1").mock, true);
   assert.equal(parseParams("?test=1&mock=1").round7, false);
   assert.equal(parseParams("?test=1&mock=1&r7=1").round7, true);
@@ -119,4 +119,12 @@ test("?test=1&res=2 draws the battlefield at 2 (ceo 2026-11-06, to measure on th
   assert.equal(parseParams("?test=1&res=1").res, null);
   assert.equal(parseParams("?test=1&res=3").res, null);
   assert.equal(parseParams("?test=1").res, null);
+});
+
+test("地面快取 (ceo b2 2026-11-07) is on unless ?test=1&gcache=0; a plain page cannot turn it off", () => {
+  assert.equal(parseParams("").groundCache, true);
+  assert.equal(parseParams("?test=1").groundCache, true);
+  assert.equal(parseParams("?test=1&gcache=0").groundCache, false);
+  assert.equal(parseParams("?test=1&gcache=1").groundCache, true);
+  assert.equal(parseParams("?gcache=0").groundCache, true);
 });
