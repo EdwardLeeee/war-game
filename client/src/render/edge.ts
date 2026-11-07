@@ -7,7 +7,8 @@
 //   - the cliff under the two lower edges (pieces every 16 m, the three corners) and the waterfalls
 //     where water meets them (the loop scrolled down, its mouth on the lip, the spray below): in the
 //     battlefield, under the ground, darkened as the fog over that stretch of edge;
-//   - clouds along the two upper edges, over the ground's straight cut, and a few below the cliffs.
+//   - a few clouds below the cliffs. None on the map: over it they are over the ground and the fog, and clouds do not
+//     belong on the island (the user 2026-11-07: 「雲不該在島上吧」), so the two upper edges are a clean line on the sea.
 // What moves is a picture moved over time (PixiJS's TilingSprite scrolls its texture in the shader),
 // on the page's clock: the simulation knows nothing of it.
 
@@ -56,8 +57,6 @@ const UP_PER_M = Math.sqrt(3) / 2;
 
 /** How dark the cliff is at light 0 (never explored): near the fog's black. */
 const DARK = 0.12;
-/** Clouds along the upper edges: one every this many metres. */
-const RIM_STEP_M = 7;
 
 const grey = (light: number): number => {
   const v = Math.round(255 * (DARK + (1 - DARK) * Math.max(0, Math.min(1, light))));
@@ -84,7 +83,7 @@ export class EdgeRenderer {
   readonly back = new Container();
   /** The cliff and the waterfalls: in the battlefield, under the ground. */
   readonly under = new Container();
-  /** Clouds over the upper edges and below the cliffs: in the battlefield, over the ground. */
+  /** Clouds below the cliffs: in the battlefield, over the ground, off the map. */
   readonly over = new Container();
   private readonly far: Cloud;
   private readonly near: Cloud;
@@ -96,6 +95,8 @@ export class EdgeRenderer {
   private fogVersion = -1;
   /** The sea of clouds a layer in one pass (cloud-pass.ts; ceo b2 2026-11-07); off, two TilingSprites as before (the test page compares them). */
   onePass = true;
+  /** The clouds over the battlefield drawn (the test page compares without them: none of them is on the map). */
+  overOn = true;
   private groundVersion = -1;
   /** Plane points a picture pixel (the pictures are pxPerM, the plane PT_PER_M a metre). */
   private readonly k: number;
@@ -115,7 +116,7 @@ export class EdgeRenderer {
     this.near = this.cloud(e.clouds.near);
     this.cliffUp();
     this.under.addChild(this.falls);
-    this.rimUp();
+    this.puffsUp();
   }
 
   private tex(file: string): Texture {
@@ -258,22 +259,12 @@ export class EdgeRenderer {
     }
   }
 
-  private rimUp(): void {
+  /** A few clouds drifting under the cliffs. */
+  private puffsUp(): void {
     const e = this.art.json;
     if (e.puffs.length === 0) return;
     const n = this.size;
-    // Along the two upper edges (x = 0 and y = 0), astride the line, so the ground's straight cut fades into clouds.
-    const step = RIM_STEP_M / CELL_M;
     let k = 0;
-    for (let i = step / 2; i < n; i += step) {
-      for (const [cx, cy] of [
-        [0, n - i],
-        [i, 0],
-      ] as const) {
-        this.puff(k++, this.plane(cx, cy), e.rim.fade_m * 2.4);
-      }
-    }
-    // And a few drifting under the cliffs.
     for (let i = n / 6; i < n; i += n / 3) {
       for (const side of ["sw", "se"] as const) {
         const at = edgePoint(n, side, i);
@@ -316,7 +307,7 @@ export class EdgeRenderer {
     const shows = !this.inside(camera);
     this.back.visible = shows;
     this.under.visible = shows;
-    this.over.visible = shows;
+    this.over.visible = shows && this.overOn;
     if (!shows) return;
     // The plane point at the screen's centre.
     const cx = camera.x + w / 2 / s;
@@ -365,7 +356,7 @@ export class EdgeRenderer {
     }
   }
 
-  /** The whole screen on the map, a margin more for the clouds over the upper edges and the cliff's lip. */
+  /** The whole screen on the map, a margin more for the cliff's lip. */
   private inside(camera: Camera): boolean {
     const n = this.size * TILE_PX;
     const m = 3 * TILE_PX;

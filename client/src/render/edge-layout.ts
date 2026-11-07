@@ -47,7 +47,6 @@ export interface EdgeJson {
     mouth: EdgePiece & { foam_m: number; se?: EdgePiece };
   };
   puffs: { file: string; drift_px_s: [number, number]; alpha_max: number }[];
-  rim: { fade_m: number };
 }
 
 /** The edge's description, or null when it is not one this page can draw. */
