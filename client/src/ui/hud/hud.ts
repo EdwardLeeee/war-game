@@ -16,6 +16,7 @@ import {
   BuildingField,
   BuildingType,
   CELL,
+  GameOverReason,
   type GameStats,
   HeaderField as H,
   NEUTRAL,
@@ -40,6 +41,8 @@ import { costText } from "../../game/govern-wait.ts";
 import { Minimap } from "./minimap.ts";
 import { armyText, buildingName, clock, GAME_OVER_REASON, UNIT_NAME } from "./names.ts";
 import { CommandArea, PLUNDERED_TEXT, ResourceBar, SelectionInfo } from "./panels.ts";
+import { statsModel } from "../stats/model.ts";
+import { StatsPage } from "../stats/page.ts";
 
 const UPDATE_MS = 100;
 /** px between the resource bar and the top-right buttons. */
@@ -253,6 +256,7 @@ export class Hud {
       buildingSeats: (building: number) => game.buildingSeats(building),
       buildingRecall: (building: number, ids: readonly number[]) => game.buildingRecall(building, ids),
       townSeats: (town: number) => game.townSeats(town),
+      wallShiftLines: (town: number) => game.wallShiftLines(town),
       groupPlaces: (i: number) => game.groupPlaces(i),
       groupOut: (i: number, all: boolean) => game.groupOut(i, all),
       groupRecall: (i: number) => game.groupRecall(i),
@@ -311,7 +315,8 @@ export class Hud {
     // 正式介面 (R6-20, R6-21): every button a dialog puts up (at once or later) the interface's, in its tone.
     if (this.formal) {
       const dress = () => {
-        for (const b of this.dialog.querySelectorAll<HTMLButtonElement>("button:not(.b)")) {
+        // [data-plain]: a button with a look of its own (局後統計's ⌄).
+        for (const b of this.dialog.querySelectorAll<HTMLButtonElement>("button:not(.b):not([data-plain])")) {
           b.classList.add("b");
           if (b.classList.contains("danger")) b.classList.add("red");
           else if (b.classList.contains("choice-plunder")) b.classList.add("plunder");
@@ -438,8 +443,11 @@ export class Hud {
         if (this.formal && this.homeHit(ev)) this.homeHitUntil = performance.now() + HOME_HIT_MS;
         break;
       case "town_captured":
-        if (ev.by === me) this.openTownChoice(ev.town);
-        else this.game.toast("敵方攻下了一座城鎮");
+        // Ours: 搶還是治理, but not while measuring (ceo 2026-11-06: it covered the 量測 panel and its
+        // result): the town waits for a choice as the player's would (tapping it still opens this);
+        // nothing is sent, nothing said. The enemy's: said.
+        if (ev.by !== me) this.game.toast("敵方攻下了一座城鎮");
+        else if (!this.game.measuring) this.openTownChoice(ev.town);
         break;
       case "town_plundered":
         this.game.toast(ev.by === me ? `搶完了：糧 ${ev.food}、金 ${ev.gold}、魔晶 ${ev.crystal}` : "敵方搶完了一座城鎮");
@@ -1021,6 +1029,8 @@ export class Hud {
     const card = this.openDialog(`攻下${big ? "大城" : "小鎮"}！${once ? "只能治理" : "搶還是治理？"}`, "town-choice");
     // 留守 (D-026): how many soldiers stay behind with each choice.
     const keep = { plunder: this.defaultKeep(town), govern: this.defaultKeep(town) };
+    // 正式介面: one 留守 for either (below), the same number from the start (ceo 2026-11-06).
+    if (this.formal) keep.plunder = keep.govern;
     const row = el("div", card, "choice-row");
     if (!once) {
       const plunder = btn(row, "", () => this.chooseTown(town, TownChoice.Plunder, keep.plunder), "choice-plunder");
@@ -1103,12 +1113,38 @@ export class Hud {
     this.closeDialog();
   }
 
-  /** The result screen (GDD §14). */
+  /**
+   * The result screen (GDD §14): 局後統計 (R13-02 A, R14-09, ui/stats/) when the game sent its timeline (D-124), both
+   * interfaces (D-127); the table as before without one (an older simulation, the fake world unless a test gives one).
+   */
   showResult(winner: number, reason: number, stats: GameStats): void {
+    const world = stats.timeline === undefined ? null : this.game.statsWorld();
+    if (stats.timeline !== undefined && world !== null) {
+      const m = statsModel(winner, reason, stats.ticks, stats.timeline, world);
+      this.dialogClosed();
+      this.dialog.replaceChildren();
+      this.dialog.className = `dialog result stats-page ${m.head.result}`;
+      this.dialog.hidden = false;
+      this.dialog.setAttribute("aria-label", m.head.title);
+      const page = new StatsPage(this.dialog, m, this.formal, {
+        restart: () => {
+          this.closeDialog();
+          this.life.restart();
+        },
+        home: () => {
+          this.closeDialog();
+          this.life.toStart();
+        },
+      });
+      this.dialogGone = () => page.destroy();
+      return;
+    }
     const me = this.game.view?.me ?? 0;
     const title = winner === -1 ? "平手" : winner === me ? "勝利" : "失敗";
     const card = this.openDialog(title, `result ${winner === me ? "won" : winner === -1 ? "draw" : "lost"}`);
-    el("p", card, "", `${GAME_OVER_REASON[reason] ?? ""}　遊戲時間 ${clock(stats.ticks)}`);
+    // 正式介面 (R6-21, INV-130): a win by the enemy's main city 「敵方主城被摧毀」, as the board; a loss as before.
+    const why = this.formal && winner === me && reason === GameOverReason.MainCityDestroyed ? "敵方主城被摧毀" : (GAME_OVER_REASON[reason] ?? "");
+    el("p", card, "", `${why}　遊戲時間 ${clock(stats.ticks)}`);
     const table = el("table", card, "stats");
     const head = el("tr", table);
     for (const t of ["", "我方", "敵方"]) el("th", head, "", t);

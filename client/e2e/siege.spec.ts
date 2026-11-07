@@ -5,7 +5,7 @@
 // The pictures go to the user with art-v6, when the feature goes on.
 
 import { expect, type Page, test } from "@playwright/test";
-import { selectForCommands, shot, watchErrors } from "./helpers.ts";
+import { formalOn, meaningText, selectForCommands, shot, watchErrors } from "./helpers.ts";
 import { tap } from "./touch.ts";
 
 const SIEGE = 6;
@@ -46,9 +46,11 @@ test("攻城砲（D-099）：石頭從攻城砲飛到落點、看不到的攻城
   await expect.poll(async () => (await siege(page)).shots, { timeout: 60_000 }).toBeGreaterThanOrEqual(2);
   // Selected alone: its rings, its two reaches in words (D-115), and its 剋／怕 line.
   await selectForCommands(page, [engine.id]);
-  await expect(page.locator(".sel-info .siege-reach")).toHaveText("射程：打建築 10 格、打兵 6 格，3 格內打不到");
+  await expect.poll(() => meaningText(page.locator(".sel-info .siege-reach"))).toBe("射程：打建築 10 格、打兵 6 格，3 格內打不到");
   await expect.poll(async () => (await siege(page)).rings).toBe(1);
-  await expect(page.locator(".sel-counters")).toHaveText("攻城砲　剋：建築／怕：近身的兵、騎兵");
+  // The one kind's 剋怕: the prototype's own line, 正式介面's among the explanation (R14).
+  if (await formalOn(page)) await expect.poll(() => meaningText(page.locator(".sel-info .counter-meaning"))).toBe("剋怕：剋：建築／怕：近身的兵、騎兵");
+  else await expect(page.locator(".sel-counters")).toHaveText("攻城砲　剋：建築／怕：近身的兵、騎兵");
   // The panel folded, the way from the engine (28, 55) to the barracks (34–36, 58–60) in view.
   await page.locator(".sel-info").getByRole("button", { name: "收起選取資訊" }).tap();
   await centre(page, 31.5, 57, 1.4);
@@ -75,7 +77,8 @@ test("攻城砲（D-099）：石頭從攻城砲飛到落點、看不到的攻城
   const works = page.locator(".cmds").getByRole("button", { name: /^砲坊/ });
   await expect(works).toBeVisible();
   await expect(works).toBeDisabled();
-  await expect(works).toContainText("要先蓋射場");
+  // 正式介面: 要先蓋 a line, the building another (ui 2026-11-07).
+  await expect(works).toContainText(/要先蓋\s*射場/);
   await page.locator(".cmds").getByRole("button", { name: "返回" }).tap();
   // Our 砲坊: 訓練攻城砲, and 自動訓練 as at the barracks (D-098).
   const own = (await buildings(page)).find((b) => b.owner === me && b.type === SIEGE_WORKS);

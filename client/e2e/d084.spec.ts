@@ -6,7 +6,7 @@
 // south wall. The fake world shows every state; the real simulation the big city's tower inside its walls.
 
 import { expect, type Page, test } from "@playwright/test";
-import { shot, watchErrors } from "./helpers.ts";
+import { keepControls, shot, watchErrors } from "./helpers.ts";
 
 const TOWER = 9; // BuildingType.TownTower
 
@@ -39,8 +39,8 @@ test("攻下對話框（D-084）：搶和治理都預設留最少駐軍數（小
   await centre(page, 30, 66, 1);
   await page.evaluate(() => window.__proto?.game?.inject({ k: "town_captured", town: 0, by: 0 }));
   const dialog = page.getByRole("dialog", { name: /搶還是治理/ });
-  await expect(dialog.getByRole("status", { name: "留守幾名（搶）" })).toHaveText("1");
-  await expect(dialog.getByRole("status", { name: "留守幾名（治理）" })).toHaveText("1");
+  await expect((await keepControls(page, dialog, "搶")).count).toHaveText("1");
+  await expect((await keepControls(page, dialog, "治理")).count).toHaveText("1");
   await shot(page, info, "d084-capture-dialog");
   check();
 });

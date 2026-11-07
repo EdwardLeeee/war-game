@@ -126,6 +126,8 @@ export interface PanelHost {
   buildingRecall(building: number, ids: readonly number[]): void;
   /** A town of ours (7c): its 留守 on the walls and inside, by kind. */
   townSeats(town: number): { wall: number[]; inside: number[] };
+  /** 牆上換邊 (R14-07): our town's lines, at most two (game.ts wallShiftLines). */
+  wallShiftLines(town: number): string[];
   /** 軍團畫面 (8): where group i's soldiers are in, by place, and how many. */
   groupPlaces(i: number): { places: { name: string; kinds: number[]; town: boolean }[]; n: number };
   /** 哨所 (D-080): its spearmen and mode, for its panel; null for another building. `inside`: those hiding in it (3 × 3, D-119), null while they stand guard beside it. */
@@ -354,8 +356,63 @@ export class SelectionInfo {
     this.frame.setAttribute("aria-label", "選取資訊");
     this.frame.hidden = true;
     this.el = el("div", this.frame, "sel-body");
+    // 正式介面: more below, a fade at the foot of what scrolls (ui/r6.css .sel-more: only to see, taps
+    // go through it) and a ⌄ that scrolls one row down (ui 2026-11-07). The ⌄ is out of what scrolls,
+    // so that it is over no button (b2 2026-11-07: over the row above, a + tapped low scrolled
+    // instead): at the end of the pinned row (軍團畫面), else on a foot row of its own while there is
+    // more below.
+    this.more = this.formal ? el("div", this.el, "sel-more") : null;
+    this.more?.setAttribute("aria-hidden", "true");
+    this.foot = this.formal ? document.createElement("div") : null;
+    if (this.foot !== null) this.foot.className = "sel-foot";
+    this.down = this.formal ? document.createElement("button") : null;
+    if (this.down !== null) this.down.className = "sel-more-btn";
+    if (this.down !== null) {
+      this.down.type = "button";
+      this.down.setAttribute("aria-label", "往下捲");
+      this.down.appendChild(icon("unfold"));
+      this.down.addEventListener("click", () => {
+        const row = this.el.querySelector<HTMLElement>(".group-grid > *, .order-meaning, .sel-chips");
+        this.el.scrollBy({ top: (row?.getBoundingClientRect().height ?? 40) + 6, behavior: "smooth" });
+      });
+    }
     // Scrolled (正式介面): the title line kept at the top takes a ground of its own (ui/r6.css).
-    this.el.addEventListener("scroll", () => this.frame.classList.toggle("scrolled", this.el.scrollTop > 0), { passive: true });
+    this.el.addEventListener(
+      "scroll",
+      () => {
+        this.frame.classList.toggle("scrolled", this.el.scrollTop > 0);
+        this.showMore();
+      },
+      { passive: true },
+    );
+  }
+
+  /** The fade at the foot of what scrolls, the ⌄, and the foot row it takes without a pinned row (正式介面). */
+  private readonly more: HTMLElement | null;
+  private readonly foot: HTMLElement | null;
+  private readonly down: HTMLButtonElement | null;
+
+  /** The fade and the ⌄ while the body has more under its foot, scrolled to its end none (ceo 2026-11-07). */
+  private showMore(): void {
+    const more = this.more;
+    if (more === null) return;
+    const below = this.el.scrollHeight - this.el.scrollTop - this.el.clientHeight > 2;
+    if (more.hidden === below) more.hidden = !below;
+    if (this.down !== null && this.down.hidden === below) this.down.hidden = !below;
+    // The foot row only while its ⌄ shows (it takes no room otherwise).
+    if (this.foot !== null && this.foot.hidden === (below && this.down?.parentElement === this.foot)) this.foot.hidden = !(below && this.down?.parentElement === this.foot);
+  }
+
+  /** The ⌄ at the end of the pinned row when there is one (軍團畫面), else on the foot row under what scrolls. */
+  private placeDown(): void {
+    const down = this.down;
+    const foot = this.foot;
+    if (down === null || foot === null) return;
+    const pinned = this.frame.querySelector<HTMLElement>(":scope > .group-actions");
+    const home = pinned ?? foot;
+    if (down.parentElement !== home) home.appendChild(down);
+    if (pinned === null && foot.parentElement !== this.frame) this.frame.appendChild(foot);
+    if (pinned !== null && foot.parentElement !== null) foot.remove();
   }
 
   update(): void {
@@ -375,6 +432,10 @@ export class SelectionInfo {
     }
     for (const u of this.updaters) u();
     if (this.foldButton !== null) this.fold(this.foldButton);
+    // Last in what scrolls (a new build fills the body anew), held at its foot; the ⌄ out of it.
+    if (this.more !== null && this.el.lastChild !== this.more) this.el.appendChild(this.more);
+    this.placeDown();
+    this.showMore();
   }
 
   private keyFor(view: GameView): string {
@@ -489,11 +550,13 @@ export class SelectionInfo {
     const recall = button(placeButtons, "召回", "", () => this.host.groupRecall(i), "chip secondary");
     const out = button(placeButtons, "出城歸隊", "", () => this.host.groupOut(i, false), "chip secondary");
     const outAll = button(placeButtons, "全部帶走", "", () => this.host.groupOut(i, true), "chip secondary");
-    const actions = el("div", this.el, "sel-chips group-actions");
-    // 正式介面 (R6-17): 改成剛才選的 N 名 the main button (gold), 自動補兵 lit while on, 清空 grey with nobody to clear.
-    const fromBefore = button(actions, "", "", () => this.host.saveBeforeIntoGroup(i), this.formal ? "chip pri" : "chip secondary");
+    // 正式介面 (R6-17): 改成剛才選的 N 名 the main button (gold), 自動補兵 lit while on, 清空 grey with nobody
+    // to clear; the row pinned at the panel's foot, out of what scrolls (ui 2026-11-07: 自動補兵 always in
+    // sight), its buttons of two lines as R6-18 INV-95's (改成剛才選的／N 名, 自動補兵／目前：開).
+    const actions = el("div", this.formal ? this.frame : this.el, "sel-chips group-actions");
+    const fromBefore = button(actions, "", this.formal ? " " : "", () => this.host.saveBeforeIntoGroup(i), this.formal ? "chip pri" : "chip secondary");
     const clear = button(actions, "清空", "", () => this.host.clearGroup(i), "chip secondary");
-    const refill = button(actions, "", "", () => this.host.toggleRefill(i), "chip refill-chip secondary");
+    const refill = button(actions, "", this.formal ? " " : "", () => this.host.toggleRefill(i), "chip refill-chip secondary");
     const set = (e: HTMLElement, text: string) => {
       if (e.textContent !== text) e.textContent = text;
     };
@@ -528,8 +591,18 @@ export class SelectionInfo {
       }
       const n = this.host.beforeGroupCount();
       fromBefore.hidden = n === 0;
-      set(fromBefore.querySelector(".label") as HTMLElement, `改成剛才選的 ${n} 名`);
-      set(refill.querySelector(".label") as HTMLElement, `自動補兵：${this.host.groupRefill(i) ? "開" : "關"}`);
+      const on = this.host.groupRefill(i) ? "開" : "關";
+      if (this.formal) {
+        set(fromBefore.querySelector(".label") as HTMLElement, "改成剛才選的");
+        set(fromBefore.querySelector(".sub") as HTMLElement, `${n} 名`);
+        fromBefore.setAttribute("aria-label", `改成剛才選的 ${n} 名`);
+        set(refill.querySelector(".label") as HTMLElement, "自動補兵");
+        set(refill.querySelector(".sub") as HTMLElement, `目前：${on}`);
+        refill.setAttribute("aria-label", `自動補兵：${on}`);
+      } else {
+        set(fromBefore.querySelector(".label") as HTMLElement, `改成剛才選的 ${n} 名`);
+        set(refill.querySelector(".label") as HTMLElement, `自動補兵：${on}`);
+      }
       if (this.formal) {
         refill.classList.toggle("active", this.host.groupRefill(i));
         clear.disabled = has === 0 && want === 0;
@@ -1036,6 +1109,23 @@ export class SelectionInfo {
         seats(wall, s.wall, s.wall.length);
         seats(inside, s.inside, s.inside.length);
       });
+      // 牆上換邊 (R14-07): who is walking along the wall, and where to; 正式介面 only.
+      if (this.formal) {
+        const shift = el("div", this.el, "wall-shift");
+        shift.setAttribute("role", "status");
+        shift.setAttribute("aria-label", "牆上換邊");
+        shift.hidden = true;
+        let was = "";
+        this.updaters.push(() => {
+          const lines = this.host.wallShiftLines(id);
+          const key = lines.join("\n");
+          if (key === was) return;
+          was = key;
+          shift.replaceChildren();
+          for (const line of lines) el("p", shift, "", line);
+          shift.hidden = lines.length === 0;
+        });
+      }
       const row = el("div", this.el, "sel-keep");
       row.setAttribute("role", "group");
       row.setAttribute("aria-label", "留守");
@@ -1158,11 +1248,15 @@ export class CommandArea {
     // On the 建造 page, what each building still needs (round 7's `requires`).
     const needs = this.page === "build" ? BUILDABLE.map((t) => missingFor(view.rules, t, view.ownFinishedTypes()).join(".")).join("/") : "";
     const key = `${ident}|${this.keyFor(view)}|${this.page}|${this.host.mode()}|${needs}`;
-    if (key === this.key) return;
+    if (key === this.key) {
+      if (this.page === "build" && `${innerWidth}x${innerHeight}` !== this.fitSize) this.fitBuildPage();
+      return;
+    }
     this.key = key;
     this.el.replaceChildren();
-    this.el.classList.remove("cols5");
+    this.el.classList.remove("cols5", "build-page");
     this.build(view);
+    this.fitBuildPage();
     // Which selection these buttons act on (tests wait for it after selecting by hand).
     this.el.dataset.selection = view.selection.units.join(",");
   }
@@ -1324,13 +1418,16 @@ export class CommandArea {
     // 正式介面 (R14-04): more than 12 (砲坊 and 市場 with them) in five columns.
     const shown = BUILDABLE.filter((type) => view.rules.buildings[type] !== undefined && buildable(view.rules, type)).length;
     this.el.classList.toggle("cols5", this.formal && shown + 1 > 12);
+    // 正式介面: its rows kept low (r6.css .build-page), so that it stays under 全軍.
+    this.el.classList.add("build-page");
     for (const type of BUILDABLE) {
       const info = view.rules.buildings[type];
       if (info === undefined || !buildable(view.rules, type)) continue;
       // Round 7's `requires`: greyed out, saying what to build first.
       const missing = missingFor(view.rules, type, owned);
       const b = this.look(
-        button(this.el, BUILDING_NAME[type] ?? "", missing.length > 0 ? `要先蓋${missing.map((t) => BUILDING_NAME[t] ?? "").join("、")}` : costText(info.cost), () => {
+        // 正式介面 (ui 2026-11-07, R6-18 INV-100): 要先蓋 a line, the building another; a cost a resource a line.
+        button(this.el, BUILDING_NAME[type] ?? "", missing.length > 0 ? `要先蓋${this.formal ? "\n" : ""}${missing.map((t) => BUILDING_NAME[t] ?? "").join("、")}` : this.formal ? costText(info.cost).split(" ").join("\n") : costText(info.cost), () => {
           this.page = "main";
           this.host.startPlacement(type);
         }),
@@ -1345,6 +1442,27 @@ export class CommandArea {
   /** 重設: back to the first page (leaves the 建造 list). */
   reset(): void {
     this.setPage("main");
+  }
+
+  /** The screen size the right column was last fitted at (fitBuildPage). */
+  private fitSize = "";
+
+  /**
+   * 建造's page taller than the room under 全軍 (ceo 2026-11-07: Safari with its tab bar, 932 × 336):
+   * the right column (編隊 1–4, 全軍) out of sight while the page is open, kept in its place so that
+   * nothing moves, back as soon as the page closes (a building chosen, 返回). Measured, never by
+   * device: at 814 × 380 and 932 × 430 the page fits and the column stays.
+   */
+  private fitBuildPage(): void {
+    const right = document.querySelector<HTMLElement>(".side-right");
+    if (right === null) return;
+    right.classList.remove("make-room");
+    this.fitSize = `${innerWidth}x${innerHeight}`;
+    if (!this.formal || this.page !== "build") return;
+    const page = this.el.getBoundingClientRect();
+    const column = right.getBoundingClientRect();
+    const across = Math.min(page.right, column.right) - Math.max(page.left, column.left) > 0;
+    if (across && page.top < column.bottom) right.classList.add("make-room");
   }
 
   private setPage(page: "main" | "build"): void {

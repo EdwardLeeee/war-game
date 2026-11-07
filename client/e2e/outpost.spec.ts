@@ -6,7 +6,7 @@
 // The simulation's side is core's (#185).
 
 import { expect, type Page, test } from "@playwright/test";
-import { armyButton, expectSaid, saveGroup, selectForCommands, shot, visibleBoxes, watchErrors, watchToasts } from "./helpers.ts";
+import { armyButton, expectSaid, saveGroup, selectForCommands, shot, toneOf, visibleBoxes, watchErrors, watchToasts } from "./helpers.ts";
 import { tap } from "./touch.ts";
 
 const OUTPOST = { x: 12, y: 66 };
@@ -15,7 +15,6 @@ const FOE_OUTPOST = { x: 31, y: 61 };
 const TOWER_BY_OUTPOST = { x: 7, y: 69 };
 const GROUP_1 = ".groups > button:nth-child(1)";
 const TICKS = { timeout: 30_000 };
-const RED = "rgb(217, 58, 48)";
 
 let checkErrors: () => void;
 
@@ -97,7 +96,8 @@ test("自己的哨所：寫駐守幾名、最多幾名；＋槍兵叫站著沒�
   await expect(off).toBeDisabled();
   await expect(attack).toHaveAttribute("aria-pressed", "true");
   await expect(hold).toHaveAttribute("aria-pressed", "false");
-  expect(await attack.evaluate((e) => getComputedStyle(e).backgroundColor)).toBe(RED);
+  // 攻擊 red as the interface on screen paints it (ceo 2026-11-06: its own colour only).
+  expect((await toneOf(attack)).tone).toBe("red");
   await expect(panel.locator(".outpost-note")).toHaveText("攻擊：敵兵進到哨所 8 格內就去打，追到 12 格就回來");
 
   await call.tap();
@@ -151,7 +151,7 @@ test("駐守：選了槍兵和遠程兵，按進駐、哨所的標籤寫進槍�
   await expect(page.locator(GROUP_1)).toContainText("駐2", TICKS);
   const groupIds = async () => [...(await page.evaluate(() => window.__proto?.game?.groups() ?? []))[0]].sort((a, b) => a - b);
   expect(await groupIds()).toEqual([...two, ranged[0]].sort((a, b) => a - b));
-  await expect(armyButton(page)).toHaveText(`全軍 ${before - 2}`);
+  await expect(armyButton(page)).toHaveAccessibleName(`全軍 ${before - 2}`);
   expect((await page.evaluate(() => window.__proto?.game?.selection().units ?? [])).some((u) => two.includes(u))).toBe(false);
   // 軍團畫面: 駐守中：哨所 2 名; its button selects the ranged one.
   await page.evaluate(() => window.__proto?.game?.select([]));

@@ -1,0 +1,690 @@
+/* 局後統計 (R13-02 A 分頁, D-125; R14-09 A 銅木, D-129; b2 2026-11-07): a card over the whole screen inside the safe
+   areas, the header across the top, six tabs down the left and a page beside them (in a row under the header where they
+   do not fit, `.tabs-row`, page.ts measures). Both interfaces (D-127): the prototype's dialog colours, R6's A and B
+   panels; the lines in R6-24's player colours in all three (ours #3f7fe0, theirs #d9433a, checked on the card colours:
+   validate_palette.js in R14). Scoped under .stats-page, twice where R6's `.b` rules would otherwise win. */
+
+.dialog.stats-page {
+  background: rgba(0, 0, 0, 0.55);
+  --st-me: #3f7fe0;
+  --st-foe: #d9433a;
+  /* The prototype's (D-127: until the formal interface is the default). */
+  --st-ink: var(--fg);
+  --st-ink2: #cdc8bb;
+  --st-muted: #aaa597;
+  --st-surface: #0e1210;
+  --st-edge: rgba(242, 238, 228, 0.2);
+  --st-grid: rgba(242, 238, 228, 0.14);
+  --st-axis: rgba(242, 238, 228, 0.4);
+  --st-mline: rgba(242, 238, 228, 0.3);
+  --st-ring: #262c29;
+  --st-won: var(--accent);
+  --st-lost: #ef9c8a;
+}
+
+:root[data-ui="r6"] .dialog.stats-page {
+  --st-ink: #f4e7c9;
+  --st-ink2: #d8c49c;
+  --st-muted: #b8ab92;
+  --st-surface: #221810;
+  --st-edge: rgba(216, 196, 156, 0.28);
+  --st-grid: rgba(216, 196, 156, 0.17);
+  --st-axis: rgba(216, 196, 156, 0.4);
+  --st-mline: rgba(244, 231, 201, 0.32);
+  --st-ring: #3a2a1a;
+  --st-won: #f0cf6a;
+  --st-lost: #e9b6a6;
+}
+
+:root[data-ui="r6"][data-theme="b"] .dialog.stats-page {
+  --st-ink: #f1ead9;
+  --st-ink2: #c9bfa6;
+  --st-muted: #a79e88;
+  --st-surface: #141925;
+  --st-edge: rgba(216, 182, 94, 0.32);
+  --st-grid: rgba(216, 182, 94, 0.15);
+  --st-axis: rgba(216, 182, 94, 0.42);
+  --st-mline: rgba(241, 234, 217, 0.3);
+  --st-ring: #232a3a;
+  --st-won: #e8c76a;
+}
+
+.stats-page .stats-card {
+  position: absolute;
+  top: calc(var(--safe-t) + 4px);
+  right: calc(var(--safe-r) + 4px);
+  bottom: calc(var(--safe-b) + 4px);
+  left: calc(var(--safe-l) + 4px);
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  grid-template-rows: 46px minmax(0, 1fr);
+  column-gap: 10px;
+  row-gap: 4px;
+  padding: 5px 10px 6px;
+  color: var(--st-ink);
+  font-size: 13px;
+  line-height: 1.35;
+  text-align: left;
+}
+
+/* The prototype's 原型介面 label (top left, over everything) would sit on 勝利: not while the page is up. */
+body:has(.dialog.stats-page:not([hidden])) #proto-label {
+  display: none;
+}
+
+/* The prototype: its dialog card. */
+:root:not([data-ui="r6"]) .stats-page .stats-card {
+  background: #151917;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+:root[data-ui="r6"][data-theme="b"] .stats-page .stats-card {
+  padding: 8px 14px 10px;
+}
+
+.stats-page .stats-card.tabs-row {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 46px 44px minmax(0, 1fr);
+  row-gap: 6px;
+}
+
+/* ---- header ---- */
+.stats-page .st-head {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  padding-left: 2px;
+}
+
+/* Over the result dialog's title (R6-21: 24 pt, centred). */
+.dialog.result.stats-page .stats-card h2.st-word {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.dialog.result.stats-page .stats-card h2.st-word.won {
+  color: var(--st-won);
+}
+
+.dialog.result.stats-page .stats-card h2.st-word.lost {
+  color: var(--st-lost);
+}
+
+.stats-page .st-why {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.stats-page .st-why small {
+  display: block;
+  font-size: 12px;
+  color: var(--st-ink2);
+}
+
+.stats-page .st-go {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+
+/* Over R6's dialog buttons (:root[data-ui="r6"] .dialog .b). */
+.dialog.stats-page .stats-card .st-go button {
+  min-width: 96px;
+  min-height: 44px;
+  font-size: 14px;
+}
+
+/* ---- tabs ---- */
+.stats-page .st-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  padding-top: 3px;
+  overflow: hidden;
+}
+
+.dialog.stats-page .stats-card .st-tabs button.st-tab {
+  flex: none;
+  width: 88px;
+  min-height: 44px;
+  padding: 0;
+  font-size: 15px;
+}
+
+.stats-page .stats-card.tabs-row .st-tabs {
+  flex-direction: row;
+  padding-top: 0;
+  overflow: visible;
+}
+
+.dialog.stats-page .stats-card.tabs-row .st-tabs button.st-tab {
+  flex: 1;
+  width: auto;
+}
+
+/* ---- the page ---- */
+.stats-page .st-page {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.stats-page .st-page::-webkit-scrollbar {
+  display: none;
+}
+
+.stats-page .st-page h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.stats-page .st-ctl {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 44px;
+}
+
+.stats-page .st-seg {
+  display: flex;
+  gap: 4px;
+}
+
+.dialog.stats-page .stats-card .st-seg button {
+  min-width: 56px;
+  min-height: 44px;
+  padding: 0 8px;
+  font-size: 14px;
+}
+
+/* It grows into the room left and never shrinks under its chart: where the room is too little the page scrolls. */
+.stats-page .st-cardin {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  min-height: 0;
+  padding: 6px 8px 4px;
+  border-radius: 8px;
+  background: var(--st-surface);
+  box-shadow: inset 0 0 0 1px var(--st-edge);
+}
+
+.stats-page .st-chart {
+  flex: 1 0 auto;
+}
+
+.stats-page .st-legend,
+.stats-page .st-tlg {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 2px 0;
+}
+
+.stats-page .st-lg {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: 14px;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.stats-page .st-tlg .st-lg {
+  margin-right: 12px;
+  font-size: 12px;
+}
+
+.stats-page .st-lg.muted {
+  color: var(--st-muted);
+  font-size: 12px;
+}
+
+.stats-page .st-key {
+  flex: none;
+  vertical-align: -1px;
+}
+
+.stats-page .st-sw {
+  display: inline-block;
+  width: 16px;
+  height: 11px;
+  border-radius: 2px;
+}
+
+.stats-page .st-sw.me {
+  background: var(--st-me);
+}
+
+.stats-page .st-sw.foe {
+  background: var(--st-foe);
+}
+
+.stats-page .st-sw.neutral {
+  background: rgba(155, 149, 138, 0.35);
+}
+
+.stats-page .st-sw.repair {
+  background: var(--st-me);
+  opacity: 0.5;
+}
+
+.stats-page .st-sw.ruin {
+  background: repeating-linear-gradient(45deg, #6d6258 0 3px, #4a4038 3px 6px);
+}
+
+.stats-page .st-evk {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+  background: #1a120b;
+  box-shadow: inset 0 0 0 2px var(--st-ink2);
+}
+
+.stats-page .st-mkey {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 5px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--st-ink2);
+}
+
+.stats-page .st-mkey i,
+.stats-page .st-moments .st-mt i {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  margin-right: 4px;
+  border-radius: 50%;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+  color: var(--st-ink);
+  background: var(--st-ring);
+  box-shadow: inset 0 0 0 1.2px var(--st-ink2);
+  vertical-align: -3px;
+}
+
+/* 這局沒有關鍵時刻／城鎮易手: as the explanation lines (我方勝利), where the list would start (ui 2026-11-07). */
+.stats-page .st-none {
+  margin: 4px 0;
+  color: var(--st-ink2);
+  font-size: 12px;
+}
+
+/* More below (page.ts addMore; ui 2026-11-07, PR 5's 軍團畫面 fade and ⌄): over the page's foot, to its own colour,
+   opaque at the bottom; the ⌄ 14 with a line of 2 (24 in the icon's box), A's gold, B's frame gold, the prototype's yellow. */
+/* The strip at the right the ⌄ sits in, while the page scrolls (page.ts draw). */
+.stats-page .st-page.has-more {
+  padding-right: 24px;
+}
+
+.stats-page .st-more {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  flex: none;
+  align-items: flex-end;
+  justify-content: flex-end;
+  height: 34px;
+  margin: -34px -24px 0 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(21, 25, 23, 0), rgb(21, 25, 23) 80%);
+}
+
+.stats-page .st-more[hidden] {
+  display: none;
+}
+
+:root[data-ui="r6"]:not([data-theme="b"]) .stats-page .st-more {
+  background: linear-gradient(180deg, rgba(45, 31, 20, 0), rgb(45, 31, 20) 80%);
+}
+
+:root[data-ui="r6"][data-theme="b"] .stats-page .st-more {
+  background: linear-gradient(180deg, rgba(12, 15, 22, 0), rgb(12, 15, 22) 80%);
+}
+
+/* 44 × 44 to tap, its ⌄ at the right, in the strip (5 from the edge: 24 − 14 − 5 leaves 5 to the words). */
+.dialog.stats-page .stats-card .st-more-btn {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 5px 0 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  pointer-events: auto;
+}
+
+.stats-page .st-more-btn .ic {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--accent);
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.9));
+}
+
+:root[data-ui="r6"] .stats-page .st-more-btn .ic {
+  color: #e7c35a;
+}
+
+:root[data-ui="r6"][data-theme="b"] .stats-page .st-more-btn .ic {
+  color: var(--gold);
+}
+
+/* 總覽: 關鍵時刻 and 雙方數字 side by side. */
+.stats-page .st-two {
+  display: grid;
+  grid-template-columns: minmax(0, 322fr) minmax(0, 346fr);
+  gap: 12px;
+}
+
+.stats-page .st-two h3 {
+  margin: 6px 0;
+}
+
+.stats-page .st-moments {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stats-page .st-moments li {
+  display: grid;
+  grid-template-columns: 66px minmax(0, 1fr);
+  gap: 6px;
+  padding: 5px 0;
+  border-top: 1px solid var(--st-edge);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.stats-page .st-moments li:first-child {
+  border-top: 0;
+}
+
+.stats-page .st-moments li.st-none {
+  display: block;
+}
+
+.stats-page .st-moments .st-mt {
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.stats-page .st-moments .st-mt.end {
+  padding-left: 21px;
+  color: var(--st-won);
+}
+
+.stats-page .st-moments .st-ev {
+  color: var(--st-ink2);
+}
+
+.stats-page .st-moments .st-ev b {
+  display: block;
+  font-size: 13px;
+  color: var(--st-ink);
+}
+
+.stats-page .st-nums {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.stats-page .st-nums th,
+.stats-page .st-nums td {
+  padding: 6px;
+  text-align: left;
+  white-space: nowrap;
+  border-top: 1px solid var(--st-edge);
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-page .st-nums tr:first-child th {
+  border-top: 0;
+}
+
+.stats-page .st-nums th {
+  font-weight: 700;
+  color: var(--st-ink2);
+}
+
+.stats-page .st-nums .st-key {
+  margin-right: 4px;
+}
+
+/* 戰鬥 */
+.stats-page .st-bfhead {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 2px 0;
+  font-size: 13px;
+}
+
+.stats-page .st-bfhead .c {
+  color: var(--st-muted);
+  font-size: 12px;
+}
+
+.stats-page .st-bfhead .st-key {
+  margin: 0 5px;
+}
+
+/* 法師 */
+.stats-page .st-mages {
+  display: grid;
+}
+
+.stats-page .st-mr {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  min-height: 38px;
+  border-top: 1px solid var(--st-edge);
+}
+
+.stats-page .st-mr.st-mh {
+  min-height: 26px;
+  border-top: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.stats-page .st-mr.st-mh .st-key {
+  margin-right: 5px;
+}
+
+.stats-page .st-mk {
+  font-size: 13px;
+  color: var(--st-ink2);
+}
+
+.stats-page .st-mv {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.stats-page .st-mr.st-mh .st-mv {
+  font-size: 13px;
+}
+
+.stats-page .st-mv small {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--st-ink2);
+}
+
+.stats-page .st-foot {
+  flex: none;
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--st-ink2);
+}
+
+/* ---- the charts (charts.ts) ---- */
+.stats-page .st-svg {
+  display: block;
+  overflow: visible;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-page .st-t {
+  fill: var(--st-ink);
+}
+
+.stats-page .st-t2 {
+  fill: var(--st-ink2);
+}
+
+.stats-page .st-tm {
+  fill: var(--st-muted);
+}
+
+.stats-page .st-on {
+  fill: #fff;
+}
+
+.stats-page .st-bold {
+  font-weight: 700;
+}
+
+.stats-page .st-grid {
+  stroke: var(--st-grid);
+  stroke-width: 1;
+}
+
+.stats-page .st-axis {
+  stroke: var(--st-axis);
+  stroke-width: 1;
+}
+
+.stats-page .st-mline {
+  stroke: var(--st-mline);
+  stroke-width: 1;
+}
+
+.stats-page .st-mring {
+  fill: var(--st-ring);
+  stroke: var(--st-ink2);
+  stroke-width: 1.2;
+}
+
+.stats-page .st-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.stats-page .st-line.me {
+  stroke: var(--st-me);
+}
+
+.stats-page .st-line.foe {
+  stroke: var(--st-foe);
+  stroke-dasharray: 6 4;
+}
+
+.stats-page .st-dot {
+  stroke: var(--st-surface);
+  stroke-width: 2;
+}
+
+.stats-page .st-dot.me,
+.stats-page .st-bar.me {
+  fill: var(--st-me);
+}
+
+.stats-page .st-dot.foe,
+.stats-page .st-bar.foe {
+  fill: var(--st-foe);
+}
+
+.stats-page .st-lead {
+  fill: none;
+  stroke: var(--st-ink2);
+  stroke-width: 1;
+}
+
+.stats-page .st-seg.neutral {
+  fill: rgba(155, 149, 138, 0.35);
+}
+
+.stats-page .st-seg.me {
+  fill: var(--st-me);
+}
+
+.stats-page .st-seg.foe {
+  fill: var(--st-foe);
+}
+
+.stats-page .st-seg.repair {
+  fill-opacity: 0.5;
+}
+
+.stats-page .st-ruin-a {
+  fill: #6d6258;
+}
+
+.stats-page .st-ruin-b {
+  stroke: #4a4038;
+  stroke-width: 3;
+}
+
+.stats-page .st-evr {
+  fill: #1a120b;
+  stroke-width: 2.5;
+}
+
+.stats-page .st-evr.me {
+  stroke: var(--st-me);
+}
+
+.stats-page .st-evr.foe {
+  stroke: var(--st-foe);
+}

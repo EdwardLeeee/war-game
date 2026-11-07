@@ -1,4 +1,4 @@
-import { expect, type Page, type TestInfo } from "@playwright/test";
+import { expect, type Locator, type Page, type TestInfo } from "@playwright/test";
 import { tapOn } from "./touch.ts";
 
 /** iPhone 14 Pro Max landscape insets in pt: Dynamic Island side, rounded corner side, home indicator. */
@@ -43,7 +43,8 @@ export async function visibleBoxes(page: Page, selector: string): Promise<Box[]>
       const r = el.getBoundingClientRect();
       const style = getComputedStyle(el);
       if (r.width === 0 || r.height === 0 || style.visibility === "hidden") continue;
-      out.push({ label: (el.textContent ?? el.id).trim() || el.id, x: r.x, y: r.y, width: r.width, height: r.height });
+      // A button that is only an icon (正式介面's ✕): its name.
+      out.push({ label: (el.textContent ?? el.id).trim() || el.getAttribute("aria-label") || el.id, x: r.x, y: r.y, width: r.width, height: r.height });
     }
     return out;
   }, selector);
@@ -256,4 +257,87 @@ export async function expectSaid(page: Page, text: string | RegExp, look: Partia
 export async function expectNotSaid(page: Page, text: string | RegExp, from = 0): Promise<void> {
   const said = (await page.evaluate(() => (window as unknown as { __said?: Said[] }).__said ?? [])) as Said[];
   expect(said.slice(from).map((m) => m.text).filter((t) => saidMatches({ text: t, ok: false, info: false, seen: false, check: false }, text)), `the strip did not say ${String(text)}`).toEqual([]);
+}
+
+/**
+ * 正式介面 on this page now (ui/formal.ts: ?ui=r6, or the default when it is on; the root's data-ui).
+ * The tests hold for either interface (PR 5): where the two differ on purpose, they ask this.
+ */
+export function formalOn(page: Page): Promise<boolean> {
+  return page.evaluate(() => document.documentElement.dataset.ui === "r6");
+}
+
+/**
+ * The resource bar in words, whichever interface (ceo 2026-11-06: its name): 正式介面's is the whole
+ * line (糧 200　木 200…, its figures shown apart under icons; r6.spec checks they agree); the
+ * prototype's is its text, shortened as the screen needs.
+ */
+export function resText(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const bar = document.querySelector(".res-bar");
+    if (bar === null) return "";
+    return document.documentElement.dataset.ui === "r6" ? (bar.getAttribute("aria-label") ?? "") : (bar.textContent ?? "");
+  });
+}
+
+/** 攻擊紅、移動藍 (D-080) as each interface paints them: the prototype flat with white words, 正式介面 (A 銅木) in gradients with its ink. */
+const TONES = {
+  proto: { red: "rgb(217, 58, 48)", blue: "rgb(47, 111, 214)", words: "rgb(255, 255, 255)" },
+  formal: { red: "rgb(166, 56, 43)", blue: "rgb(58, 99, 168)", words: "rgb(244, 231, 201)" },
+};
+
+/**
+ * A button's tone in the interface on screen, by that interface's own colours only (ceo 2026-11-06),
+ * whether its words are that interface's for a toned button, and its size.
+ */
+export function toneOf(b: Locator): Promise<{ tone: "red" | "blue" | "other"; words: boolean; w: number; h: number }> {
+  return b.evaluate((e, t) => {
+    const formal = document.documentElement.dataset.ui === "r6";
+    const s = getComputedStyle(e);
+    const k = formal ? t.formal : t.proto;
+    const paint = formal ? s.backgroundImage : s.backgroundColor;
+    const tone = paint.includes(k.red) ? "red" : paint.includes(k.blue) ? "blue" : "other";
+    const r = e.getBoundingClientRect();
+    return { tone, words: s.color === k.words, w: r.width, h: r.height };
+  }, TONES);
+}
+
+/**
+ * 留守's controls in 攻下城鎮's dialog for 搶 or 治理: the prototype has one each, 正式介面 one for
+ * both (R6-20, the user 2026-10-19: 「留守只需要一個統一的就好」).
+ */
+export async function keepControls(page: Page, dialog: Locator, which: "搶" | "治理"): Promise<{ count: Locator; less: Locator; more: Locator }> {
+  const of = (await formalOn(page)) ? "" : `（${which}）`;
+  return {
+    count: dialog.getByRole("status", { name: `留守幾名${of}`, exact: true }),
+    less: dialog.getByRole("button", { name: `少留守 1 名${of}`, exact: true }),
+    more: dialog.getByRole("button", { name: `多留守 1 名${of}`, exact: true }),
+  };
+}
+
+/**
+ * An explanation line as words (射程：…, 剋怕：…): 正式介面 sets the word before 「：」 apart as a tag
+ * (panels.ts meaning), so its text reads 「射程打建築…」; this puts the 「：」 back.
+ */
+export function meaningText(line: Locator): Promise<string> {
+  return line.evaluate((e) => {
+    const k = e.querySelector(":scope > em.k");
+    const all = e.textContent ?? "";
+    return k === null ? all : `${k.textContent ?? ""}：${all.slice((k.textContent ?? "").length)}`;
+  });
+}
+
+/**
+ * Nothing selected, nothing being placed: the prototype's 重設 (D-024). 正式介面 has none (D-087), so
+ * what a player does there: ✗ on the building's preview, then 取消選取 on the panel.
+ */
+export async function resetAll(page: Page): Promise<void> {
+  if (!(await formalOn(page))) {
+    await page.getByRole("button", { name: "重設" }).tap();
+    return;
+  }
+  const cancelPlace = page.getByRole("button", { name: "取消放建築" });
+  if (await cancelPlace.isVisible()) await cancelPlace.tap();
+  const close = page.locator(".sel-info").getByRole("button", { name: "取消選取" });
+  if (await close.isVisible()) await close.tap();
 }

@@ -62,7 +62,7 @@ for (const theme of ["a", "b"] as const) {
 }
 
 test("原型的開局照舊：標題「war-game 原型」，不是面板，沒有「電腦：…」", async ({ page }) => {
-  await page.goto("./?test=1&mock=1&tps=20");
+  await page.goto("./?test=1&mock=1&tps=20&ui=proto");
   await expect(page.getByRole("heading", { name: "war-game 原型" })).toBeVisible();
   await expect(page.locator("#start .card")).not.toHaveClass(/\bpanel\b/);
   await expect(page.locator("#start .computer-culture")).toHaveCount(0);
@@ -109,11 +109,22 @@ test("正式介面的經濟分配、預留（R6-20 INV-120、INV-121）：自動
 
 test("正式介面的攻下城鎮（R6-20 INV-122、INV-124）：搶和治理共用一個留守，選搶照這個數字留；只能治理時卡片半寬、稍後再決定在右邊", async ({ page }) => {
   const me = await startFake(page);
+  // Three spearmen in the town (30, 66), so that there are soldiers to leave.
+  const spear = (await page.evaluate(() => window.__proto?.game?.units() ?? [])).filter((u) => u.owner === me && u.type === 1).map((u) => u.id).slice(0, 3);
+  await page.evaluate((ids) => window.__proto?.game?.place(ids, [{ x: 30, y: 66 }, { x: 31, y: 66 }, { x: 30, y: 67 }]), spear);
   await page.evaluate((by) => window.__proto?.game?.inject({ k: "town_captured", town: 0, by }), me);
   const dialog = page.locator(".dialog");
   await expect(dialog.locator(".choice-row .b")).toHaveCount(2);
   await expect(dialog.getByRole("group", { name: /^留守/ })).toHaveCount(1);
   await expect(dialog.getByRole("status", { name: "留守幾名" })).toHaveText("1");
+  // The one number for 搶 too (ceo 2026-11-06): 2, then 搶 leaves 2 (the guard sent with them).
+  await dialog.getByRole("button", { name: "多留守 1 名" }).tap();
+  await expect(dialog.getByRole("status", { name: "留守幾名" })).toHaveText("2");
+  const before = (await page.evaluate(() => window.__proto?.game?.sent() ?? [])).length;
+  await dialog.locator(".choice-plunder").tap();
+  const sentNow = () => page.evaluate((n) => (window.__proto?.game?.sent() ?? []).slice(n) as { c: string; u?: number[]; choice?: number }[], before);
+  await expect.poll(async () => (await sentNow()).find((c) => c.c === "town_choice")?.choice).toBe(0);
+  expect((await sentNow()).find((c) => c.c === "guard")?.u?.length, "搶 leaves the one 留守").toBe(2);
 
   const once = await startFake(page, "&r7=1");
   await page.evaluate((by) => window.__proto?.game?.inject({ k: "town_captured", town: 0, by }), once);
@@ -130,8 +141,14 @@ test("正式介面的勝利（R6-21 INV-130）：標題「勝利」金色、置�
   await page.evaluate((w) => window.__proto?.game?.endGame(w, 0), me);
   const result = page.locator(".dialog.result.won");
   await expect(result.locator("h2")).toHaveText("勝利");
+  // The board's reason for a win (INV-130); a loss says 主城被摧毀 as before.
+  await expect(result).toContainText("敵方主城被摧毀");
   expect(await result.locator("h2").evaluate((e) => getComputedStyle(e).textAlign)).toBe("center");
   const again = await result.getByRole("button", { name: "重來" }).boundingBox();
   const home = await result.getByRole("button", { name: "回開局畫面" }).boundingBox();
   expect((again?.x ?? 0) > (home?.x ?? 0), "重來 at the right end").toBe(true);
+  const lost = await startFake(page);
+  await page.evaluate((w) => window.__proto?.game?.endGame(w, 0), 1 - lost);
+  await expect(page.locator(".dialog.result.lost")).toContainText("主城被摧毀");
+  await expect(page.locator(".dialog.result.lost")).not.toContainText("敵方主城被摧毀");
 });

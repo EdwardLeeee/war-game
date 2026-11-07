@@ -8,7 +8,7 @@
 // the town is left short. The pictures for the user.
 
 import { expect, type Page, test } from "@playwright/test";
-import { saveGroup, selectForCommands, shot, watchErrors } from "./helpers.ts";
+import { formalOn, saveGroup, selectForCommands, shot, watchErrors } from "./helpers.ts";
 import { tap } from "./touch.ts";
 
 const RANGED = 2;
@@ -113,7 +113,10 @@ test("出城歸隊：整個編隊 1 駐軍後還是編隊 1 的（5/5、駐5、�
   // The town's panel: its 留守 by group.
   await page.evaluate(() => window.__proto?.game?.select([]));
   await tap(page, await at(page, { x: OUR_TOWN.x + 0.5, y: OUR_TOWN.y + 0.5 }));
-  await expect(panel).toContainText("編隊 1：1 名");
+  // 正式介面 names the group only when there are several (R14-06): its 留守 − 1 +, and 歸隊 for group 1.
+  if (await formalOn(page)) await expect(panel.getByRole("status", { name: "留守幾名" })).toHaveText("1");
+  else await expect(panel).toContainText("編隊 1：1 名");
+  await expect(panel.getByRole("button", { name: "編隊 1 的留守歸隊" })).toBeVisible();
   await shot(page, info, "rejoin-3-town-list");
   // 歸隊 keeps the least: nobody comes out; 全部帶走 takes the last one, and the town will revolt.
   await panel.getByRole("button", { name: "編隊 1 的留守歸隊" }).tap();

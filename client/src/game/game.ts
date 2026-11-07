@@ -69,6 +69,7 @@ import {
   TownField,
   TownSize,
   TownState,
+  TICKS_PER_SECOND,
   type ToWorker,
   UNIT_STRIDE,
   UnitField,
@@ -77,6 +78,7 @@ import {
 } from "../sim.ts";
 import { HIT_RADIUS_PT, START_ZOOM, TILE_PX, UNIT_CORE_HIT_PT } from "../tuning.ts";
 import { BUILDING_NAME, buildingName, NODE_NAME, UNIT_NAME } from "../ui/hud/names.ts";
+import { arrivedLine, cellStretch, type ShiftRow, shiftLine, shiftRows, shiftTowns, type WallView } from "../ui/hud/wall-shift.ts";
 import { KEEP_HINT_KEY, KEEP_HINT_TEXT, loadHintSeen, saveHintSeen } from "../hint-pref.ts";
 import { loadGradeOn, saveGradeOn } from "../grade-pref.ts";
 import { loadGroundOn, saveGroundOn } from "../ground-pref.ts";
@@ -109,6 +111,8 @@ import { AUTO_HOUSE_TEXT, type Footprint, type Gatherer, HOME_CELLS, HOUSE_SENT_
 import { type Alarm, alarmText, GroupAlarms, groupAdvancing } from "./alarm.ts";
 import { isPosted, outpostModeText, POST_TYPE } from "./outpost.ts";
 import { hintTown, townHintLines } from "./town-hint.ts";
+import { MAP_LABEL } from "../map-mode.ts";
+import type { StatsWorld } from "../ui/stats/model.ts";
 import type { SimPort } from "./port.ts";
 
 type InitMessage = Extract<ToWorker, { type: "init" }>;
@@ -129,6 +133,11 @@ export interface GameOptions {
   map: MapMode;
   /** Test pages (`?test=1&watch=1`): the computer plays both sides, the page only watches. */
   watch: boolean;
+  /**
+   * A game that measures itself (量測: perf, perf200, perf360, art-v7 量測): nothing pops up over its
+   * panel and result (攻下城鎮's choice; 開局提示 is not shown either, main.ts). Absent: false.
+   */
+  measure?: boolean;
   env: () => Record<string, unknown>;
   /** A fresh simulation Worker for the determinism check, or null (the fake world has none). */
   checkPort: (() => SimPort) | null;
@@ -170,6 +179,15 @@ export interface GameOptions {
   astcSample?: AstcSample;
   /** art-v7 量測 (D-128, main.ts): its buttons and what the art costs, the ground apart (added here). */
   artMeasure?: { open(v: ArtVariant): void; cost(): Omit<ArtCost, "ground">; drawn(): string; gpuAstc(): boolean };
+  /**
+   * 戰場像素比 (?test=1&res=2, battlefield-res.ts): the device's pixel ratio, what the battlefield is
+   * drawn at now, and drawing it at 2 or at the device's; test pages only.
+   */
+  res?: { device: number; now(): number; set(two: boolean): void };
+  /** 地面快取 (render/ground-cache.ts): on (absent: on). */
+  groundCache?: boolean;
+  /** 地面快取 switched in the 量測 panel (test pages only: main.ts keeps it in the address); absent, the panel has no row. */
+  groundCacheSwitched?: (on: boolean) => void;
 }
 
 /** export_log's answer: the command log, the hash every HASH_EVERY ticks and the tick it got to (D-083). */
@@ -241,6 +259,9 @@ const EDGE_FADE_M = 0.75;
 /** Orders that end a soldier's attack on a town (攻城打到底, assault.ts); 攻擊 starts one again. */
 const ASSAULT_ENDS: ReadonlySet<string> = new Set(["move", "retreat", "attack", "stop", "garrison", "guard", "post", "gather", "build", "repair", "release"]);
 
+/** How long 到了 stays after a walk to fight is over (R14-07 2). */
+const ARRIVED_MS = 4000;
+
 export class Game implements GestureHost {
   view: GameView | null = null;
   /** When the simulation was asked to start and when it answered (performance.now(); D-091's load times). */
@@ -295,18 +316,30 @@ export class Game implements GestureHost {
   private readonly port: SimPort;
   private readonly overlays: Overlays;
   private readonly options: GameOptions;
+  /**
+   * 量測: a game that measures itself (GameOptions.measure), or the game on screen while the panel
+   * measures it (量測 N 人 in that perf scenario already, or the fake world): no dialog of the game's
+   * own over the panel.
+   */
+  get measuring(): boolean {
+    const phase = this.lab.lab.phase;
+    return this.options.measure === true || phase === "warmup" || phase === "measuring";
+  }
   private readonly recognizer: GestureRecognizer;
   private renderer: WorldRenderer | null = null;
   /** 浮空大陸's edge round the map (render/edge.ts), with the diamond and ui's edge pictures. */
   private edge: EdgeRenderer | null = null;
   private seq = 1;
   private lastFrame = performance.now();
+  /** 地面快取 (render/ground-cache.ts): on unless the page or the 量測 panel says off. */
+  private groundCacheOn: boolean;
   private readyWaiters: (() => void)[] = [];
 
   constructor(app: Application, port: SimPort, hud: HTMLElement, options: GameOptions) {
     this.app = app;
     this.port = port;
     this.options = options;
+    this.groundCacheOn = options.groundCache ?? true;
     // 電影色調 as this device has it (the canvas outlives a game).
     setFilmGrade(app, loadGradeOn());
     // The fake world trains nothing by itself (mock/): the screen's 自動訓練 only when a test turns it on.
@@ -332,6 +365,19 @@ export class Game implements GestureHost {
               else options.life.perf(scenario);
             },
         artAvailable: options.artAvailable === true,
+        res: options.res,
+        groundCache:
+          options.groundCacheSwitched === undefined
+            ? undefined
+            : {
+                now: () => this.groundCacheOn,
+                set: (on: boolean) => {
+                  this.groundCacheOn = on;
+                  this.renderer?.setGroundCache(on);
+                  options.groundCacheSwitched?.(on);
+                },
+                mb: () => this.renderer?.groundCacheState.mb ?? 0,
+              },
         ground:
           (options.ground ?? null) === null
             ? undefined
@@ -441,7 +487,8 @@ export class Game implements GestureHost {
     const wasPaused = this.paused;
     this.pause();
     this.hud.openTownHint(
-      townHintLines(town, home, hint?.passed ?? false, features(view.rules).plunderOnce),
+      // Directions as the camera shows the map (D-132).
+      townHintLines(town, home, hint?.passed ?? false, features(view.rules).plunderOnce, view.projection),
       town === null ? null : { id: town.id, cx: town.cellX, cy: town.cellY, radius: town.radius },
       () => {
         if (town !== null) this.camera?.centerOn((town.cellX + 0.5) * TILE_PX, (town.cellY + 0.5) * TILE_PX);
@@ -630,6 +677,22 @@ export class Game implements GestureHost {
     return this.renderer?.groundLook ?? null;
   }
 
+  /** 地面快取 (render/ground-cache.ts): on, times taken, its MB; null before the battlefield (the test page). */
+  get groundCacheForTest(): { on: boolean; shown: boolean; taken: number; mb: number } | null {
+    return this.renderer?.groundCacheState ?? null;
+  }
+
+  /** 地面快取 on or off (the test page; the 量測 panel's row does the same). */
+  setGroundCacheForTest(on: boolean): void {
+    this.groundCacheOn = on;
+    this.renderer?.setGroundCache(on);
+  }
+
+  /** The battlefield's clock held still or running again (the test page: the same frame twice). */
+  freezeClockForTest(on: boolean): void {
+    this.frozenNow = on ? performance.now() : null;
+  }
+
   /** Units with their owner's colour under their feet last frame (寫實地面), for the test page. */
   get feetForTest(): number {
     return this.renderer?.footCount ?? 0;
@@ -662,8 +725,13 @@ export class Game implements GestureHost {
   }
 
   /** 浮空大陸's edge (the test page): drawn or not, its cliff pieces and waterfalls. */
-  get edgeForTest(): { on: boolean; shown: boolean; pieces: number; falls: number } {
-    return { on: this.edge !== null, shown: this.edge?.shown ?? false, pieces: this.edge?.pieceCount ?? 0, falls: this.edge?.fallCount ?? 0 };
+  get edgeForTest(): { on: boolean; shown: boolean; pieces: number; falls: number; onePass: boolean } {
+    return { on: this.edge !== null, shown: this.edge?.shown ?? false, pieces: this.edge?.pieceCount ?? 0, falls: this.edge?.fallCount ?? 0, onePass: this.edge?.onePass ?? false };
+  }
+
+  /** The sea of clouds a layer in one pass (cloud-pass.ts) or two TilingSprites as before (the test page compares them). */
+  setEdgeOnePassForTest(on: boolean): void {
+    if (this.edge !== null) this.edge.onePass = on;
   }
 
   /** Whether the film grade is over the battlefield now (the test page). */
@@ -2165,6 +2233,74 @@ export class Game implements GestureHost {
     if (ids.length > 0) this.command({ c: "leave", building, u: [...ids] });
   }
 
+  /**
+   * 牆上換邊 (R14-07, ui/hud/wall-shift.ts): our town's lines under its 牆上／城內, at most two: the
+   * snapshot's walks (換邊, 走回原位), the most soldiers first, then for ARRIVED_MS after a walk to
+   * fight is over, how many of ours stand on that stretch (到了). Only reads: what is over is kept
+   * once a snapshot (trackWallShifts), however often this is asked (the panel, the test hook).
+   */
+  wallShiftLines(town: number): string[] {
+    const view = this.view;
+    const snap = view?.curr?.snap;
+    if (view === null || snap === undefined) return [];
+    // The screen's directions (D-132): the diamond's, or north up.
+    const names: WallView = view.projection.kind === "diamond" ? "diamond" : "square";
+    const rule = view.rules.wallShift;
+    const odds = rule?.odds ?? 2;
+    const back = Math.round((rule?.back ?? 10 * TICKS_PER_SECOND) / TICKS_PER_SECOND);
+    const rows = shiftRows(snap.wallShifts, town, view.me);
+    const now = performance.now();
+    const going = new Set(rows.filter((r) => !r.home).map((r) => r.to));
+    const lines = rows.map((r) => shiftLine(r, odds, back, names));
+    for (const [key, until] of this.arrived) {
+      const [t, to] = key.split(":").map(Number);
+      if (t !== town || now >= until || going.has(to)) continue;
+      const n = this.onStretch(town, to);
+      if (n > 0) lines.push(arrivedLine(to, n, names));
+    }
+    return lines.slice(0, 2);
+  }
+
+  /**
+   * Once a snapshot (R14-07 2): each walk to fight that was in the last one and is not in this one
+   * is over, its 到了 shown for ARRIVED_MS; those past their time go.
+   */
+  private trackWallShifts(): void {
+    const view = this.view;
+    const snap = view?.curr?.snap;
+    if (view === null || snap === undefined) return;
+    const now = performance.now();
+    for (const [key, until] of this.arrived) if (now >= until) this.arrived.delete(key);
+    for (const town of new Set([...this.shiftsSeen.keys(), ...shiftTowns(snap.wallShifts, view.me)])) {
+      const rows = shiftRows(snap.wallShifts, town, view.me);
+      const going = new Set(rows.filter((r) => !r.home).map((r) => r.to));
+      for (const r of this.shiftsSeen.get(town) ?? []) if (!r.home && !going.has(r.to)) this.arrived.set(`${town}:${r.to}`, now + ARRIVED_MS);
+      if (rows.length > 0) this.shiftsSeen.set(town, rows);
+      else this.shiftsSeen.delete(town);
+    }
+  }
+
+  /** The walks to fight in the last snapshot by town, and when each 到了 goes (`town:stretch`). */
+  private readonly shiftsSeen = new Map<number, ShiftRow[]>();
+  private readonly arrived = new Map<string, number>();
+
+  /** Ours up on a town's wall on that stretch (as the simulation reckons a cell's: wall-walk.ts wallStretch). */
+  private onStretch(town: number, stretch: number): number {
+    const view = this.view;
+    const u = view?.curr?.snap.units;
+    const t = view?.knownTowns.get(town);
+    if (view === null || u === undefined || t === undefined) return 0;
+    let n = 0;
+    for (let o = 0; o < u.length; o += UNIT_STRIDE) {
+      if (u[o + UnitField.owner] !== view.me || (u[o + UnitField.flags] & UnitFlag.OnWall) === 0) continue;
+      if (u[o + UnitField.order] !== Order.Wall || u[o + UnitField.orderTarget] !== town) continue;
+      const x = Math.floor(u[o + UnitField.x] / CELL);
+      const y = Math.floor(u[o + UnitField.y] / CELL);
+      if (cellStretch(x, y, t.cellX, t.cellY, false) === stretch) n++;
+    }
+    return n;
+  }
+
   /** A town of ours (7c): its 留守 up on the walls and inside, by kind. */
   townSeats(town: number): { wall: number[]; inside: number[] } {
     const view = this.view;
@@ -2546,6 +2682,7 @@ export class Game implements GestureHost {
         const view = this.view;
         const mine = this.culture;
         this.renderer = new WorldRenderer(this.app, view, atlasFor(this.app.renderer), this.options.art ?? null, (owner) => cultureOf(mine, owner, view.me), projection);
+        this.renderer.setGroundCache(this.groundCacheOn);
         this.renderer.pending = this.pending;
         this.renderer.autoPaused = (id) => this.autoArmy.paused.has(id);
         if (this.options.ghost === "outline") this.renderer.ghostStyle = "outline";
@@ -2578,6 +2715,7 @@ export class Game implements GestureHost {
         if (view === null) return;
         const now = performance.now();
         view.push(msg, now);
+        this.trackWallShifts();
         this.lab.snapshot(msg.header, now);
         const tick = view.header?.[H.tick] ?? 0;
         if (this.restoring !== null) this.restoreScreen(this.restoring, tick);
@@ -2677,8 +2815,11 @@ export class Game implements GestureHost {
     }
   }
 
+  /** The test page's clock held still (freezeClockForTest): the same frame drawn again, to compare pictures. */
+  private frozenNow: number | null = null;
+
   private frame(): void {
-    const now = performance.now();
+    const now = this.frozenNow ?? performance.now();
     const dt = now - this.lastFrame;
     this.lastFrame = now;
     this.recognizer.update(now);
@@ -3335,6 +3476,31 @@ export class Game implements GestureHost {
       out.push({ x: u[o + UnitField.x] / CELL, y: u[o + UnitField.y] / CELL });
     }
     return out;
+  }
+
+  /**
+   * 局後統計 (R13-02, b2 2026-11-07): what this side knew of the map for the page's names and places: the towns known
+   * (a random map's explored ones), how many there are when that is known (the fixed map), the main cities known.
+   * The timeline's `places` (core #425) lays them all open once the simulation sends it (ui/stats/model.ts withPlaces).
+   */
+  statsWorld(): StatsWorld | null {
+    const view = this.view;
+    if (view === null) return null;
+    const city = (p: number) => {
+      const s = view.map.spawns.find((x) => x.player === p);
+      if (s !== undefined) return { cellX: s.cellX, cellY: s.cellY };
+      const e = p === view.me ? null : this.enemyCity(view);
+      return e === null ? null : { cellX: Math.floor(e.x), cellY: Math.floor(e.y) };
+    };
+    return {
+      me: view.me,
+      towns: view.knownTowns,
+      townCount: (view.map.mode ?? "fixed") === "fixed" ? view.map.towns.length : null,
+      cities: [city(0), city(1)],
+      mapSize: view.map.size,
+      projection: view.projection,
+      mapLabel: MAP_LABEL[this.options.map] ?? "",
+    };
   }
 
   /** The enemy's main city if this side knows where it is (seen, remembered), else null. */

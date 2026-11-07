@@ -4,7 +4,7 @@
 // hashes CI computed with the headless runner (dist/expected-hashes.json).
 
 import { expect, type Page, test } from "@playwright/test";
-import { hintTownOf, openLab, shot, watchErrors } from "./helpers.ts";
+import { hintTownOf, openLab, resText, shot, watchErrors } from "./helpers.ts";
 import { doubleTap, tap } from "./touch.ts";
 
 const FARMER = 0;
@@ -262,7 +262,7 @@ test("介面：資源列是模擬的數字；選主城 → 訓練村民 → 佇�
   await pause(page);
   const h = await page.evaluate(() => window.__proto?.game?.header());
   expect(h).toBeDefined();
-  await expect(page.locator(".res-bar")).toContainText(/糧 \d+　木 \d+　金 \d+　晶 \d+　人口 \d+\/\d+/);
+  await expect.poll(() => resText(page)).toMatch(/糧 \d+　木 \d+　金 \d+　晶 \d+　人口 \d+\/\d+/);
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
   const city = (await page.evaluate(() => window.__proto?.game?.buildings() ?? [])).find((b) => b.owner === me && b.type === 0);
   if (city === undefined) throw new Error("no main city");
@@ -311,12 +311,12 @@ test("速度：正常 → 快 → 慢 → 正常（每秒 30、40、20 tick，D-
   await start(page);
   await expect.poll(async () => (await header(page)).speed).toBe(3000);
   const speed = page.getByRole("button", { name: /^速度/ });
-  await expect(speed).toHaveText("速度 正常");
+  await expect(speed).toHaveAccessibleName("速度 正常");
   await speed.tap();
-  await expect(speed).toHaveText("速度 快");
+  await expect(speed).toHaveAccessibleName("速度 快");
   await expect.poll(async () => (await header(page)).speed).toBe(4000);
   await speed.tap();
-  await expect(speed).toHaveText("速度 慢");
+  await expect(speed).toHaveAccessibleName("速度 慢");
   await expect.poll(async () => (await header(page)).speed).toBe(2000);
   await speed.tap();
   await expect.poll(async () => (await header(page)).speed).toBe(3000);
@@ -413,13 +413,23 @@ test("選單 → 投降 → 勝負畫面顯示失敗（投降）→ 重來開新
   expect((await header(page)).tick).toBeLessThan(200);
 });
 
+for (const [view, where] of [["", "右上方"], ["&view=diamond", "右邊"]] as const) {
+  test(`開局提示的方位照畫面寫（D-132，使用者 2026-11-07）：同一座小鎮，${view === "" ? "方形斜看" : "菱形"}寫「${where}」`, async ({ page }) => {
+    // The town is 75° from the main city on the map (north, a little east); 方形斜看 shows it at 62°
+    // (half as tall as wide), the diamond turns it to 16° (town-hint.ts screenDirection).
+    await start(page, `?test=1&hint=1${view}`);
+    const hint = page.getByRole("dialog", { name: "魔晶從城鎮來" });
+    await expect(hint).toContainText(`離你的主城最近的小鎮在主城的${where}，約 51 格。`);
+  });
+}
+
 test("開局提示：真的地圖上，提示指向離主城最近的小鎮，大城比較近也一樣（不管地圖上有幾座、編號是多少）；按知道了，模擬開始跑（D-044）", async ({ page }, info) => {
   await start(page, "?test=1&hint=1");
   const hint = page.getByRole("dialog", { name: "魔晶從城鎮來" });
   await expect(hint).toBeVisible();
   const town = await hintTownOf(page);
   expect(town.size, "the real map has small towns").toBe(0);
-  await expect(hint).toContainText(/離你的主城最近的小鎮在主城的.{1,2}方，約 \d+ 格/);
+  await expect(hint).toContainText(/離你的主城最近的小鎮在主城的(右邊|右上方|上方|左上方|左邊|左下方|下方|右下方)，約 \d+ 格/);
   expect(await page.evaluate(() => window.__proto?.game?.townHint())).toEqual({ town: town.id, open: true, flashing: true });
   await shot(page, info, "town-hint-real-map");
   const tick = (await header(page)).tick;
@@ -458,14 +468,14 @@ test("量測 360 人、200 人（D-083）：開 perf360，雙方人口 360/360�
   await page.getByRole("button", { name: "量測 360 人" }).tap();
   // A new game of perf360 (Scenario.Perf360 = 4) that measures itself, both sides full.
   await page.waitForFunction(() => window.__proto?.ready === true && window.__proto.game?.header().scenario === 4);
-  await expect(page.locator(".res-bar")).toContainText("人口 360/360");
+  await expect.poll(() => resText(page)).toContain("人口 360/360");
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.labPhase())).toMatch(/warmup|measuring/);
   await expect(page.locator(".lab-result")).toContainText("場景：perf360（所有系統都開著，開始時雙方人口 360／360）", { timeout: 150_000 });
   await shot(page, info, "d083-perf360-measure");
   // Another population: a game of its own (perf200, Scenario.Perf200 = 3).
   await page.getByRole("button", { name: "量測 200 人" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true && window.__proto.game?.header().scenario === 3);
-  await expect(page.locator(".res-bar")).toContainText("人口 200/200");
+  await expect.poll(() => resText(page)).toContain("人口 200/200");
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.labPhase())).toMatch(/warmup|measuring/);
 });
 

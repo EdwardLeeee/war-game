@@ -15,7 +15,9 @@ test.afterEach(() => {
   checkErrors();
 });
 
-test("開局畫面：一個模式、難度、開始鈕、原型標示", async ({ page }, info) => {
+test("開局畫面（原型介面）：一個模式、難度、開始鈕、原型標示", async ({ page }, info) => {
+  // The prototype's start (正式介面's: r6-dialogs.spec), whichever is the default (PR 5).
+  await page.goto("./?test=1&ui=proto");
   info.annotations.push({ type: "viewport", description: JSON.stringify(page.viewportSize()) });
   await expect(page.getByRole("heading", { name: "war-game 原型" })).toBeVisible();
   await expect(page.getByText("1 對 1 對電腦")).toBeVisible();
@@ -78,7 +80,8 @@ test("難度：簡單、普通、困難三顆，第一次是簡單；選了的�
   expect(await page.evaluate(() => window.__proto?.game?.init())).toMatchObject({ type: "init", human: 0, ai: [false, true], difficulty: ["normal", "hard"], maxTicks: 0 });
 });
 
-test("點開始進入戰場", async ({ page }, info) => {
+test("點開始進入戰場（原型介面有原型標示）", async ({ page }, info) => {
+  await page.goto("./?test=1&ui=proto");
   await page.getByRole("button", { name: "開始" }).tap();
   await expect(page.locator("#start")).toBeHidden();
   await expect(page.locator("#stage canvas")).toBeVisible();

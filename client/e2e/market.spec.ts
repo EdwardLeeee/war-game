@@ -126,5 +126,6 @@ test("市場（D-101）：建造選單有市場（木 150），沒有糧倉時�
   const granary = await ours(page, GRANARY);
   await page.evaluate((id) => window.__proto?.game?.remove([id]), granary.id);
   await expect(market).toBeDisabled();
-  await expect(market).toContainText("要先蓋糧倉");
+  // 正式介面: 要先蓋 a line, the building another (ui 2026-11-07).
+  await expect(market).toContainText(/要先蓋\s*糧倉/);
 });
