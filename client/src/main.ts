@@ -4,6 +4,7 @@
 
 import "./style.css";
 import "./ui/r6.css";
+import "./ui/stats/stats.css";
 import { type Application, type Texture, VERSION } from "pixi.js";
 import { Game } from "./game/game.ts";
 import type { HudLifecycle } from "./ui/hud/hud.ts";
@@ -527,6 +528,8 @@ async function newGame(scenario: ScenarioName = "standard", measure = false, var
     astcSample,
     artMeasure: artMeasureHook,
     res: resHook,
+    groundCache: params.groundCache,
+    groundCacheSwitched: groundCacheSwitched,
     life,
     ended: () => void forgetGame(g, "end"),
     build: __SIM_BUILD__,
@@ -549,6 +552,16 @@ async function newGame(scenario: ScenarioName = "standard", measure = false, var
     g.lab.startMeasure(performance.now(), windowMs, variant ?? undefined);
   }
 }
+
+/** 地面快取 switched in the 量測 panel (render/ground-cache.ts): kept in the address (the art-v7 量測 pages it opens), test pages only. */
+const groundCacheSwitched = params.test
+  ? (on: boolean) => {
+      const url = new URL(location.href);
+      if (on) url.searchParams.delete("gcache");
+      else url.searchParams.set("gcache", "0");
+      history.replaceState(history.state, "", url);
+    }
+  : undefined;
 
 /** 戰場像素比 for the 量測 panel (battlefield-res.ts): test pages only. */
 const resHook = params.test
@@ -881,6 +894,8 @@ async function resumeGame(saved: SavedGame): Promise<void> {
     astcSample,
     artMeasure: artMeasureHook,
     res: resHook,
+    groundCache: params.groundCache,
+    groundCacheSwitched: groundCacheSwitched,
     life,
     ended: () => void forgetGame(g, "end"),
     build: __SIM_BUILD__,

@@ -111,6 +111,8 @@ import { AUTO_HOUSE_TEXT, type Footprint, type Gatherer, HOME_CELLS, HOUSE_SENT_
 import { type Alarm, alarmText, GroupAlarms, groupAdvancing } from "./alarm.ts";
 import { isPosted, outpostModeText, POST_TYPE } from "./outpost.ts";
 import { hintTown, townHintLines } from "./town-hint.ts";
+import { MAP_LABEL } from "../map-mode.ts";
+import type { StatsWorld } from "../ui/stats/model.ts";
 import type { SimPort } from "./port.ts";
 
 type InitMessage = Extract<ToWorker, { type: "init" }>;
@@ -182,6 +184,10 @@ export interface GameOptions {
    * drawn at now, and drawing it at 2 or at the device's; test pages only.
    */
   res?: { device: number; now(): number; set(two: boolean): void };
+  /** 地面快取 (render/ground-cache.ts): on (absent: on). */
+  groundCache?: boolean;
+  /** 地面快取 switched in the 量測 panel (test pages only: main.ts keeps it in the address); absent, the panel has no row. */
+  groundCacheSwitched?: (on: boolean) => void;
 }
 
 /** export_log's answer: the command log, the hash every HASH_EVERY ticks and the tick it got to (D-083). */
@@ -325,12 +331,15 @@ export class Game implements GestureHost {
   private edge: EdgeRenderer | null = null;
   private seq = 1;
   private lastFrame = performance.now();
+  /** 地面快取 (render/ground-cache.ts): on unless the page or the 量測 panel says off. */
+  private groundCacheOn: boolean;
   private readyWaiters: (() => void)[] = [];
 
   constructor(app: Application, port: SimPort, hud: HTMLElement, options: GameOptions) {
     this.app = app;
     this.port = port;
     this.options = options;
+    this.groundCacheOn = options.groundCache ?? true;
     // 電影色調 as this device has it (the canvas outlives a game).
     setFilmGrade(app, loadGradeOn());
     // The fake world trains nothing by itself (mock/): the screen's 自動訓練 only when a test turns it on.
@@ -357,6 +366,18 @@ export class Game implements GestureHost {
             },
         artAvailable: options.artAvailable === true,
         res: options.res,
+        groundCache:
+          options.groundCacheSwitched === undefined
+            ? undefined
+            : {
+                now: () => this.groundCacheOn,
+                set: (on: boolean) => {
+                  this.groundCacheOn = on;
+                  this.renderer?.setGroundCache(on);
+                  options.groundCacheSwitched?.(on);
+                },
+                mb: () => this.renderer?.groundCacheState.mb ?? 0,
+              },
         ground:
           (options.ground ?? null) === null
             ? undefined
@@ -654,6 +675,22 @@ export class Game implements GestureHost {
   /** 寫實地面 (D-093): drawn or not, and its quality; null before the first snapshot. */
   get groundForTest(): { real: boolean; quality: string | null; water: boolean; town: boolean; r9: boolean; r9water: boolean } | null {
     return this.renderer?.groundLook ?? null;
+  }
+
+  /** 地面快取 (render/ground-cache.ts): on, times taken, its MB; null before the battlefield (the test page). */
+  get groundCacheForTest(): { on: boolean; shown: boolean; taken: number; mb: number } | null {
+    return this.renderer?.groundCacheState ?? null;
+  }
+
+  /** 地面快取 on or off (the test page; the 量測 panel's row does the same). */
+  setGroundCacheForTest(on: boolean): void {
+    this.groundCacheOn = on;
+    this.renderer?.setGroundCache(on);
+  }
+
+  /** The battlefield's clock held still or running again (the test page: the same frame twice). */
+  freezeClockForTest(on: boolean): void {
+    this.frozenNow = on ? performance.now() : null;
   }
 
   /** Units with their owner's colour under their feet last frame (寫實地面), for the test page. */
@@ -2650,6 +2687,7 @@ export class Game implements GestureHost {
         const view = this.view;
         const mine = this.culture;
         this.renderer = new WorldRenderer(this.app, view, atlasFor(this.app.renderer), this.options.art ?? null, (owner) => cultureOf(mine, owner, view.me), projection);
+        this.renderer.setGroundCache(this.groundCacheOn);
         this.renderer.pending = this.pending;
         this.renderer.autoPaused = (id) => this.autoArmy.paused.has(id);
         if (this.options.ghost === "outline") this.renderer.ghostStyle = "outline";
@@ -3443,6 +3481,31 @@ export class Game implements GestureHost {
       out.push({ x: u[o + UnitField.x] / CELL, y: u[o + UnitField.y] / CELL });
     }
     return out;
+  }
+
+  /**
+   * 局後統計 (R13-02, b2 2026-11-07): what this side knew of the map for the page's names and places: the towns known
+   * (a random map's explored ones), how many there are when that is known (the fixed map), the main cities known.
+   * The timeline's `places` (core #425) lays them all open once the simulation sends it (ui/stats/model.ts withPlaces).
+   */
+  statsWorld(): StatsWorld | null {
+    const view = this.view;
+    if (view === null) return null;
+    const city = (p: number) => {
+      const s = view.map.spawns.find((x) => x.player === p);
+      if (s !== undefined) return { cellX: s.cellX, cellY: s.cellY };
+      const e = p === view.me ? null : this.enemyCity(view);
+      return e === null ? null : { cellX: Math.floor(e.x), cellY: Math.floor(e.y) };
+    };
+    return {
+      me: view.me,
+      towns: view.knownTowns,
+      townCount: (view.map.mode ?? "fixed") === "fixed" ? view.map.towns.length : null,
+      cities: [city(0), city(1)],
+      mapSize: view.map.size,
+      projection: view.projection,
+      mapLabel: MAP_LABEL[this.options.map] ?? "",
+    };
   }
 
   /** The enemy's main city if this side knows where it is (seen, remembered), else null. */

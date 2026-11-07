@@ -16,6 +16,7 @@ import {
   UnitField as U,
   UnitFlag,
 } from "../sim.ts";
+import type { GameTimeline } from "../sim.ts";
 import { HIT_RADIUS_PT, TILE_PX } from "../tuning.ts";
 import { FIXED_TO_PX } from "../view/view.ts";
 import { MockPort } from "../mock/mock-port.ts";
@@ -109,8 +110,8 @@ export interface GameHook {
   remove(ids: number[]): void;
   /** Fake world only: a building's hit points (a gate damaged, D-096). */
   damage(id: number, hp: number): void;
-  /** Fake world only: the game over, `winner` winning for `reason` (GameOverReason; the result screen). */
-  endGame(winner: number, reason: number): void;
+  /** Fake world only: the game over, `winner` winning for `reason` (GameOverReason; the result screen); `timeline`: 局後統計's (a test's fixture). */
+  endGame(winner: number, reason: number, timeline?: GameTimeline): void;
   /** Fake world only: the snapshot's 牆上換邊 rows from now on (R14-07; WALL_SHIFT_STRIDE numbers each, [] none). */
   wallShifts(rows: number[]): void;
   /** 牆上換邊's lines for a town as its panel writes them (R14-07). */
@@ -147,6 +148,12 @@ export interface GameHook {
   /** 寫實地面 (D-093): drawn or not and its quality; set its quality. */
   /** `r9`: R9's ground (art-v7 on: the relief, the film curve); `r9water`: its banks and water too. */
   groundLook(): { real: boolean; quality: string | null; water: boolean; town: boolean; r9: boolean; r9water: boolean } | null;
+  /** 地面快取 (render/ground-cache.ts): on, its picture shown this frame, times the land was drawn into it, its MB; null before the battlefield. */
+  groundCache(): { on: boolean; shown: boolean; taken: number; mb: number } | null;
+  /** 地面快取 on or off from the next frame. */
+  setGroundCache(on: boolean): void;
+  /** The page's clock as the battlefield draws it held still (true) or running (false): the same frame twice, to compare pictures. */
+  freezeClock(on: boolean): void;
   /** Units drawn with their owner's colour under their feet last frame (寫實地面, ceo 2026-10-25). */
   feet(): number;
   /** 電影色調 (R9-05 B): the film grade over the battlefield now. */
@@ -365,8 +372,8 @@ export function gameHook(game: Game): GameHook {
     damage: (id, hp) => {
       if (game.portForTest instanceof MockPort) game.portForTest.damage(id, hp);
     },
-    endGame: (winner, reason) => {
-      if (game.portForTest instanceof MockPort) game.portForTest.endGame(winner, reason);
+    endGame: (winner, reason, timeline) => {
+      if (game.portForTest instanceof MockPort) game.portForTest.endGame(winner, reason, timeline);
     },
     wallShifts: (rows) => {
       if (game.portForTest instanceof MockPort) game.portForTest.setWallShifts(rows);
@@ -390,6 +397,9 @@ export function gameHook(game: Game): GameHook {
         return { ...d, sx: at.x, sy: at.y };
       }),
     groundLook: () => game.groundForTest,
+    groundCache: () => game.groundCacheForTest,
+    setGroundCache: (on) => game.setGroundCacheForTest(on),
+    freezeClock: (on) => game.freezeClockForTest(on),
     feet: () => game.feetForTest,
     filmGrade: () => game.filmGradeForTest,
     edge: () => game.edgeForTest,
