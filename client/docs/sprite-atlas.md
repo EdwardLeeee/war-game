@@ -457,6 +457,7 @@ ui 把 12 個兵種完整算過一次之後量到的數字（`design/production/
   - 某一頁讀不到 `.astc.ktx` 就改讀那頁的 PNG。
   - 3 倍要 ASTC，但顯示卡沒有 ASTC 或美術沒有壓縮圖時，改畫 2 倍的 PNG（D-128：art-v7 的 3 倍 PNG 要 773 MB）。
   - 預設 ASTC（art-v7.6 起）；量測面板的「貼圖」可以改 PNG。
+  - 戰場像素比（`src/battlefield-res.ts`）：使用者 2026-11-07 看了 iPhone 的數字選 2。裝置 3 的手機戰場畫 2、由瀏覽器放大到螢幕；裝置 2 以下照裝置；介面照裝置。圖集照舊是 3 倍。測試頁可以比：`?test=1&res=device` 或量測面板「戰場像素比」那一列，結果框寫實際值。
 - art-v7 量測（D-128，`src/lab/art-measure.ts`）：
   - 切換前，`art-lab.lock.json` 釘 art-v7.1 的 x3、x2、astc-x3，Pages 用 `fetch-art.ts --lab` 一起解到 `public/art/art-v7.1/`。service worker 不存這份。
   - 量測面板的三個鈕依序是 x3 ASTC、x2 PNG、x3 PNG，最可能撐不住的放最後。每個鈕開一頁（`?measure=`），直接量 360 人 10 分鐘。

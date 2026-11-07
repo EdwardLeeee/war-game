@@ -48,8 +48,8 @@ export interface LabHooks {
     measure(): string | null;
   };
   /**
-   * 戰場像素比 (?test=1&res=2, battlefield-res.ts): the device's pixel ratio, what the battlefield is
-   * drawn at now, and drawing it at 2 or at the device's (ceo 2026-11-06: measure it on the iPhone).
+   * 戰場像素比 (battlefield-res.ts, ?test=1&res=device): the device's pixel ratio, what the battlefield is
+   * drawn at now (2 unless asked), and drawing it at 2 or at the device's, to compare on the iPhone.
    */
   res?: { device: number; now(): number; set(two: boolean): void };
   /**
