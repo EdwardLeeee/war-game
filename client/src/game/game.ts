@@ -688,8 +688,18 @@ export class Game implements GestureHost {
   }
 
   /** 浮空大陸's edge (the test page): drawn or not, its cliff pieces and waterfalls. */
-  get edgeForTest(): { on: boolean; shown: boolean; pieces: number; falls: number } {
-    return { on: this.edge !== null, shown: this.edge?.shown ?? false, pieces: this.edge?.pieceCount ?? 0, falls: this.edge?.fallCount ?? 0 };
+  get edgeForTest(): { on: boolean; shown: boolean; pieces: number; falls: number; onePass: boolean } {
+    return { on: this.edge !== null, shown: this.edge?.shown ?? false, pieces: this.edge?.pieceCount ?? 0, falls: this.edge?.fallCount ?? 0, onePass: this.edge?.onePass ?? false };
+  }
+
+  /** The sea of clouds a layer in one pass (cloud-pass.ts) or two TilingSprites as before (the test page compares them). */
+  setEdgeOnePassForTest(on: boolean): void {
+    if (this.edge !== null) this.edge.onePass = on;
+  }
+
+  /** The battlefield's clock held still or running again (the test page: the same frame twice). */
+  freezeClockForTest(on: boolean): void {
+    this.frozenNow = on ? performance.now() : null;
   }
 
   /** Whether the film grade is over the battlefield now (the test page). */
@@ -2772,8 +2782,11 @@ export class Game implements GestureHost {
     }
   }
 
+  /** The test page's clock held still (freezeClockForTest): the same frame drawn again, to compare pictures. */
+  private frozenNow: number | null = null;
+
   private frame(): void {
-    const now = performance.now();
+    const now = this.frozenNow ?? performance.now();
     const dt = now - this.lastFrame;
     this.lastFrame = now;
     this.recognizer.update(now);

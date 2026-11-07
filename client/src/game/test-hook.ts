@@ -152,7 +152,11 @@ export interface GameHook {
   /** 電影色調 (R9-05 B): the film grade over the battlefield now. */
   filmGrade(): boolean;
   /** 浮空大陸's edge (R11): drawn or not, its cliff pieces and waterfalls. */
-  edge(): { on: boolean; shown: boolean; pieces: number; falls: number };
+  edge(): { on: boolean; shown: boolean; pieces: number; falls: number; onePass: boolean };
+  /** The sea of clouds a layer in one pass (cloud-pass.ts), or two TilingSprites as before. */
+  setEdgeOnePass(on: boolean): void;
+  /** The page's clock as the battlefield draws it held still (true) or running (false): the same frame twice, to compare pictures. */
+  freezeClock(on: boolean): void;
   /** How the ground is laid this game (projection.ts: diamond, oblique, top). */
   projection(): string | null;
   setGroundQuality(q: "high" | "low"): void;
@@ -389,6 +393,8 @@ export function gameHook(game: Game): GameHook {
     feet: () => game.feetForTest,
     filmGrade: () => game.filmGradeForTest,
     edge: () => game.edgeForTest,
+    setEdgeOnePass: (on) => game.setEdgeOnePassForTest(on),
+    freezeClock: (on) => game.freezeClockForTest(on),
     projection: () => game.view?.projection.kind ?? null,
     setGroundQuality: (q) => game.setGroundQuality(q),
     terrain: () => game.terrainForTest,
