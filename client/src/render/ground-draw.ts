@@ -22,6 +22,9 @@
 // depth over the bed, the current's ripples, the sky by Fresnel, the far bank mirrored, glints, a
 // ford's riffles) instead of art-v6's, all from the shoreline's signed distance (sdAt: the weights'
 // water distance made to wander by ui's noises; ground.ts WaterAux: fords, bridges, the current).
+// 地面快取 (ground-cache.ts; ceo b2 2026-11-07): only the water moves with time, so the land can be drawn
+// once into a picture of the screen and the water over it every frame: the same program with uPass 1
+// (`waterShader`) keeps only the pixels the clock reaches and draws them as the whole ground would.
 
 import { BufferImageSource, Geometry, GlProgram, Mesh, type Renderer, RenderTexture, Shader, Sprite, Texture, type TextureSource, UniformGroup } from "pixi.js";
 import { type CellBox, type GroundJson, groundR9, groundWater, GroundWeights, TownWeights, townGroundOn, valueNoise, WaterAux } from "../art/ground.ts";
@@ -117,6 +120,7 @@ uniform vec3 uR9SkyHi;
 uniform vec3 uR9Sun;      // towards the sun, the ground's axes (x east, y south, z up)
 uniform vec3 uR9View;     // from the camera
 uniform vec3 uR9SunRgb;
+uniform float uPass;      // 地面快取: 1 draws only what moves with time (the water), the land being the cache's
 
 const vec3 LUM = vec3(0.2126, 0.7152, 0.0722);
 // The unlit photos: their albedo times this, as R7's sun leaves it on flat ground.
@@ -209,6 +213,18 @@ vec4 townTile(sampler2D s, vec2 m, float size, float n) {
 void main(void) {
   vec4 w = texture(uWeights, vM / (${CELL_M.toFixed(1)} * uTileB.w));
   float n = texture(uNoise, vM / uTileB.y).r;
+  // 地面快取's water pass: the pixels uTime reaches (R9's water past its line, art-v6's inside it) are drawn
+  // below exactly as the whole ground's; the rest are the cache's.
+  if (uPass > 0.5) {
+    if (uR9A.x > 0.5 && uR9W.x > 0.5) {
+      if (sdAt(vM) <= -0.05) discard;
+    } else if (uWaterA.x > 0.0) {
+      float sd0 = (w.a - 0.5) * 2.0 * uWaterA.x + (n - 0.5) * 2.0 * uWaterB.w;
+      if (smoothstep(-uWaterA.y, uWaterA.y, sd0) <= 0.001) discard;
+    } else {
+      discard;
+    }
+  }
   float big = texture(uMacro, vM / uTileB.z).r;
   float dry = smoothstep(0.35, 0.65, big);
   vec4 g = look(tile(uGrass, vM, uTileA.x, n), uDevA.x, uTint0, uMeanA.x);
@@ -546,12 +562,9 @@ export class GroundDraw {
       ...r9WaterUniforms(this.r9Water ? textures.json : null),
     });
     const [grass, grassDry, dirt, gravel, bank] = textures.layers;
-    const shader = new Shader({
-      // highp: the ground's coordinates are metres across the whole map (up to 256): at PixiJS's
-      // default mediump (16-bit) they step every 3–6 cm there, and the textures came out in blocks
-      // at 3 倍 (ceo 2026-10-23, R8-29-02's grass). Apple's GPUs run fragment shaders at 32 bits anyway.
-      glProgram: GlProgram.from({ vertex: VERTEX, fragment: FRAGMENT, name: "ground", preferredFragmentPrecision: "highp" }),
-      resources: {
+    // The shader's resources, a plain object: the water pass's shader takes them too (PixiJS's
+    // shader.resources does not spread).
+    const resources = {
         groundUniforms: this.uniforms,
         uWeights: this.weights,
         uNoise: textures.noise,
@@ -570,16 +583,48 @@ export class GroundDraw {
         uRelief: textures.relief ?? textures.noise,
         uNoise4: this.noise4 ?? textures.noise,
         uWaterAux: this.aux ?? this.weights,
-      },
-    });
-    this.mesh = new Mesh({ geometry, shader });
+    };
+    // highp: the ground's coordinates are metres across the whole map (up to 256): at PixiJS's
+    // default mediump (16-bit) they step every 3–6 cm there, and the textures came out in blocks
+    // at 3 倍 (ceo 2026-10-23, R8-29-02's grass). Apple's GPUs run fragment shaders at 32 bits anyway.
+    const program = GlProgram.from({ vertex: VERTEX, fragment: FRAGMENT, name: "ground", preferredFragmentPrecision: "highp" });
+    const pass = (p: number) => new UniformGroup({ uPass: { value: p, type: "f32" } });
+    this.wholeShader = new Shader({ glProgram: program, resources: { ...resources, passUniforms: pass(0) } });
+    this.waterShader = new Shader({ glProgram: program, resources: { ...resources, passUniforms: pass(1) } });
+    this.mesh = new Mesh({ geometry, shader: this.wholeShader });
+    this.cacheMesh = new Mesh({ geometry, shader: this.wholeShader });
+  }
+
+  // ---- 地面快取 (ground-cache.ts) -------------------------------------------------------
+  /** The whole ground (uPass 0), and only its water (uPass 1). */
+  private readonly wholeShader: Shader;
+  private readonly waterShader: Shader;
+  /** The whole ground again, for drawing into the cache (its own mesh: rendering one to a texture makes it a render group). */
+  readonly cacheMesh: Mesh<Geometry, Shader>;
+  /** What the land shows changed (its weights, the towns' ground, the quality, the edges' fade) since the cache took it. */
+  dirty = true;
+
+  /** The mesh in the battlefield draws only the water (the cache under it has the land), or the whole ground. */
+  waterOnly(on: boolean): void {
+    this.mesh.shader = on ? this.waterShader : this.wholeShader;
+  }
+
+  /** Anything here moves with time (art-v6's or R9's water): without, the cache is all and the mesh is not drawn. */
+  get moves(): boolean {
+    return this.water;
   }
 
   /** The cells' grounds again (a random map's grows as it is explored; resource points come and go). */
   setGround(ground: Uint8Array, nodes: readonly number[]): void {
-    if (this.weightMap.set(ground, nodes)) this.weights.update();
+    if (this.weightMap.set(ground, nodes)) {
+      this.weights.update();
+      this.dirty = true;
+    }
     // R9's water's helpers from the cells and the weights' water distance (made again when the water changes).
-    if (this.auxMap?.set(ground, this.weightMap.data) === true) this.aux?.update();
+    if (this.auxMap?.set(ground, this.weightMap.data) === true) {
+      this.aux?.update();
+      this.dirty = true;
+    }
   }
 
   /** The towns' ground drawn (art-v6, rules.town). */
@@ -589,7 +634,10 @@ export class GroundDraw {
 
   /** The towns' lanes and trampled earth now, a strength a cell, in these towns' boxes (world.ts): uploaded when they changed. */
   setTown(lane: Float32Array, trampled: Float32Array, boxes: readonly CellBox[]): void {
-    if (this.townMap?.set(lane, trampled, boxes) === true) this.townWeights?.update();
+    if (this.townMap?.set(lane, trampled, boxes) === true) {
+      this.townWeights?.update();
+      this.dirty = true;
+    }
   }
 
   /** The water's flow, every frame: the page's clock in seconds (wrapped an hour round, for the GPU's precision). */
@@ -603,12 +651,14 @@ export class GroundDraw {
   setEdgeFade(m: number): void {
     (this.uniforms.uniforms.uEdge as Float32Array)[0] = m;
     this.uniforms.update();
+    this.dirty = true;
   }
 
   setQuality(q: GroundQuality): void {
     this.quality = q;
     (this.uniforms.uniforms.uRules as Float32Array)[3] = q === "high" ? 1 : 0;
     this.uniforms.update();
+    this.dirty = true;
   }
 
   get currentQuality(): GroundQuality {
@@ -638,7 +688,8 @@ export class GroundDraw {
       gl?.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
     };
     const across = (22 * TILE_PX) / w;
-    const quad = new Mesh({ geometry: this.mesh.geometry, shader: this.mesh.shader });
+    // The whole ground, whatever the battlefield's mesh draws now (the water only, under 地面快取).
+    const quad = new Mesh({ geometry: this.mesh.geometry, shader: this.wholeShader });
     quad.scale.set(1 / across, 0.5 / across);
     const plain = new Sprite(new Texture({ source: this.textures.layers[0] }));
     plain.width = w;
@@ -666,6 +717,7 @@ export class GroundDraw {
 
   destroy(): void {
     this.mesh.destroy();
+    this.cacheMesh.destroy();
     this.weights.destroy();
     this.noise4?.destroy();
     this.aux?.destroy();

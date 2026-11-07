@@ -156,13 +156,18 @@ export class LoadTimes implements LoadRecorder {
   artDone(how: ArtLoad, now = performance.now()): void {
     if (this.report === null || !this.measuring) return;
     this.report.art = how;
-    // Where each file came from: the browser has its record once the file is all there.
+    this.resolveSources();
+    this.mark("artDone", now);
+  }
+
+  /** Where each file came from: the browser has its record once the file is all there (the edge's, after the atlases: again at the first frame). */
+  private resolveSources(): void {
+    if (this.report === null) return;
     const entries = new Map<string, PerformanceResourceTiming>();
     for (const e of performance.getEntriesByType("resource") as PerformanceResourceTiming[]) entries.set(e.name, e);
     this.report.files.forEach((f, i) => {
       f.source = sourceOf(this.sw[i], entries.get(this.urls[i]));
     });
-    this.mark("artDone", now);
   }
 
   file(url: string, start: number, downloaded: number, bytes: number, decoded: number | null, sw: string | null): void {
@@ -183,6 +188,7 @@ export class LoadTimes implements LoadRecorder {
     if (!battlefield || !this.measuring || !(started.init >= this.t0)) return false;
     if (Number.isFinite(started.init)) this.mark("init", started.init);
     if (Number.isFinite(started.ready)) this.mark("ready", started.ready);
+    this.resolveSources();
     this.mark("drawn", start);
     this.mark("frame", end);
     return true;

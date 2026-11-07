@@ -64,10 +64,16 @@ test("城內擺設不接點擊：選著兵點擺設的圖，照樣是點城鎮�
   const check = watchErrors(page);
   test.skip(!(await start(page)), "art.lock 的城牆還不是 war-game castle 2（art-v6 之前）");
   const ids = await spearmen(page);
-  // A piece of the neutral town in view, its picture just above its anchor.
-  const piece = (await decor(page)).find((d) => d.town === NEUTRAL_TOWN.id && d.piece.startsWith("hut"));
+  // A piece of the neutral town in view, its picture just above its anchor: the hut furthest across the
+  // screen from the keep (as a diamond the keep's tall picture is over the huts behind it: a tap there is on the keep).
+  await centre(page, NEUTRAL_TOWN.x, NEUTRAL_TOWN.y, 1.4);
+  await page.waitForTimeout(300);
+  const keepAt = await page.evaluate(([x, y]) => window.__proto?.game?.cellToScreen(x, y) ?? { x: 0, y: 0 }, [NEUTRAL_TOWN.x + 0.5, NEUTRAL_TOWN.y + 0.5] as const);
+  const huts = (await decor(page)).filter((d) => d.town === NEUTRAL_TOWN.id && d.piece.startsWith("hut"));
+  const piece = huts.sort((a, b) => Math.abs(b.sx - keepAt.x) - Math.abs(a.sx - keepAt.x))[0];
   if (piece === undefined) throw new Error("no hut in the neutral town");
-  await centre(page, piece.cells[0][0] + 1, piece.cells[0][1] + 2, 1.4);
+  // The hut in the upper half of the screen, clear of the selection's panel (as a diamond too).
+  await centre(page, piece.cells[0][0] + 2.5, piece.cells[0][1] + 3.5, 1.4);
   await page.waitForTimeout(300);
   const onScreen = (await decor(page)).find((d) => same(d, piece));
   if (onScreen === undefined) throw new Error("the hut went");
@@ -75,12 +81,15 @@ test("城內擺設不接點擊：選著兵點擺設的圖，照樣是點城鎮�
   const before = (await sent(page)).length;
   await tap(page, { x: onScreen.sx, y: onScreen.sy - 12 });
   await expect.poll(async () => (await sent(page)).slice(before).find((c) => c.c === "move")).toMatchObject({ c: "move", u: ids, x: NEUTRAL_TOWN.x, y: NEUTRAL_TOWN.y });
-  // One of ours on a piece of our town: a tap on him selects him, the hut over or under him or not.
-  const ours = (await decor(page)).find((d) => d.town === OUR_TOWN && d.shown);
+  // One of ours on a piece of our town: a tap on him selects him, the hut over or under him or not
+  // (the piece furthest across the screen from our keep: as a diamond its tall picture is over those behind it).
+  const ourKeep = (await page.evaluate(() => window.__proto?.game?.buildings() ?? [])).find((b) => b.type === 9 && b.owner === 0);
+  const ourKeepAt = await page.evaluate(([x, y]) => window.__proto?.game?.cellToScreen(x, y) ?? { x: 0, y: 0 }, [(ourKeep?.cx ?? 0) + 1.5, (ourKeep?.cy ?? 0) + 1.5] as const);
+  const ours = (await decor(page)).filter((d) => d.town === OUR_TOWN && d.shown).sort((a, b) => Math.abs(b.sx - ourKeepAt.x) - Math.abs(a.sx - ourKeepAt.x))[0];
   if (ours === undefined) throw new Error("no piece in our town");
   const [one] = ids;
   await page.evaluate(([id, x, y]) => window.__proto?.game?.place([id], [{ x, y }]), [one, ours.cells[0][0], ours.cells[0][1]] as const);
-  await centre(page, ours.cells[0][0], ours.cells[0][1], 1.4);
+  await centre(page, ours.cells[0][0] + 1.5, ours.cells[0][1] + 2.5, 1.4);
   await selectForCommands(page, []);
   await page.waitForTimeout(500);
   const unit = (await page.evaluate(() => window.__proto?.game?.units() ?? [])).find((u) => u.id === one);

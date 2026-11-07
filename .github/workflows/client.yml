@@ -61,8 +61,10 @@ jobs:
   e2e:
     name: e2e (${{ matrix.browser }}${{ matrix.part }})
     runs-on: ubuntu-latest
-    # Pulling the image, the build and the tests. Chromium's whole run took 28 minutes on main
-    # (#269's run 39741400206) and went over 30 on #266 (run 39764109694): it runs in two halves.
+    # Pulling the image, the build and the tests. A runner can be twice as slow as another with the
+    # same tests (the same 148: run 42319995429 17.5 minutes, run 42351293370 over 30, cancelled), so
+    # a shard has to fit in this at twice its usual time: Chromium in four, WebKit in two. Whole test
+    # files stay together, so the shards are not even (about 11, 8, 6 and 9 minutes on a quick runner).
     timeout-minutes: 30
     # Playwright's own image: the browsers and the system libraries they need are already in
     # it, so nothing comes from the Ubuntu package mirror. Installing them on the runner took
@@ -76,22 +78,39 @@ jobs:
       matrix:
         include:
           - browser: webkit
-            shard: 1/1
-            part: ""
-            artifact: webkit
-          - browser: chromium
             shard: 1/2
             part: " 1/2"
-            artifact: chromium-1
-          - browser: chromium
+            artifact: webkit-1
+          - browser: webkit
             shard: 2/2
             part: " 2/2"
+            artifact: webkit-2
+          - browser: chromium
+            shard: 1/4
+            part: " 1/4"
+            artifact: chromium-1
+          - browser: chromium
+            shard: 2/4
+            part: " 2/4"
             artifact: chromium-2
+          - browser: chromium
+            shard: 3/4
+            part: " 3/4"
+            artifact: chromium-3
+          - browser: chromium
+            shard: 4/4
+            part: " 4/4"
+            artifact: chromium-4
     defaults:
       run:
         working-directory: client
     steps:
       - uses: actions/checkout@v7
+      # A slow job's log then says which machine it had (the same tests take from 14 to 30 minutes).
+      - name: The runner
+        run: |
+          grep -m1 'model name' /proc/cpuinfo
+          nproc
       - name: The image has the Playwright that package-lock.json locks
         run: |
           locked=$(node -p 'require("./package-lock.json").packages["node_modules/@playwright/test"].version')

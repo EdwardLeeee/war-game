@@ -21,7 +21,8 @@ test("美術（測試圖）：兵從圖集畫，不再是幾何圖形；載入 1
   // Every unit on screen from its atlas: 10 units × colour, team, shadow (+ the mages' shields) and the effects' 2 (真的箭's arrow and stone on the second).
   await expect.poll(async () => (await art(page))?.units ?? 0).toBeGreaterThan(0);
   const a = await art(page);
-  expect(a?.label).toBe("測試圖");
+  // ASTC by default (D-128, art-v7.6 on): the stand-ins have their compressed pages too.
+  expect(a?.label).toBe("測試圖 ASTC");
   expect(a?.pages).toBe(10 * 3 + 2 + 2);
   // Drawn (the last frame) and in the snapshot (the latest), read together until a frame has caught
   // up with it: a unit trained in between is drawn on the next one (#358's webkit run 41684354391: 16 and 17).
@@ -62,7 +63,7 @@ test("量測（測試圖）：結果框寫美術是哪一套、幾頁圖，和�
   // A game of the perf scenario of its own, the atlases kept.
   await page.waitForFunction(() => window.__proto?.ready === true && window.__proto.game?.header().scenario === 2, null, { timeout: 60_000 });
   const result = page.locator(".lab-result");
-  await expect(result).toContainText("美術：測試圖，34 頁圖", { timeout: 90_000 });
+  await expect(result).toContainText("美術：測試圖 ASTC，34 頁圖", { timeout: 90_000 });
   await expect(result).toContainText(/每張畫面的繪製次數：中位數 [1-9][\d.]*、最多 [1-9]/);
   check();
 });
@@ -100,7 +101,7 @@ test.describe("新的裝置（沒選過美術）", () => {
     test.skip(browserName !== "chromium", "34 pages at 3 倍: one browser is enough (WebKit on CI draws in software)");
     const check = watchErrors(page);
     await start(page, "scenario=e2e");
-    await expect.poll(async () => (await art(page))?.label ?? null, { timeout: 30_000 }).toBe("3 倍");
+    await expect.poll(async () => (await art(page))?.label ?? null, { timeout: 30_000 }).toBe("3 倍 ASTC");
     await openLab(page);
     await expect(page.getByRole("radiogroup", { name: "美術" }).getByRole("radio", { name: "3 倍" })).toHaveAttribute("aria-checked", "true");
     check();
@@ -147,7 +148,7 @@ test("兵種展示（art-v1，3 倍）：兩陸每種兵的待機、走路、攻
   const check = watchErrors(page);
   await start(page, "mock=1&gallery=1&art=x3&tps=20");
   await expect.poll(async () => (await art(page))?.units ?? 0, { timeout: 30_000 }).toBeGreaterThan(40);
-  expect((await art(page))?.label).toBe("3 倍");
+  expect((await art(page))?.label).toBe("3 倍 ASTC");
   // The fallen gone at tick 20, a shield shattered at 30: the gallery stands still at 36, while both still show.
   await page.waitForFunction(() => window.__proto?.game?.header().tick === 36, null, { timeout: 30_000 });
   await expect.poll(async () => (await art(page))?.corpses ?? 0).toBeGreaterThanOrEqual(10);
