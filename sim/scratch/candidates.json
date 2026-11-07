@@ -1,0 +1,83 @@
+{
+ "traces": [
+  {
+   "name": "focus-hn-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "focusFire": true
+   }
+  },
+  {
+   "name": "focus-hn-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "focusFire": true
+   }
+  },
+  {
+   "name": "focus-hn-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "focusFire": true
+   }
+  },
+  {
+   "name": "focus-hn-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "focusFire": true
+   }
+  },
+  {
+   "name": "focus-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "focusFire": true
+   }
+  },
+  {
+   "name": "focus-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "focusFire": true
+   }
+  },
+  {
+   "name": "focus-hnr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "focusFire": true
+   }
+  },
+  {
+   "name": "focus-hnr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "focusFire": true
+   }
+  }
+ ],
+ "scripted": [
+  {
+   "name": "focus",
+   "a": {
+    "focusFire": true
+   },
+   "groups": [
+    "push-fortress",
+    "push-fortress-random",
+    "push-fortress-hold",
+    "push-fortress-hold-random"
+   ],
+   "difficulty": "hard"
+  }
+ ]
+}

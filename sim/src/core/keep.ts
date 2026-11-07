@@ -31,3 +31,6 @@ export const KEEP = {
   radius: [7, 9],
   rebuildTicks: 60 * S,
 };
+
+// SCRATCH ONLY: KEEP on from the environment (HARD_PLAN.keepOn).
+{ const e = (globalThis as unknown as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {}; if (JSON.parse(e.HARD_PLAN || "{}").keepOn) KEEP.on = true; }
