@@ -1,7 +1,9 @@
 /* 局後統計 (R13-02 A 分頁, D-125; R14-09 A 銅木, D-129; b2 2026-11-07): a card over the whole screen inside the safe
-   areas, the header across the top, six tabs down the left and a page beside them (in a row under the header where they
-   do not fit, `.tabs-row`, page.ts measures). Both interfaces (D-127): the prototype's dialog colours, R6's A and B
-   panels; the lines in R6-24's player colours in all three (ours #3f7fe0, theirs #d9433a, checked on the card colours:
+   areas, in the middle of it (the user 2026-11-07: the same margin top and bottom, left and right), the header across
+   the top, six tabs down the left and a page beside them. Where the tabs do not fit under the header (932 × 336, Safari
+   with its tab bar) they run down the card's whole height and the header moves beside them (`.tabs-tall`, the tabs stay
+   on the left); only where even that is too short, in a row under the header (`.tabs-row`). page.ts measures. Both
+   interfaces (D-127): the prototype's dialog colours, R6's A and B panels; the lines in R6-24's player colours in all three (ours #3f7fe0, theirs #d9433a, checked on the card colours:
    validate_palette.js in R14). Scoped under .stats-page, twice where R6's `.b` rules would otherwise win. */
 
 .dialog.stats-page {
@@ -50,11 +52,14 @@
 }
 
 .stats-page .stats-card {
+  /* In the middle of the screen, inside the safe areas: the larger of a pair on both sides of it. */
+  --st-my: calc(max(var(--safe-t), var(--safe-b)) + 4px);
+  --st-mx: calc(max(var(--safe-l), var(--safe-r)) + 4px);
   position: absolute;
-  top: calc(var(--safe-t) + 4px);
-  right: calc(var(--safe-r) + 4px);
-  bottom: calc(var(--safe-b) + 4px);
-  left: calc(var(--safe-l) + 4px);
+  top: var(--st-my);
+  right: var(--st-mx);
+  bottom: var(--st-my);
+  left: var(--st-mx);
   box-sizing: border-box;
   display: grid;
   grid-template-columns: 88px minmax(0, 1fr);
@@ -82,6 +87,20 @@ body:has(.dialog.stats-page:not([hidden])) #proto-label {
 
 :root[data-ui="r6"][data-theme="b"] .stats-page .stats-card {
   padding: 8px 14px 10px;
+}
+
+/* The tabs down the card's whole height, the header and the page beside them, a little less margin and padding: 6 × 44
+   and at least 2 between them, in a card inner 274 high (at the iPhone's safe area 21: a screen 331 high or more). */
+.stats-page .stats-card.tabs-tall {
+  --st-my: calc(max(var(--safe-t), var(--safe-b)) + 2px);
+}
+
+:root:not([data-ui="r6"]) .stats-page .stats-card.tabs-tall {
+  padding: 4px 10px 5px;
+}
+
+:root[data-ui="r6"][data-theme="b"] .stats-page .stats-card.tabs-tall {
+  padding: 5px 14px 6px;
 }
 
 .stats-page .stats-card.tabs-row {
@@ -161,6 +180,26 @@ body:has(.dialog.stats-page:not([hidden])) #proto-label {
   min-height: 44px;
   padding: 0;
   font-size: 15px;
+}
+
+.stats-page .stats-card.tabs-tall .st-head {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+/* Not clipped: nothing to spare under the last tab for its shadow, the card's padding has it. */
+.stats-page .stats-card.tabs-tall .st-tabs {
+  grid-column: 1;
+  grid-row: 1 / -1;
+  justify-content: space-between;
+  gap: 2px;
+  padding-top: 0;
+  overflow: visible;
+}
+
+.stats-page .stats-card.tabs-tall .st-page {
+  grid-column: 2;
+  grid-row: 2;
 }
 
 .stats-page .stats-card.tabs-row .st-tabs {
