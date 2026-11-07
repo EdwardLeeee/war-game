@@ -22,6 +22,7 @@ import {
   TownState,
   UnitFlag,
   UnitType,
+  WallHold,
 } from "../protocol.ts";
 import { clamp, DIR16_X, DIR16_Y, dir16, idiv, isqrt } from "./fixed.ts";
 import type { Fog } from "./fog.ts";
@@ -74,7 +75,7 @@ import {
 } from "./rules.ts";
 import { type Frame, IDENTITY, fromCanon, toCanon } from "../frame.ts";
 import { openLine, steerDirect, steerTo } from "./steer.ts";
-import { wayFrame, wayNext, wayPick, waySteps } from "./wall-walk.ts";
+import { wallStretch, wayFrame, wayNext, wayPick, waySteps } from "./wall-walk.ts";
 import { HitCause, STONE, UNIT_KINDS, type World } from "./world.ts";
 
 const TICKS = TICKS_PER_SECOND;
@@ -95,6 +96,11 @@ const WARN_STRIDE = 7;
 const HIDE_GRID = 5;
 /** WALL_SHIFT: enemies within this many cells of a town's walls' box are looked at (wallFoes); beyond the farthest reach from a wall. */
 const WALL_NEAR = 8;
+/**
+ * R14-07: keep why wall soldiers stay instead of shifting (holdOn), for the screen. Not a rule: off only in the test that
+ * shows the game plays and hashes the same without it.
+ */
+export const WALL_HOLD_MARKS = { on: true };
 
 /** What the guards of a town see (`guard`). Positions and reach are fixed point; `inside` holds unit ids. */
 interface GuardedTown {
@@ -1320,7 +1326,7 @@ export class UnitSystem {
       u.target[i] = -1;
       if (look) this.rethinkShift(w, fog, i);
       if (u.wallTo[i] >= 0) {
-        this.wallStep(w, i);
+        this.wallStep(w, fog, i);
         return;
       }
     }
@@ -1355,6 +1361,7 @@ export class UnitSystem {
     if (shifts) {
       u.wallWait[i] = 0;
       u.wallCalm[i] = 0;
+      if (look) this.holdOn(w, fog, i, false);
     }
     const ts = w.unit(tid);
     u.facing[i] = dir16(u.x[ts] - u.x[i], u.y[ts] - u.y[i]);
@@ -1378,6 +1385,21 @@ export class UnitSystem {
     const key = t * 4 + (me === NEUTRAL ? 2 : me);
     const had = this.foes.get(key);
     if (had !== undefined) return had;
+    const out = this.scanFoes(w, fog, t, me);
+    this.foes.set(key, out);
+    return out;
+  }
+
+  /**
+   * wallFoes for the screen (R14-07, holdOn): this tick's if a soldier's thinking took them already, else as they are
+   * now, never kept for the thinking to come (the game must play as without it).
+   */
+  private seenFoes(w: World, fog: Fog, t: number, me: number): number[] {
+    const had = this.foesTick === w.tick ? this.foes.get(t * 4 + (me === NEUTRAL ? 2 : me)) : undefined;
+    return had ?? this.scanFoes(w, fog, t, me);
+  }
+
+  private scanFoes(w: World, fog: Fog, t: number, me: number): number[] {
     const u = w.units.col;
     const n = w.size;
     const box = this.wallBox(w, t);
@@ -1390,7 +1412,6 @@ export class UnitSystem {
         }
       }
     }
-    this.foes.set(key, out);
     return out;
   }
 
@@ -1458,6 +1479,7 @@ export class UnitSystem {
     const foes = this.wallFoes(w, fog, t, u.owner[i]);
     if (!this.foeNear(w, foes, t, reach)) {
       u.wallWait[i] = 0;
+      u.wallHold[i] = 0;
       const home = u.wallHome[i];
       if (home < 0 || home === c) {
         u.wallCalm[i] = 0;
@@ -1471,14 +1493,74 @@ export class UnitSystem {
     // One walking up near it: it waits for it where it stands.
     if (this.foeFrom(w, foes, c, reach + WALL_SHIFT.stay, true)) {
       u.wallWait[i] = 0;
+      this.holdOn(w, fog, i, false);
       return;
     }
     u.wallWait[i] += RETARGET_EVERY;
-    if (u.wallWait[i] < WALL_SHIFT.wait) return;
+    if (u.wallWait[i] < WALL_SHIFT.wait) {
+      this.holdOn(w, fog, i, false);
+      return;
+    }
     // Too many of them for those on the walls: they would only walk into it.
-    if (foes.length / 3 > WALL_SHIFT.odds * this.wallSoldiers(w, t, u.owner[i])) return;
+    if (foes.length / 3 > WALL_SHIFT.odds * this.wallSoldiers(w, t, u.owner[i])) {
+      this.holdOn(w, fog, i, true);
+      return;
+    }
     const to = wayPick(w, t, c, wayFrame(w, u.owner[i], t), (d) => w.wallAt[d] < 0 && this.foeFrom(w, foes, d, reach));
     if (to >= 0) this.startShift(w, i, to);
+    else this.holdOn(w, fog, i, true);
+  }
+
+  /**
+   * Why standing wall soldier i stays instead of shifting (R14-07, WallHold; for the screen only, nothing here changes the
+   * game): `start`, at the moment it would set off (thinkShift, or its way closed under it, stopShift); else, at its looks,
+   * a staying one's is weighed again and ends when it no longer holds (no enemy near the walls, the odds or the way open
+   * again, no free cell left with an enemy in its reach). The stretch it would go to stays the one it was while a free
+   * cell there still has an enemy in its reach, not one stretch and then another at each look.
+   */
+  private holdOn(w: World, fog: Fog, i: number, start: boolean): void {
+    const u = w.units.col;
+    const was = u.wallHold[i];
+    if (!WALL_HOLD_MARKS.on || (!start && was === 0)) return;
+    const c = u.wall[i];
+    const t = w.wallTown[c];
+    const me = u.owner[i];
+    const reach = wallReach(u.type[i], UNITS[u.type[i]].range);
+    const foes = this.seenFoes(w, fog, t, me);
+    let kind = 0;
+    let to = -1;
+    if (this.foeNear(w, foes, t, reach)) {
+      const f = wayFrame(w, me, t);
+      const want = (d: number) => w.wallAt[d] < 0 && this.foeFrom(w, foes, d, reach);
+      const mine = this.wallSoldiers(w, t, me);
+      u.wallHoldFoes[i] = foes.length / 3;
+      u.wallHoldMine[i] = mine;
+      if (foes.length / 3 > WALL_SHIFT.odds * mine) {
+        kind = WallHold.Outnumbered;
+        to = wayPick(w, t, c, f, want, true);
+      } else if (wayPick(w, t, c, f, want) < 0) {
+        kind = WallHold.GateDown;
+        to = wayPick(w, t, c, f, want, true);
+      }
+      const old = u.wallHoldTo[i];
+      if (to >= 0 && kind === was && old >= 0 && old !== to) {
+        const at = wallStretch(w, old);
+        for (const d of w.wallCells[t]) {
+          if (wallStretch(w, d) === at && want(d)) {
+            to = old;
+            break;
+          }
+        }
+      }
+    }
+    if (to < 0 || (!start && kind !== was)) {
+      u.wallHold[i] = 0;
+      u.wallHoldTo[i] = -1;
+      return;
+    }
+    if (kind !== was) u.wallHoldSince[i] = w.tick;
+    u.wallHold[i] = kind;
+    u.wallHoldTo[i] = to;
   }
 
   /**
@@ -1511,6 +1593,7 @@ export class UnitSystem {
     if (u.wallHome[i] < 0) u.wallHome[i] = c;
     // A new walk (not a new goal on the way): where it sets off from, for the screen.
     if (u.wallTo[i] < 0 || u.wallTo[i] === c) u.wallFrom[i] = c;
+    u.wallHold[i] = 0;
     if (w.wallAt[c] === id) w.wallAt[c] = -1;
     const was = u.wallTo[i];
     if (was >= 0 && w.wallAt[was] === id) w.wallAt[was] = -1;
@@ -1527,7 +1610,7 @@ export class UnitSystem {
    * closed (a gate on it broken), it stops: on the wall cell it is on if free, else it makes for the
    * nearest free one; with none, it comes down.
    */
-  private wallStep(w: World, i: number): void {
+  private wallStep(w: World, fog: Fog, i: number): void {
     const u = w.units.col;
     const n = w.size;
     const to = u.wallTo[i];
@@ -1537,7 +1620,7 @@ export class UnitSystem {
     if (c !== to) {
       next = wayNext(w, t, c, to, wayFrame(w, u.owner[i], t));
       if (next < 0) {
-        this.stopShift(w, i);
+        this.stopShift(w, fog, i);
         return;
       }
     }
@@ -1558,7 +1641,7 @@ export class UnitSystem {
   }
 
   /** The way to wallTo closed under a walker (wallStep). */
-  private stopShift(w: World, i: number): void {
+  private stopShift(w: World, fog: Fog, i: number): void {
     const u = w.units.col;
     const id = u.id[i];
     const c = u.wall[i];
@@ -1569,6 +1652,7 @@ export class UnitSystem {
     if (w.walkGate[c] === 0 && w.wallAt[c] < 0) {
       w.wallAt[c] = id;
       u.action[i] = Action.OnWall;
+      this.holdOn(w, fog, i, true);
       return;
     }
     const near = wayPick(w, t, c, wayFrame(w, u.owner[i], t), (d) => w.wallAt[d] < 0);
