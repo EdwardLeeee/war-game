@@ -99,14 +99,29 @@ test("the same game from the loser's side: 我方主城被摧毀, mirrored numbe
   if (hits.length > 1) assert.ok(m.moments.some((x) => x.title === "敵方攻進主城" && x.tick === hits[hits.length - 1][0]));
 });
 
-test("a random map's player who explored nothing: 城鎮（沒去過）, numbered, and main cities with no numbers", () => {
-  const { t, winner, reason, ticks } = game;
+test("a random map's player who explored nothing, from an older simulation (no places): 城鎮（沒去過）, numbered, and main cities with no numbers", () => {
+  const { winner, reason, ticks } = game;
+  const t = { ...game.t, places: undefined };
   const w = { ...game.world(winner), towns: new Map(), townCount: null };
   const m = statsModel(winner, reason, ticks, t, w);
   const names = m.towns.map((b) => b.name);
+  assert.ok(names.length > 0);
   assert.deepEqual(names, names.map((_, i) => (names.length > 1 ? `城鎮（沒去過） ${i + 1}` : "城鎮（沒去過）")));
   const at = m.moments.find((x) => x.title === "攻進敵方主城");
   assert.equal(at?.text, "我方到敵方主城下", "b2: no number when near[]'s main cities cannot be told");
+});
+
+test("the same player with the timeline's places (core #425): every town named and near[]'s main cities numbered, though nothing was explored", () => {
+  const { t, winner, reason, ticks } = game;
+  assert.ok(t.places !== undefined, "the simulation sends places");
+  const w = { ...game.world(winner), towns: new Map(), townCount: null };
+  const m = statsModel(winner, reason, ticks, t, w);
+  const known = statsModel(winner, reason, ticks, t, game.world(winner));
+  assert.ok(m.towns.length > 0);
+  assert.ok(m.towns.every((b) => !b.name.startsWith("城鎮（沒去過）")));
+  assert.deepEqual(m.towns.map((b) => b.name), known.towns.map((b) => b.name));
+  const at = m.moments.find((x) => x.title === "攻進敵方主城");
+  assert.match(at?.text ?? "", /^我方 \d+ 名到敵方主城下$/);
 });
 
 test("the timeline's places (core #425): every town and both main cities known whatever the screen explored", () => {
