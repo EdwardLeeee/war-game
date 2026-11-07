@@ -1,0 +1,406 @@
+{
+ "traces": [
+  {
+   "name": "aa-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "aa-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "aa-hh-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "aa-hh-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "aa-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "aa-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "aa-hhr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "aa-hhr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "rest1-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "townRest": 1
+   },
+   "b": {}
+  },
+  {
+   "name": "rest1-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "townRest": 1
+   },
+   "b": {}
+  },
+  {
+   "name": "rest1-hh-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "townRest": 1
+   },
+   "b": {}
+  },
+  {
+   "name": "rest1-hh-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "townRest": 1
+   },
+   "b": {}
+  },
+  {
+   "name": "rest1-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "townRest": 1
+   },
+   "b": {}
+  },
+  {
+   "name": "rest1-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "townRest": 1
+   },
+   "b": {}
+  },
+  {
+   "name": "rest1-hhr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "townRest": 1
+   },
+   "b": {}
+  },
+  {
+   "name": "rest1-hhr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "townRest": 1
+   },
+   "b": {}
+  },
+  {
+   "name": "aan-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 0 --shards 8 --difficulty hard,hard --map fixed --seed-from 3000001 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "aan-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 1 --shards 8 --difficulty hard,hard --map fixed --seed-from 3000001 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "aan-hh-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 2 --shards 8 --difficulty hard,hard --map fixed --seed-from 3000001 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "aan-hh-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 3 --shards 8 --difficulty hard,hard --map fixed --seed-from 3000001 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "aan-hh-4",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 4 --shards 8 --difficulty hard,hard --map fixed --seed-from 3000001 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "aan-hh-5",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 5 --shards 8 --difficulty hard,hard --map fixed --seed-from 3000001 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "aan-hh-6",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 6 --shards 8 --difficulty hard,hard --map fixed --seed-from 3000001 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "aan-hh-7",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 7 --shards 8 --difficulty hard,hard --map fixed --seed-from 3000001 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "aan-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 0 --shards 8 --difficulty hard,hard --map random --seed-from 3000001 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "aan-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 1 --shards 8 --difficulty hard,hard --map random --seed-from 3000001 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "aan-hhr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 2 --shards 8 --difficulty hard,hard --map random --seed-from 3000001 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "aan-hhr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 3 --shards 8 --difficulty hard,hard --map random --seed-from 3000001 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "aan-hhr-4",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 4 --shards 8 --difficulty hard,hard --map random --seed-from 3000001 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "aan-hhr-5",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 5 --shards 8 --difficulty hard,hard --map random --seed-from 3000001 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "aan-hhr-6",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 6 --shards 8 --difficulty hard,hard --map random --seed-from 3000001 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "aan-hhr-7",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 7 --shards 8 --difficulty hard,hard --map random --seed-from 3000001 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "focusn-hh-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 0 --shards 8 --difficulty hard,hard --map fixed --seed-from 3000001 --sides all --ticks 144000",
+   "a": {
+    "focusFire": true
+   },
+   "b": {}
+  },
+  {
+   "name": "focusn-hh-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 1 --shards 8 --difficulty hard,hard --map fixed --seed-from 3000001 --sides all --ticks 144000",
+   "a": {
+    "focusFire": true
+   },
+   "b": {}
+  },
+  {
+   "name": "focusn-hh-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 2 --shards 8 --difficulty hard,hard --map fixed --seed-from 3000001 --sides all --ticks 144000",
+   "a": {
+    "focusFire": true
+   },
+   "b": {}
+  },
+  {
+   "name": "focusn-hh-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 3 --shards 8 --difficulty hard,hard --map fixed --seed-from 3000001 --sides all --ticks 144000",
+   "a": {
+    "focusFire": true
+   },
+   "b": {}
+  },
+  {
+   "name": "focusn-hh-4",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 4 --shards 8 --difficulty hard,hard --map fixed --seed-from 3000001 --sides all --ticks 144000",
+   "a": {
+    "focusFire": true
+   },
+   "b": {}
+  },
+  {
+   "name": "focusn-hh-5",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 5 --shards 8 --difficulty hard,hard --map fixed --seed-from 3000001 --sides all --ticks 144000",
+   "a": {
+    "focusFire": true
+   },
+   "b": {}
+  },
+  {
+   "name": "focusn-hh-6",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 6 --shards 8 --difficulty hard,hard --map fixed --seed-from 3000001 --sides all --ticks 144000",
+   "a": {
+    "focusFire": true
+   },
+   "b": {}
+  },
+  {
+   "name": "focusn-hh-7",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 7 --shards 8 --difficulty hard,hard --map fixed --seed-from 3000001 --sides all --ticks 144000",
+   "a": {
+    "focusFire": true
+   },
+   "b": {}
+  },
+  {
+   "name": "focusn-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 0 --shards 8 --difficulty hard,hard --map random --seed-from 3000001 --sides all --ticks 144000",
+   "a": {
+    "focusFire": true
+   },
+   "b": {}
+  },
+  {
+   "name": "focusn-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 1 --shards 8 --difficulty hard,hard --map random --seed-from 3000001 --sides all --ticks 144000",
+   "a": {
+    "focusFire": true
+   },
+   "b": {}
+  },
+  {
+   "name": "focusn-hhr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 2 --shards 8 --difficulty hard,hard --map random --seed-from 3000001 --sides all --ticks 144000",
+   "a": {
+    "focusFire": true
+   },
+   "b": {}
+  },
+  {
+   "name": "focusn-hhr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 3 --shards 8 --difficulty hard,hard --map random --seed-from 3000001 --sides all --ticks 144000",
+   "a": {
+    "focusFire": true
+   },
+   "b": {}
+  },
+  {
+   "name": "focusn-hhr-4",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 4 --shards 8 --difficulty hard,hard --map random --seed-from 3000001 --sides all --ticks 144000",
+   "a": {
+    "focusFire": true
+   },
+   "b": {}
+  },
+  {
+   "name": "focusn-hhr-5",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 5 --shards 8 --difficulty hard,hard --map random --seed-from 3000001 --sides all --ticks 144000",
+   "a": {
+    "focusFire": true
+   },
+   "b": {}
+  },
+  {
+   "name": "focusn-hhr-6",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 6 --shards 8 --difficulty hard,hard --map random --seed-from 3000001 --sides all --ticks 144000",
+   "a": {
+    "focusFire": true
+   },
+   "b": {}
+  },
+  {
+   "name": "focusn-hhr-7",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 7 --shards 8 --difficulty hard,hard --map random --seed-from 3000001 --sides all --ticks 144000",
+   "a": {
+    "focusFire": true
+   },
+   "b": {}
+  }
+ ],
+ "scripted": [
+  {
+   "name": "rest1",
+   "a": {
+    "townRest": 1
+   },
+   "cap": 120,
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  }
+ ]
+}
