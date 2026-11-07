@@ -3002,6 +3002,12 @@ export interface HardPlan {
    * as it takes; from its own view; one whose target left its reach goes back to the army's way (false: each shoots its nearest).
    */
   focusFire: boolean;
+  /**
+   * D-131 (seed 17: the army went for a town and broke off about once a second, 72 times in 2 minutes, 42 soldiers down to
+   * 14): after breaking off from a town within TOWN_QUICK of setting out for it, it leaves that town alone this many
+   * minutes; a break-off later on the way, or at the town, as before (townRest: after any). 0: never.
+   */
+  townQuickRest: number;
 }
 
 export const HARD: HardPlan = {
@@ -3115,6 +3121,10 @@ export const HARD: HardPlan = {
   // 215-2-183 of 400 where the same AI against itself went 191-2-207; the six active groups 14 of 240 as before; the midway
   // fortress 2 -> 0 of 160; hard against normal 80 -> 74, new seeds 82 -> 78 (fixed), 87 -> 88 (random).
   focusFire: true,
+  // D-131 (ceo 2026-11-08; docs/research/2026-11-ai-tactics.md section 8): against hard without it 104-0-96 of 200 where the
+  // same AI against itself went 107-0-93; the six active groups 14 of 240 as before; sides turning back 10 or more times
+  // 18 -> 9, at most 27 -> 16; marches and games reaching the enemy's main city about as before.
+  townQuickRest: 1,
 };
 /** D-086 A4 (plan.townScout): a soldier lost scouting, the next goes this much later; told again this often. */
 const TOWN_SCOUT_AGAIN = 2 * 1200;
@@ -3144,6 +3154,8 @@ const CAVALRY_SEEN = 6;
 const CHARGE_MIN = 3;
 /** D-131 (plan.focusFire): how often it picks targets, ticks. */
 const FOCUS_EVERY = 40;
+/** D-131 (plan.townQuickRest): a break-off this soon after setting out for the town (ticks). */
+const TOWN_QUICK = 10 * 20;
 const CHARGE_NEAR = 8;
 const CHARGE_SPEAR = 4;
 const CHARGE_MOVE = 40;
@@ -3414,6 +3426,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   /** Towns it fell back from because of forts (D-081, ceo 2026-10-10): the forts, and when. */
   const townForts = new Map<number, { ids: number[]; tick: number }>();
   const townRest = new Map<number, number>();
+  /** plan.townQuickRest: when it last set out for a town. */
+  let townSetOut = -100000;
   const fv = fortValues(know.rules);
   // D-086 A3: where its farmers were last think, and those that fell far from home in the last minute.
   const farmerSeen = new Map<number, { x: number; y: number }>();
@@ -3453,7 +3467,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   /** plan.focusFire: when it last picked; each ranged unit's target it was told. */
   let focusMove = -100000;
   const focusOn = new Map<number, number>();
-  const counted = { focusOrders: 0, focusBack: 0, avoidSpots: 0, farmerIdle: 0, lumberLost: 0, governHeld: 0, governTowers: 0, governStayed: 0, governBrokeOff: 0, townsBehind: 0, crystalStopped: 0, goldCavalry: 0, behindThinks: 0, behindTowers: 0, townsHeld: 0, gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
+  const counted = { townQuickRests: 0, focusOrders: 0, focusBack: 0, avoidSpots: 0, farmerIdle: 0, lumberLost: 0, governHeld: 0, governTowers: 0, governStayed: 0, governBrokeOff: 0, townsBehind: 0, crystalStopped: 0, goldCavalry: 0, behindThinks: 0, behindTowers: 0, townsHeld: 0, gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
 
   /** Nearest spot to (ax, ay) where `type` fits, with a free ring around it (farms may touch); as normal. */
   function spotNear(view: PlayerView, type: BuildingType, ax: number, ay: number, radius: number, fits?: (x: number, y: number) => boolean): { x: number; y: number } | null {
@@ -5166,6 +5180,10 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             if (byArmy.length > 0) townForts.set(targetTown, { ids: byArmy.flatMap((g) => g.ids), tick });
             // D-081: not straight back to the same town (in 03a70878, 13 orders between it and home in 12 s).
             if (plan.townRest > 0) townRest.set(targetTown, tick + plan.townRest * TICKS_PER_MINUTE);
+            if (plan.townQuickRest > 0 && tick - townSetOut <= TOWN_QUICK) {
+              townRest.set(targetTown, tick + plan.townQuickRest * TICKS_PER_MINUTE);
+              counted.townQuickRests++;
+            }
             fallBackPast(byArmy, ac);
             return;
           } else {
@@ -5176,6 +5194,10 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
               if (plan.fortExit <= 0) remember(army, ahead);
               townForts.set(targetTown, { ids: ahead.flatMap((g) => g.ids), tick });
               if (plan.townRest > 0) townRest.set(targetTown, tick + plan.townRest * TICKS_PER_MINUTE);
+              if (plan.townQuickRest > 0 && tick - townSetOut <= TOWN_QUICK) {
+                townRest.set(targetTown, tick + plan.townQuickRest * TICKS_PER_MINUTE);
+                counted.townQuickRests++;
+              }
               fallBackPast(ahead, ac);
               return;
             }
@@ -5532,6 +5554,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           if (pick >= 0) {
             labels[HEAD_ARMY] = 1;
             targetTown = pick;
+            townSetOut = tick;
             townEven = townsBehind;
             // D-086 A7: a new trip, a new stay.
             holdTown = -1;
