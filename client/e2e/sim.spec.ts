@@ -262,7 +262,7 @@ test("介面：資源列是模擬的數字；選主城 → 訓練村民 → 佇�
   await pause(page);
   const h = await page.evaluate(() => window.__proto?.game?.header());
   expect(h).toBeDefined();
-  await expect.poll(() => resText(page)).toMatch(/糧 \d+　木 \d+　金 \d+　晶 \d+　人口 \d+\/\d+/);
+  await expect.poll(() => resText(page)).toMatch(/^糧 \d+　木 \d+　金 \d+　人口 \d+\/\d+/);
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
   const city = (await page.evaluate(() => window.__proto?.game?.buildings() ?? [])).find((b) => b.owner === me && b.type === 0);
   if (city === undefined) throw new Error("no main city");
@@ -418,14 +418,14 @@ for (const [view, where] of [["", "右上方"], ["&view=diamond", "右邊"]] as 
     // The town is 75° from the main city on the map (north, a little east); 方形斜看 shows it at 62°
     // (half as tall as wide), the diamond turns it to 16° (town-hint.ts screenDirection).
     await start(page, `?test=1&hint=1${view}`);
-    const hint = page.getByRole("dialog", { name: "魔晶從城鎮來" });
+    const hint = page.getByRole("dialog", { name: "城鎮給什麼" });
     await expect(hint).toContainText(`離你的主城最近的小鎮在主城的${where}，約 51 格。`);
   });
 }
 
 test("開局提示：真的地圖上，提示指向離主城最近的小鎮，大城比較近也一樣（不管地圖上有幾座、編號是多少）；按知道了，模擬開始跑（D-044）", async ({ page }, info) => {
   await start(page, "?test=1&hint=1");
-  const hint = page.getByRole("dialog", { name: "魔晶從城鎮來" });
+  const hint = page.getByRole("dialog", { name: "城鎮給什麼" });
   await expect(hint).toBeVisible();
   const town = await hintTownOf(page);
   expect(town.size, "the real map has small towns").toBe(0);

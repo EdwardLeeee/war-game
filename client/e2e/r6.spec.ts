@@ -35,7 +35,7 @@ test("正式介面關著（?ui=proto，ceo 2026-10-19）：畫面照原型——
   await page.waitForFunction(() => window.__proto?.ready === true);
   expect(await page.evaluate(() => document.documentElement.dataset.ui ?? null)).toBeNull();
   await expect(page.getByText("原型介面（非正式設計）")).toBeVisible();
-  await expect(page.locator(".res-bar")).toHaveText(/^糧 \d+　木 \d+　金 \d+　晶 \d+　人口 \d+\/\d+/);
+  await expect(page.locator(".res-bar")).toHaveText(/^糧 \d+　木 \d+　金 \d+　人口 \d+\/\d+/);
   await expect(page.getByRole("button", { name: "速度 正常" })).toHaveText("速度 正常");
   await expect(page.locator("#hud .b")).toHaveCount(0);
   await page.getByRole("button", { name: "選單" }).tap();

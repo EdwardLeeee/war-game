@@ -70,3 +70,18 @@ test("資源列的人口含訓練中的兵，後面寫訓練中幾名；放不�
   h[H.population] = 18;
   assert.match(resourceLine(h, 2)[0], /人口 20\/20（訓練中 2）/);
 });
+
+test("沒有魔晶時（D-135，rules.features.noCrystal）資源列只有糧、木、金：不寫「晶」", () => {
+  const h = new Int32Array(HEADER_LENGTH);
+  h[H.food] = 200;
+  h[H.wood] = 150;
+  h[H.gold] = 140;
+  h[H.population] = 6;
+  h[H.populationCap] = 10;
+  h[H.tick] = 20 * 65;
+  assert.deepEqual(resourceLine(h, 0, false), [
+    "糧 200　木 150　金 140　人口 6/10　時間 1:05",
+    "糧 200　木 150　金 140　人口 6/10　1:05",
+    "糧 200　木 150　金 140　人口 6/10　1:05",
+  ]);
+});
