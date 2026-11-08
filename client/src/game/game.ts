@@ -3503,6 +3503,7 @@ export class Game implements GestureHost {
       townCount: (view.map.mode ?? "fixed") === "fixed" ? view.map.towns.length : null,
       cities: [city(0), city(1)],
       mapSize: view.map.size,
+      crystal: hasCrystal(view.rules),
       projection: view.projection,
       mapLabel: MAP_LABEL[this.options.map] ?? "",
     };

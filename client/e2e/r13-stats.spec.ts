@@ -168,14 +168,18 @@ test("局後統計（正式介面 A，814×380，勝）：上方寫勝負、原�
   await expect(moments.nth(2)).toContainText("攻進敵方主城我方 23 名到敵方主城下");
   await expect(moments.nth(3)).toContainText("敵方主城被摧毀我方勝利");
   await expect(dialog.locator(".st-nums tr").filter({ hasText: "損失（含村民）" })).toContainText("121147");
+  // 採集: 金 alone (D-135, R15-05: the fake world plays without crystal).
+  await expect(dialog.locator(".st-nums tr").filter({ hasText: /^採集 金/ })).toHaveCount(1);
+  await expect(dialog.locator(".st-nums")).not.toContainText("魔晶");
   await everyTab(page, "814×380", "top");
-  // 資源: 糧 first, 魔晶 at a tap.
+  // 資源: 糧 first, 糧、木、金 only (R15-05), 金 at a tap.
   await page.getByRole("tab", { name: "資源" }).tap();
   await expect(dialog.locator(".st-ctl h3")).toHaveText("累計採集：糧");
-  await dialog.getByRole("button", { name: "魔晶" }).tap();
-  await expect(dialog.locator(".st-ctl h3")).toHaveText("累計採集：魔晶");
-  await expect(dialog.getByRole("button", { name: "魔晶" })).toHaveAttribute("aria-pressed", "true");
-  await expect(dialog.getByRole("img")).toHaveAttribute("aria-label", "累計採集魔晶：我方 724、敵方 227");
+  await expect(dialog.getByRole("group", { name: "資源" }).getByRole("button")).toHaveText(["糧", "木", "金"]);
+  await dialog.getByRole("button", { name: "金", exact: true }).tap();
+  await expect(dialog.locator(".st-ctl h3")).toHaveText("累計採集：金");
+  await expect(dialog.getByRole("button", { name: "金", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(dialog.getByRole("img")).toHaveAttribute("aria-label", /^累計採集金：我方 [\d,]+、敵方 [\d,]+$/);
   // 戰鬥: kills counted from who killed (deaths[].by).
   await page.getByRole("tab", { name: "戰鬥" }).tap();
   await expect(dialog.locator(".st-bfhead")).toContainText("我方損失 121");
