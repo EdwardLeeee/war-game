@@ -813,6 +813,8 @@ export const GATHER_UNIT = 60 * S;
  * The mage hall costs `hallGold` gold (was 100): with crystal a first mage came at minute 11-14 (the user's 9.8-13);
  * without it, a hall built from the starting stock gave one at 5.2 (src/scripted-games.ts --mage-rush, 20 seeds), the
  * mage's gold barely moving it (180: 6.0, 220: 7.0); the hall at 200 gold, 10.3 on both maps (ceo: not before 7).
+ * ceo 2026-11-08 chose these (V1 of sim/README.md's D-135): towns' crystal dropped, not paid as gold (townGold: governing
+ * got too strong); the cannon's cooldown as it was.
  * Off: as before. The tables read it (getters).
  */
 export const NO_CRYSTAL = { on: true, mageGold: 140, hallGold: 200, townGold: false };
