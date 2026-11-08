@@ -26,9 +26,10 @@ export const DEPOT_RESOURCES: readonly Resource[] = [Resource.Food, Resource.Woo
 export const DEPOT_WORD: Record<number, string> = { [Resource.Food]: "糧", [Resource.Wood]: "木", [Resource.Gold]: "金", [Resource.Crystal]: "晶" };
 
 /** The resource rows the panel of this building of ours shows: none for the main city (D-070). */
-export function panelResources(type: number, accepts: readonly number[]): Resource[] {
+export function panelResources(type: number, accepts: readonly number[], crystal = true): Resource[] {
   if (type === BuildingType.MainCity) return [];
-  return DEPOT_RESOURCES.filter((r) => accepts.includes(r));
+  // D-135: without crystal the mine still takes it in the tables (always 0), but has no 晶 row.
+  return DEPOT_RESOURCES.filter((r) => accepts.includes(r) && (crystal || r !== Resource.Crystal));
 }
 
 /** One own villager as the depot panel needs it (cells). */

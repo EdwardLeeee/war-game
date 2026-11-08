@@ -24,7 +24,7 @@ import {
   UnitFlag,
   UnitType,
 } from "../protocol.ts";
-import { BUILDINGS } from "../core/rules.ts";
+import { BUILDINGS, UNITS } from "../core/rules.ts";
 import type { PlayerView } from "../view/view.ts";
 
 export const ECO_SCRIPT_EVERY = 100;
@@ -173,7 +173,8 @@ export function ecoScript(view: PlayerView, spawn: { cellX: number; cellY: numbe
     room--;
   }
   const hall = done(BuildingType.MageHall)[0];
-  if (hall && hall.queue < 1 && gold >= 90 && crystal >= 50 && room > 0 && h[HeaderField.mages] < h[HeaderField.mageCap]) {
+  const mage = UNITS[UnitType.Mage].cost;
+  if (hall && hall.queue < 1 && gold >= mage.gold && crystal >= mage.crystal && room > 0 && h[HeaderField.mages] < h[HeaderField.mageCap]) {
     out.push({ c: "train", building: hall.id, type: UnitType.Mage, n: 1 });
   }
   if (quietMages.length > 0) out.push({ c: "autocast", u: quietMages, on: true });

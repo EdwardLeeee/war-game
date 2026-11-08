@@ -5,7 +5,7 @@
 // battlefield when the page opens (INV-01), over the game itself when one is on (INV-12).
 
 import { expect, type Page, test } from "@playwright/test";
-import { injectSafeArea } from "./helpers.ts";
+import { expectSaid, injectSafeArea, recordToasts } from "./helpers.ts";
 
 const box = async (page: Page, selector: string) => {
   const b = await page.locator(selector).first().boundingBox();
@@ -160,7 +160,44 @@ test("正式介面的選單和設定（R6-20 INV-116、NEW-07）：全體回城�
   await expect(dialog.getByRole("radio", { name: /A 銅木/ })).toHaveClass(/\bis-active\b/);
 });
 
-test("正式介面的經濟分配、預留（R6-20 INV-120、INV-121）：自動分配和取消、套用同一列；預留第 4 行寫魔晶", async ({ page }) => {
+test("設定的開局提示：開／關（使用者 2026-11-08，D-135 選單拿掉提示那行之後）：和「不再提示」是同一個值；不再提示的訊息說可以在設定裡打開；打開後下一局又會提示；932×336 放得下", async ({ page }) => {
+  await page.setViewportSize({ width: 932, height: 336 });
+  await page.goto("./?test=1&mock=1&tps=20&ui=r6&hint=1");
+  await page.getByRole("button", { name: "開始" }).tap();
+  await page.waitForFunction(() => window.__proto?.ready === true);
+  await injectSafeArea(page);
+  await recordToasts(page);
+  const stored = () => page.evaluate(() => window.localStorage.getItem("war-game.proto.townHint"));
+  const hint = page.getByRole("dialog", { name: "城鎮給什麼" });
+  await hint.getByRole("button", { name: "不再提示" }).tap();
+  await expect(hint).toBeHidden();
+  await expectSaid(page, "之後開局不會再提示，可以在設定裡打開");
+  expect(await stored()).toBe("off");
+  // 設定: 開局提示：關, the same value; a tap turns it on at once.
+  await page.getByRole("button", { name: "選單" }).tap();
+  const dialog = page.locator(".dialog");
+  await dialog.getByRole("button", { name: "設定" }).tap();
+  const pref = dialog.getByRole("button", { name: /^開局提示：/ });
+  await expect(pref).toHaveText("開局提示：關");
+  await expect(pref).toHaveAttribute("aria-pressed", "false");
+  const box = await pref.boundingBox();
+  expect(Math.min(box?.width ?? 0, box?.height ?? 0), "at least 44 pt").toBeGreaterThanOrEqual(44);
+  // 932 × 336 (the fake world's 814 × 380 here too): the card does not scroll, 關閉 is on the screen.
+  expect(await dialog.locator(".dialog-card").evaluate((c) => c.scrollHeight - c.clientHeight), "no scrolling").toBeLessThanOrEqual(1);
+  await expect(dialog.getByRole("button", { name: "關閉" })).toBeInViewport({ ratio: 1 });
+  await pref.tap();
+  await expect(pref).toHaveText("開局提示：開");
+  await expect(pref).toHaveAttribute("aria-pressed", "true");
+  expect(await stored()).toBe("on");
+  // The next game shows it again.
+  await dialog.getByRole("button", { name: "回選單" }).tap();
+  await dialog.getByRole("button", { name: "回開局畫面" }).tap();
+  await page.getByRole("button", { name: "重來" }).tap();
+  await page.waitForFunction(() => window.__proto?.ready === true);
+  await expect(hint).toBeVisible();
+});
+
+test("正式介面的經濟分配、預留（R6-20 INV-120、INV-121）：自動分配和取消、套用同一列；預留只有糧、木、金三行（D-135 沒有魔晶）", async ({ page }) => {
   const me = await startFake(page);
   const city = (await page.evaluate(() => window.__proto?.game?.buildings() ?? [])).find((b) => b.owner === me && b.type === 0);
   if (city === undefined) throw new Error("no main city");
@@ -176,7 +213,7 @@ test("正式介面的經濟分配、預留（R6-20 INV-120、INV-121）：自動
   expect((toggle?.x ?? 0) < (apply?.x ?? 0), "自動分配 at the left").toBe(true);
   await dialog.getByRole("button", { name: "取消" }).tap();
   await page.locator(".cmds").getByRole("button", { name: /^預留/ }).tap();
-  await expect(dialog.locator(".ratio-name").nth(3)).toHaveText("魔晶");
+  await expect(dialog.locator(".ratio-name")).toHaveText(["糧", "木", "金"]);
 });
 
 test("正式介面的攻下城鎮（R6-20 INV-122、INV-124）：搶和治理共用一個留守，選搶照這個數字留；只能治理時卡片半寬、稍後再決定在右邊", async ({ page }) => {

@@ -6,7 +6,7 @@ import { loadHintSeen, MARKET_HINT_KEY, saveHintSeen } from "../../hint-pref.ts"
 import { GROUP_TYPES, isSoldier } from "../../game/army.ts";
 import { DEPOT_WORD } from "../../game/depot.ts";
 import { DISPATCH_SHARES, type DispatchPool, dispatchCount, NODE_RESOURCE, RESOURCE_WORD } from "../../game/dispatch.ts";
-import { autoTrainBuildings, buildable, features, garrisonTypes, holdsOf, missingFor, outpostSlots } from "../../game/features.ts";
+import { autoTrainBuildings, buildable, features, garrisonTypes, hasCrystal, holdsOf, missingFor, outpostSlots } from "../../game/features.ts";
 import { MARKET_RESOURCES, marketOn, marketRules, buyPrice, sellGain, tradeBlock, tradeOne } from "../../game/market.ts";
 import { enterOn } from "../../game/enter.ts";
 import { POST_TYPE } from "../../game/outpost.ts";
@@ -191,7 +191,8 @@ export const FORMAL_ORDER_TEXT = {
   enter: "進駐：再點自己的城、主城、箭樓或哨所：那棟決定誰進去",
 } as const;
 /** A mage's crystal cannon (D-095: only automatic; 「把消耗放進說明裡面」), its numbers the simulation's own. */
-export const CANNON_TEXT = `自動晶砲：每發 ${CANNON.crystal} 魔晶、冷卻 ${CANNON.cooldownTicks / TICKS_PER_SECOND} 秒，炸到 ${CANNON.autocastMinTargets} 名以上才放，移動中不放`;
+// D-135: without crystal (the simulation's CANNON.crystal 0) a shot costs nothing, and the text says only the rest.
+export const CANNON_TEXT = `自動晶砲：${CANNON.crystal > 0 ? `每發 ${CANNON.crystal} 魔晶、` : ""}冷卻 ${CANNON.cooldownTicks / TICKS_PER_SECOND} 秒，炸到 ${CANNON.autocastMinTargets} 名以上才放，移動中不放`;
 /** Under a town plundered this game (round 7, D-061): only 治理 is offered. */
 export const PLUNDERED_TEXT = "這座城這局已經被搶過，只能治理";
 
@@ -1517,7 +1518,8 @@ export class ResourceBar {
     const h = view?.header;
     if (view === null || h === null || h === undefined) return;
     const training = view.trainingCount();
-    const lines = resourceLine(h, training);
+    const crystal = hasCrystal(view.rules);
+    const lines = resourceLine(h, training, crystal);
     if (lines[0] === this.text && room === this.room) return;
     this.text = lines[0];
     this.room = room;
@@ -1535,6 +1537,8 @@ export class ResourceBar {
     n.wood.textContent = String(h[H.wood]);
     n.gold.textContent = String(h[H.gold]);
     n.crystal.textContent = String(h[H.crystal]);
+    // D-135 (R15-01): no crystal, no icon or figure.
+    (n.crystal.parentElement as HTMLElement).hidden = !crystal;
     n.pop.textContent = String(h[H.population] + training);
     n.cap.textContent = `/${h[H.populationCap]}`;
     n.training.textContent = training > 0 ? `訓練中 ${training}` : "";

@@ -91,6 +91,16 @@
   gap: 4px;
 }
 
+/* 設定's 開局提示 開／關 (the user 2026-11-08): at the left of the last row, 回選單 and 關閉 at the right. */
+:root[data-ui="r6"] .dialog .dialog-buttons .town-hint-pref {
+  margin-right: auto;
+}
+
+/* D-135 (R15-01): without crystal its item is hidden (flex above would show it). */
+:root[data-ui="r6"] .res-bar .r[hidden] {
+  display: none;
+}
+
 :root[data-ui="r6"] .res-bar .r small {
   font-size: 12px;
   font-weight: 400;

@@ -31,7 +31,7 @@ import { dir16, Rng } from "./fixed.ts";
 import { type CastleMap, castleOf } from "./castle.ts";
 import { farTrees, type GameMap, type NodeSpec, stampCastles, type TownSpec, turnedTerrain } from "./map.ts";
 import { forestCells, homeForests } from "./forests.ts";
-import { KEEP, NODE_AMOUNT, RICH, TOWNS } from "./rules.ts";
+import { KEEP, NO_CRYSTAL, NODE_AMOUNT, RICH, TOWNS } from "./rules.ts";
 
 export type Layout = "diagonal" | "adjacent";
 
@@ -479,7 +479,8 @@ function attemptMap(n: number, rng: Rng, layout: Layout, townCount: number, scat
       ground[y * n + x] = layout === "diagonal" ? turnedTerrain(ground[m]) : ground[m];
     }
   }
-  for (const [x, y] of veinCells(layout, vein)) kind[y * n + x] = NodeKind.CrystalVein;
+  // None with NO_CRYSTAL on (D-135): its place is picked and kept clear all the same, so the rest of the map is as it was.
+  if (!NO_CRYSTAL.on) for (const [x, y] of veinCells(layout, vein)) kind[y * n + x] = NodeKind.CrystalVein;
   const wall = stampCastles(n, rock, kind, castles);
   if (WATER_TRIM.on) trimWater(n, ground, wall);
 

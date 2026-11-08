@@ -54,6 +54,14 @@ export function outpostHide(rules: Pick<Rules, "features"> | null | undefined): 
 }
 
 /**
+ * Whether the game has crystal (D-135, the user 2026-11-08: 「魔晶感覺很雞肋都用不到 好像可以拿掉」): with
+ * `features.noCrystal` its slot stays in the protocol, always 0, and the screen shows it nowhere. Absent: as before.
+ */
+export function hasCrystal(rules: Pick<Rules, "features"> | null | undefined): boolean {
+  return features(rules).noCrystal !== true;
+}
+
+/**
  * The building types `type` still needs before it can be built (`requires`, round 7: own and
  * finished), in the table's order; empty when it can be built.
  */

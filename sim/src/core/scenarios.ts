@@ -8,7 +8,7 @@ import { Action, BuildingType, CELL_SHIFT, NEUTRAL, Order, PLAYER_COUNT, Resourc
 import { FIXED_POSTS } from "./castle.ts";
 import { pushOut } from "./commands.ts";
 import { cellsAround, nearestWalkable } from "./paths.ts";
-import { BUILDINGS, GATE, KEEP, OUTPOST, START, TOWNS, UNITS, WALLS } from "./rules.ts";
+import { BUILDINGS, GATE, KEEP, NO_CRYSTAL, OUTPOST, START, TOWNS, UNITS, WALLS } from "./rules.ts";
 import type { World } from "./world.ts";
 
 export type ScenarioKey = ScenarioName | "skirmish";
@@ -111,7 +111,7 @@ function standard(w: World): void {
     w.res[p * 4 + Resource.Food] = START.resources.food;
     w.res[p * 4 + Resource.Wood] = START.resources.wood;
     w.res[p * 4 + Resource.Gold] = START.resources.gold;
-    w.res[p * 4 + Resource.Crystal] = START.resources.crystal;
+    w.res[p * 4 + Resource.Crystal] = NO_CRYSTAL.on ? 0 : START.resources.crystal;
   }
   placeTownGuards(w);
 }
@@ -322,7 +322,7 @@ function e2e(w: World): void {
     w.res[p * 4 + Resource.Food] = E2E.resources.food;
     w.res[p * 4 + Resource.Wood] = E2E.resources.wood;
     w.res[p * 4 + Resource.Gold] = E2E.resources.gold;
-    w.res[p * 4 + Resource.Crystal] = E2E.resources.crystal;
+    w.res[p * 4 + Resource.Crystal] = NO_CRYSTAL.on ? 0 : E2E.resources.crystal;
   }
   const s0 = w.map.spawns[0];
   for (const type of [BuildingType.House, BuildingType.House, BuildingType.Barracks]) {
@@ -410,7 +410,7 @@ function perf(w: World, c: typeof PERF): void {
     w.res[p * 4 + Resource.Food] = c.resources.food;
     w.res[p * 4 + Resource.Wood] = c.resources.wood;
     w.res[p * 4 + Resource.Gold] = c.resources.gold;
-    w.res[p * 4 + Resource.Crystal] = c.resources.crystal;
+    w.res[p * 4 + Resource.Crystal] = NO_CRYSTAL.on ? 0 : c.resources.crystal;
   }
   const s0 = w.map.spawns[0];
   const house = BUILDINGS[BuildingType.House];

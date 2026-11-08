@@ -829,6 +829,11 @@ export interface Features {
   market?: boolean;
   /** Soldiers on the walls shift along them to where the enemy is (D-119), `Rules.wallShift`. Absent: off. */
   wallShift?: boolean;
+  /**
+   * No crystal (D-135): Resource.Crystal and every crystal field (costs, the header's crystal and reserveCrystal, events,
+   * the timeline) stay, always 0; no crystal vein on the map; no NoCrystal rejection. Absent: crystal as before.
+   */
+  noCrystal?: boolean;
   /** Snapshots carry wallHolds, why wall soldiers stay instead of shifting (R14-07); with wallShift. Absent: none. */
   wallHold?: boolean;
   /** Spearmen hide in outposts and strike from them (D-119), `Rules.outpost.poke`. Absent: off. */

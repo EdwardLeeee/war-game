@@ -14,7 +14,7 @@ import { type MapMode, NodeKind, Terrain, TownSize, walkableTerrain } from "../p
 import { type CastleMap, castleOf } from "./castle.ts";
 import { Rng } from "./fixed.ts";
 import { FIXED_TERRAIN } from "./fixed-terrain.ts";
-import { KEEP, NODE_AMOUNT, RICH, TOWNS } from "./rules.ts";
+import { KEEP, NO_CRYSTAL, NODE_AMOUNT, RICH, TOWNS } from "./rules.ts";
 import { forestCells, homeForests } from "./forests.ts";
 import { dir16 } from "./fixed.ts";
 
@@ -169,8 +169,8 @@ export function generateMap(seed: number = MAP_SEED): GameMap {
       kind[y * n + x] = kind[x * n + y];
     }
   }
-  // Crystal vein on the axis (symmetric by itself).
-  for (const [x, y] of [[VEIN.x, VEIN.y], [VEIN.x + 1, VEIN.y], [VEIN.x, VEIN.y + 1], [VEIN.x + 1, VEIN.y + 1]]) {
+  // Crystal vein on the axis (symmetric by itself); none with NO_CRYSTAL on (D-135), its ground left open.
+  if (!NO_CRYSTAL.on) for (const [x, y] of [[VEIN.x, VEIN.y], [VEIN.x + 1, VEIN.y], [VEIN.x, VEIN.y + 1], [VEIN.x + 1, VEIN.y + 1]]) {
     kind[y * n + x] = NodeKind.CrystalVein;
   }
 
@@ -221,6 +221,8 @@ export function generateMap(seed: number = MAP_SEED): GameMap {
           if (wall[y * n + x] === 1) return false;
           const block = x >= c && x <= c + 1 && y >= c && y <= c + 1;
           if (block && (rock[y * n + x] === 1 || kind[y * n + x] !== -1 || ground[y * n + x] !== 0)) return false;
+          // The vein's place, with it or without (NO_CRYSTAL): the mines where they were with the vein.
+          if (block && x >= VEIN.x && x <= VEIN.x + 1 && y >= VEIN.y && y <= VEIN.y + 1) return false;
           if (block && boxes.some((b) => x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1)) return false;
         }
       }

@@ -3,7 +3,7 @@
 // connected. It is NOT the game's rules: units walk in straight lines, nothing fights, and
 // every number here is a placeholder. It shows one of everything the screen must draw:
 // towns in each state, fog in all three states, a remembered building, a mage calibrating
-// with a shield, an enemy cannon warning, trees, gold, berries and a crystal vein.
+// with a shield, an enemy cannon warning, trees, gold and berries (no crystal vein: D-135, as the simulation).
 //
 // With `?r7=1` round 7's rules are on (D-061, sim/PROTOCOL.md 3.3): towns plundered once (the
 // small neutral town and our governed one, which pays 25% and climbs back), arrow towers on
@@ -11,6 +11,7 @@
 // tower with someone inside that shoots (the `shot` event; nothing gets hurt here), and our
 // stable training cavalry.
 
+import { NO_FEATURES } from "../game/features.ts";
 import type { SimPort } from "../game/port.ts";
 import type { GameTimeline } from "../sim.ts";
 import {
@@ -103,6 +104,11 @@ function rules(on: { keep?: boolean; siege?: boolean; market?: boolean } = {}): 
   }
 }
 
+/** The rules with no crystal (D-135, `features.noCrystal`), as the simulation sends them now. */
+function noCrystal(r: Rules): Rules {
+  return { ...r, features: { ...NO_FEATURES, ...(r.features ?? {}), noCrystal: true } };
+}
+
 export const MOCK_RULES: Rules = {
   units: rules().units,
   buildings: [
@@ -114,7 +120,8 @@ export const MOCK_RULES: Rules = {
     buildingInfo(BuildingType.Farm, 100, 3, cost(0, 60, 0), { walkable: true }),
     buildingInfo(BuildingType.Barracks, 600, 3, cost(0, 150, 0), { trains: [UnitType.Spearman] }),
     buildingInfo(BuildingType.Range, 600, 3, cost(0, 150, 0), { trains: [UnitType.Ranged] }),
-    buildingInfo(BuildingType.MageHall, 700, 3, cost(0, 200, 150), { trains: [UnitType.Mage] }),
+    // The simulation's cost (D-135 changed it), as 預留's note says it.
+    buildingInfo(BuildingType.MageHall, 700, 3, rules().buildings[BuildingType.MageHall].cost, { trains: [UnitType.Mage] }),
     buildingInfo(BuildingType.TownTower, 800, 2, cost(0, 0, 0)),
     // Round 7 (D-061): shown only while `features.towers` is on.
     buildingInfo(BuildingType.ArrowTower, 500, 2, cost(0, 100, 50), { sight: 8, holds: 3 }),
@@ -362,7 +369,7 @@ export class MockPort implements SimPort {
   /** 預留 (D-054): what 自動訓練 would leave; the fake world only reports it. */
   private reserve = { ...AUTO_TRAIN.reserve };
   /** What we have (the resource bar); tests set it (等錢治理). */
-  private stock: Cost = cost(200, 200, 100, 20);
+  private stock: Cost = cost(200, 200, 100);
   /**
    * Tests' little economy (等錢治理), off unless a test turns it on: `income` a second, and
    * 自動訓練 spending `train` (a unit's cost) once a second from what is above the reserve (預留,
@@ -393,7 +400,7 @@ export class MockPort implements SimPort {
   private readonly outpost: boolean;
   /** `?outpost=1&hide=1` (D-119): its spearmen hide in it and poke out. */
   private readonly hide: boolean;
-  /** `?mine=1`: two mines of ours, one with a crystal vein beside it (the mine's 晶 row, 2026-10-20). */
+  /** `?mine=1`: two mines of ours (their depot panels; the crystal vein by one went with D-135). */
   private readonly mine: boolean;
   /** `?walls=1` (D-096): gates in the castles' openings, 上城牆. */
   private readonly walls: boolean;
@@ -419,7 +426,7 @@ export class MockPort implements SimPort {
   /**
    * `round7`: `?r7=1`, round 7's rules on. `map`: `?map=random` plays this layout as a random map.
    * `outpost`: `?outpost=1`, outposts too (D-080). `gallery`: `?gallery=1`, the atlases' gallery too.
-   * `mine`: `?mine=1`, two mines of ours, a crystal vein by one.
+   * `mine`: `?mine=1`, two mines of ours.
    */
   constructor(round7 = false, map: MapMode = "fixed", outpost: boolean | "hide" = false, gallery: "units" | "buildings" | null = null, mine = false, walls = false, siege = false, keep = false, market = false) {
     this.round7 = round7 || outpost !== false || walls || siege || keep || market;
@@ -430,7 +437,8 @@ export class MockPort implements SimPort {
     this.mine = mine;
     this.walls = walls;
     this.siege = siege;
-    this.rules = keep ? mockRulesKeep() : market ? mockRulesMarket() : siege ? MOCK_RULES_SIEGE : walls ? MOCK_RULES_WALLS : outpost === "hide" ? MOCK_RULES_OUTPOST_HIDE : outpost ? MOCK_RULES_OUTPOST : round7 ? MOCK_RULES_R7 : MOCK_RULES;
+    // No crystal (D-135), as the simulation sends its rules now.
+    this.rules = noCrystal(keep ? mockRulesKeep() : market ? mockRulesMarket() : siege ? MOCK_RULES_SIEGE : walls ? MOCK_RULES_WALLS : outpost === "hide" ? MOCK_RULES_OUTPOST_HIDE : outpost ? MOCK_RULES_OUTPOST : round7 ? MOCK_RULES_R7 : MOCK_RULES);
     // 雙河關 (D-115) reaches the screen as a random map does (PROTOCOL.md: mapInfo.mode "random").
     this.randomMap = map !== "fixed";
     this.gallery = gallery;
@@ -749,11 +757,9 @@ export class MockPort implements SimPort {
     for (let y = 20; y < 30; y++) for (let x = 20; x < 26; x++) node(NodeKind.Tree, x, y, 100);
     for (const [x, y] of [[27, 76], [28, 76], [27, 77], [28, 77]]) node(NodeKind.GoldMine, x, y, 800);
     for (const [x, y] of [[4, 84], [5, 84], [4, 85]]) node(NodeKind.Berries, x, y, 150);
-    for (const [x, y] of [[46, 62], [47, 62]]) node(NodeKind.CrystalVein, x, y, 400);
     if (this.mine) {
-      // A mine of ours by the gold, a crystal vein beside it; another by the southern trees, no vein near.
+      // A mine of ours by the gold; another by the southern trees.
       this.building(ME, BuildingType.Mine, 20, 78);
-      node(NodeKind.CrystalVein, 23, 79, 150);
       this.building(ME, BuildingType.Mine, 22, 90);
     }
 
@@ -926,8 +932,8 @@ export class MockPort implements SimPort {
       node(NodeKind.Tree, x, GALLERY_NODES_Y, 100);
       node(NodeKind.Tree, x, GALLERY_NODES_Y + 3, 0);
     }
-    // Mines full, mined (below half at GALLERY_FALL_TICK) and spent; berries and veins full and spent; two variants each.
-    for (const [kind, dy] of [[NodeKind.GoldMine, 7], [NodeKind.Berries, 10], [NodeKind.CrystalVein, 13]] as const) {
+    // Mines full, mined (below half at GALLERY_FALL_TICK) and spent; berries full and spent; two variants each (no vein: D-135).
+    for (const [kind, dy] of [[NodeKind.GoldMine, 7], [NodeKind.Berries, 10]] as const) {
       for (let v = 0; v < 2; v++) {
         node(kind, 86 + v, GALLERY_NODES_Y + dy, 800);
         if (kind === NodeKind.GoldMine) this.galleryRoles.mined.push(node(kind, 89 + v, GALLERY_NODES_Y + dy, 800));

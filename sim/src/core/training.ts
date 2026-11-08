@@ -3,12 +3,12 @@
 // mage hall whose automatic training is on.
 
 import { BuildingFlag, BuildingType, PLAYER_COUNT, Resource, UnitType } from "../protocol.ts";
-import { BUILDINGS, MAGE_CAP, MAIN_CRYSTAL, UNITS } from "./rules.ts";
+import { BUILDINGS, MAGE_CAP, MAIN_CRYSTAL, NO_CRYSTAL, UNITS } from "./rules.ts";
 import type { World } from "./world.ts";
 
-/** Every MAIN_CRYSTAL.every ticks, each standing main city gives its owner crystal (D-057). */
+/** Every MAIN_CRYSTAL.every ticks, each standing main city gives its owner crystal (D-057); none with NO_CRYSTAL (D-135). */
 export function mainCityCrystal(w: World): void {
-  if (MAIN_CRYSTAL.every <= 0 || w.tick === 0 || w.tick % MAIN_CRYSTAL.every !== 0) return;
+  if (NO_CRYSTAL.on || MAIN_CRYSTAL.every <= 0 || w.tick === 0 || w.tick % MAIN_CRYSTAL.every !== 0) return;
   const b = w.buildings.col;
   for (let s = 0; s < w.buildings.count; s++) {
     if (b.type[s] !== BuildingType.MainCity || b.hp[s] <= 0 || b.owner[s] >= PLAYER_COUNT) continue;

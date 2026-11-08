@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DIAMOND, OBLIQUE, TOP } from "../src/camera/projection.ts";
-import { hintTown, nearestTown, screenDirection, townHintLines } from "../src/game/town-hint.ts";
+import { hintTown, nearestTown, screenDirection, townGivesLines, townHintLines, townHintTitle } from "../src/game/town-hint.ts";
 import { NEUTRAL, TownSize, TownState } from "../src/sim.ts";
 
 const ME = 0;
@@ -112,4 +112,28 @@ test("開局提示：三行字寫魔晶從哪裡來、到了要做什麼、最�
 test("開局提示：城鎮只能搶一次開著時（第七輪，D-061），第二行加上每座城一局只能搶一次；關著時不提", () => {
   assert.equal(townHintLines(town(0, 29, 29), home, false, true)[1], "搶：馬上拿到一筆糧、金和魔晶，每座城一局只能搶一次。治理：修好之後，每分鐘都有魔晶。");
   assert.doesNotMatch(townHintLines(town(0, 29, 29), home)[1], /只能搶一次/);
+});
+
+test("沒有魔晶時（D-135，R15-06）開局提示寫城鎮給什麼：標題「城鎮給什麼」，搶和治理各給多少照規則的數字，位置那行照舊，整張沒有「魔晶」", () => {
+  const town = { id: 3, size: TownSize.Small, cellX: 30, cellY: 70 };
+  const home = { cellX: 10, cellY: 80 };
+  const towns = [
+    { plunder: { food: 300, gold: 300 }, perMinute: { food: 100, gold: 100 }, populationCap: 20 },
+    { plunder: { food: 675, gold: 675 }, perMinute: { food: 220, gold: 220 }, populationCap: 40 },
+  ];
+  const lines = townHintLines(town, home, false, true, DIAMOND, townGivesLines(towns));
+  assert.deepEqual(lines, [
+    "帶兵打倒城裡的民兵，就能選「搶」或「治理」。",
+    "搶：馬上拿到一大筆糧和金（小鎮各 300、大城各 675）。治理：修好之後，每分鐘都有糧和金（小鎮各 100、大城各 220），人口上限也會加（小鎮 20、大城 40）。",
+    townHintLines(town, home, false, true, DIAMOND)[2],
+  ]);
+  assert.equal(townHintTitle(false), "城鎮給什麼");
+  assert.ok([...lines, townHintTitle(false)].every((l) => !l.includes("魔晶")));
+  // Food and gold not the same: each said.
+  assert.match(townGivesLines([{ ...towns[0], plunder: { food: 300, gold: 200 } }, towns[1]])[1], /^搶：馬上拿到一大筆糧和金（小鎮糧 300、金 200、大城各 675）/);
+  // No towns in the rules (rules written by hand): the words without numbers.
+  assert.equal(townGivesLines(undefined)[1], "搶：馬上拿到一大筆糧和金。治理：修好之後，每分鐘都有糧和金，人口上限也會加。");
+  // With crystal (an older simulation): as before.
+  assert.equal(townHintTitle(true), "魔晶從城鎮來");
+  assert.match(townHintLines(town, home)[0], /魔晶/);
 });

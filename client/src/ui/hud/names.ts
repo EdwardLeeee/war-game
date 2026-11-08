@@ -116,7 +116,7 @@ export function clock(ticks: number, tps = TICKS_PER_SECOND): string {
 }
 
 /**
- * 資源列: resources, population and, last, the game time (ceo 2026-10-03: the player plays by
+ * 資源列 (D-135: without crystal, `crystal` false): resources, population and, last, the game time (ceo 2026-10-03: the player plays by
  * the clock, "第 7 分帶 6 名兵去搶小鎮"). Ticks, so it stands still while paused and shows game
  * time at every speed. Population counts the units in training too, as the simulation does
  * when it decides whether another one fits (D-050: 「人口數顯示包含訓練中的人口，不然常常忽略掉」),
@@ -124,9 +124,10 @@ export function clock(ticks: number, tps = TICKS_PER_SECOND): string {
  * The lines from widest to narrowest, for the first that fits: then without 時間, then
  * without the units in training.
  */
-export function resourceLine(h: ArrayLike<number>, training = 0): string[] {
+export function resourceLine(h: ArrayLike<number>, training = 0, crystal = true): string[] {
   const pop = `人口 ${h[H.population] + training}/${h[H.populationCap]}`;
-  const res = `糧 ${h[H.food]}　木 ${h[H.wood]}　金 ${h[H.gold]}　晶 ${h[H.crystal]}　${pop}`;
+  // D-135: without crystal, 糧 木 金 only.
+  const res = `糧 ${h[H.food]}　木 ${h[H.wood]}　金 ${h[H.gold]}${crystal ? `　晶 ${h[H.crystal]}` : ""}　${pop}`;
   const inTraining = training > 0 ? `（訓練中 ${training}）` : "";
   const time = clock(h[H.tick]);
   return [`${res}${inTraining}　時間 ${time}`, `${res}${inTraining}　${time}`, `${res}　${time}`];

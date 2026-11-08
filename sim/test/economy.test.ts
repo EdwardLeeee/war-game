@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Game } from "../src/core/game.ts";
 import { Task } from "../src/core/economy.ts";
-import { BUILDINGS, CARRY, ECO_EVERY, MAIN_ARROW, MAIN_CITY_REPAIR_LOCK, STAY_LIMIT, UNITS } from "../src/core/rules.ts";
+import { BUILDINGS, CARRY, ECO_EVERY, MAIN_ARROW, MAIN_CITY_REPAIR_LOCK, NO_CRYSTAL, STAY_LIMIT, UNITS } from "../src/core/rules.ts";
 import { checkPlacement } from "../src/placement.ts";
 import {
   Action,
@@ -590,7 +590,7 @@ test("a main city cannot be repaired within 10 s of being hit; other buildings c
   assert.ok(b.hp[hs] > 100, "houses repair at once");
 });
 
-test("a build without farmers sends the nearest free ones: 1 for 2 x 2, 2 for 3 x 3, not placed, busy, hidden or vein farmers", () => {
+test("a build without farmers sends the nearest free ones: 1 for 2 x 2, 2 for 3 x 3, not placed, busy, hidden or vein farmers", switchedOff(NO_CRYSTAL, () => {
   const g = emptyGame();
   const w = g.w;
   w.ecoOn[0] = 0;
@@ -622,7 +622,7 @@ test("a build without farmers sends the nearest free ones: 1 for 2 x 2, 2 for 3 
   assert.deepEqual(step(g), []);
   assert.deepEqual(builders(w.buildingAt[barracks.y * w.size + barracks.x]), [tieA, tieB], "two for a 3 x 3");
   assert.equal(u.stay[slotOf(g, near)], 0, "not placed: the economy may take it afterwards");
-});
+}));
 
 test("a build without farmers and nobody free is refused with NoFarmer: nothing placed, nothing paid", () => {
   const g = emptyGame();
@@ -726,7 +726,7 @@ test("a new ratio moves farmers already at work within 2 s, each share within on
   assert.deepEqual(work(0), work(1));
 });
 
-test("the ratio does not move farmers sent by hand, on the vein, placed, or building; the others follow it", () => {
+test("the ratio does not move farmers sent by hand, on the vein, placed, or building; the others follow it", switchedOff(NO_CRYSTAL, () => {
   const g = emptyGame();
   const w = g.w;
   const u = w.units.col;
@@ -758,7 +758,7 @@ test("the ratio does not move farmers sent by hand, on the vein, placed, or buil
   cmd(g, 0, { c: "stop", u: [hand[0]] });
   run(g, 1);
   assert.equal(u.flags[slotOf(g, hand[0])] & UnitFlag.HandPicked, 0);
-});
+}));
 
 test("with the ratio unchanged, no farmer is moved back and forth", () => {
   const g = emptyGame();

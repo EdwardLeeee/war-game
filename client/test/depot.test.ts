@@ -129,3 +129,10 @@ test("礦場的晶：－拿走離礦場最遠、採晶送回這座礦場的；�
   assert.equal(crystalSentText(mine.id, depotFor({ x: 26.5, y: 11.5 }, Resource.Crystal, all), "主城"), "已派 1 名去採晶，晶會送回主城");
   assert.equal(crystalSentText(mine.id, depotFor({ x: 42.5, y: 12.5 }, Resource.Crystal, all), "礦場"), "已派 1 名去採晶");
 });
+
+test("沒有魔晶時（D-135）礦場只有「金」那行：規則裡礦場照舊收魔晶（那格永遠是 0），畫面不列", () => {
+  const mine = [Resource.Gold, Resource.Crystal];
+  assert.deepEqual(panelResources(BuildingType.Mine, mine), [Resource.Gold, Resource.Crystal], "with crystal, as before");
+  assert.deepEqual(panelResources(BuildingType.Mine, mine, false), [Resource.Gold]);
+  assert.deepEqual(panelResources(BuildingType.LumberCamp, [Resource.Wood], false), [Resource.Wood]);
+});

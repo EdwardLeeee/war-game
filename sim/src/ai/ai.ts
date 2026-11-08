@@ -1576,6 +1576,12 @@ interface Town {
 type Mode = "gather" | "town" | "base" | "defend" | "raze";
 
 const TICKS_PER_MINUTE = 1200;
+/**
+ * Normal and hard: the mage hall after the range, once there is crystal for it (40) or from this tick. D-135 (no crystal):
+ * from this tick only. Local timing (seeds 1-4, both maps, both spawns, to minute 20): with crystal
+ * hard's first hall at minute 11.4 and first mage at 12.1 (medians), normal's 11.4 and 13.6.
+ */
+const MAGE_HALL_FROM = 10 * TICKS_PER_MINUTE;
 // The end of a game with a time limit, counted back from the limit (in a 30-minute game these
 // are minutes 20, 22, 24 and 26). A game without a limit has none of it.
 /** From here the army it takes to march on the enemy base shrinks by 3 a minute. */
@@ -1674,6 +1680,8 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
   // ranged units and mages hiding in the main city while enemies are near it.
   const extras = (know.difficulty ?? "normal") === "normal";
   const useCavalry = extras && know.rules.features?.cavalry === true;
+  /** D-135: no crystal (its mage hall from MAGE_HALL_FROM; there is no vein to send farmers to). */
+  const noCrystal = know.rules.features?.noCrystal === true;
   const hide = extras && know.rules.features?.garrison === true;
   let sawShooters = false;
   let lastHomeThreat = -100000;
@@ -1919,7 +1927,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
         if (!has(BuildingType.Granary) && farmers.length >= 8) add(BuildingType.Granary, base);
         if (!has(BuildingType.Barracks) && farmers.length >= 10) add(BuildingType.Barracks, rally);
         if (!has(BuildingType.Range) && farmers.length >= 12) add(BuildingType.Range, rally);
-        if (!has(BuildingType.MageHall) && has(BuildingType.Range) && (res.crystal >= 40 || tick > 10 * TICKS_PER_MINUTE)) add(BuildingType.MageHall, base);
+        if (!has(BuildingType.MageHall) && has(BuildingType.Range) && ((!noCrystal && res.crystal >= 40) || tick > MAGE_HALL_FROM)) add(BuildingType.MageHall, base);
         if (useCavalry && sawShooters && !has(BuildingType.Stable) && (rules.buildings[BuildingType.Stable].requires ?? []).every((t) => done(t).length > 0)) {
           add(BuildingType.Stable, rally);
         }
@@ -2998,6 +3006,11 @@ export interface HardPlan {
    */
   fortExit: number;
   /**
+   * D-135 (no crystal): its mage hall comes first from this minute, as it did once a plunder brought the crystal for a mage
+   * (with crystal: hard's first hall at minute 11.4, first mage 12.1, medians, local; the user's last 10 games 12.1-14.2).
+   */
+  mageHallFirst: number;
+  /**
    * D-131: every FOCUS_EVERY ticks its ranged units shoot the enemy soldiers in their reach with the least hp, as many on each
    * as it takes; from its own view; one whose target left its reach goes back to the army's way (false: each shoots its nearest).
    */
@@ -3117,6 +3130,7 @@ export const HARD: HardPlan = {
   // six active groups 10 of 240 as before; push-crush 10/24 -> 10/26. routeFromArmy alone turned back no less (12.7).
   routeFromArmy: true,
   fortExit: 3,
+  mageHallFirst: 10,
   // D-131 (the user 2026-11-06; ceo 2026-11-07; docs/research/2026-11-ai-tactics.md): against hard without it, new seeds,
   // 215-2-183 of 400 where the same AI against itself went 191-2-207; the six active groups 14 of 240 as before; the midway
   // fortress 2 -> 0 of 160; hard against normal 80 -> 74, new seeds 82 -> 78 (fixed), 87 -> 88 (random).
@@ -3287,6 +3301,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   }
   // Round 7 (D-061) switches; each off, it plays as before.
   const garrisonOn = know.rules.features?.garrison === true;
+  /** D-135 (the user 2026-11-08): no crystal; mages cost gold, the cannon nothing. */
+  const noCrystal = know.rules.features?.noCrystal === true;
   const once = know.rules.features?.plunderOnce === true;
   const hideOn = garrisonOn && plan.hide;
   const governCost = (size: number): Cost => governCostOf(rules, size);
@@ -4089,8 +4105,9 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         const add = (type: BuildingType, at: { x: number; y: number } | null) => {
           if (!plans.some((p) => p.type === type)) plans.push({ type, at });
         };
-        // The mage hall first once there is the crystal for a mage (a plunder brings 75).
-        if (!has(BuildingType.MageHall) && res.crystal >= mageCost.crystal) add(BuildingType.MageHall, base);
+        // The mage hall first once there is the crystal for a mage (a plunder brings 75). D-135: with no crystal, first from
+        // minute plan.mageHallFirst (with 0 >= 0 it came first at once, its first mage at minute 5.7).
+        if (!has(BuildingType.MageHall) && (noCrystal ? tick >= plan.mageHallFirst * TICKS_PER_MINUTE : res.crystal >= mageCost.crystal)) add(BuildingType.MageHall, base);
         // D-083 (c): food and gold piling up, more barracks and ranges first (a house first only when it needs one now).
         const prodCount = count(BuildingType.Barracks) + count(BuildingType.Range);
         const roomFor = prodCount < plan.production && has(BuildingType.Range) && cap - pop - queued > producers;
@@ -4165,7 +4182,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         if (!has(BuildingType.Granary) && farmers.length >= 8) add(BuildingType.Granary, base);
         if (!has(BuildingType.Barracks) && farmers.length >= 10) add(BuildingType.Barracks, rally);
         if (!has(BuildingType.Range) && farmers.length >= 12) add(BuildingType.Range, rally);
-        if (!has(BuildingType.MageHall) && has(BuildingType.Range) && (res.crystal >= 40 || tick > 10 * TICKS_PER_MINUTE)) add(BuildingType.MageHall, base);
+        if (!has(BuildingType.MageHall) && has(BuildingType.Range) && ((!noCrystal && res.crystal >= 40) || tick > MAGE_HALL_FROM)) add(BuildingType.MageHall, base);
         if (count(BuildingType.Farm) < Math.min(10, 2 + (farmers.length >> 2))) add(BuildingType.Farm, granary ? { x: granary.x + 1, y: granary.y + 1 } : base);
         if (!has(BuildingType.Mine) && farmers.length >= 14) add(BuildingType.Mine, nearestNode(NodeKind.GoldMine));
         // D-086 A4 (plan.mineMove): the gold by its mines gone: another by the nearest gold it knows of.
@@ -4255,7 +4272,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       const hallQueue = done(BuildingType.MageHall).reduce((a, b) => a + b.queue, 0);
       // No more than the cap leaves room for, with those queued (D-089: two halls each queued one with one place left).
       const mageRoom = rules.mageCap - allSoldiers.filter((u) => u.type === UnitType.Mage).length - hallQueue;
-      if (mageRoom > 0 && res.crystal >= mageCost.crystal + plan.mageReserve * mages) trainAt(BuildingType.MageHall, UnitType.Mage, mageRoom);
+      // D-135: with no crystal the cannon costs nothing, so nothing kept for it (it stopped at one mage: 0 < 10 x mages).
+      if (mageRoom > 0 && (noCrystal || res.crystal >= mageCost.crystal + plan.mageReserve * mages)) trainAt(BuildingType.MageHall, UnitType.Mage, mageRoom);
       // The mix answers what it has seen: a cannon shot kills a ranged unit but not a spearman, and
       // ranged units hit spearmen 2.5 times as hard.
       let share = spearBase;

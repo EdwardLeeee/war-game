@@ -6,7 +6,7 @@ import { type AiStyle, aroundForts, createAi, enemyForts, FORT_HIDE_AI, type For
 import { ARMY_BASE, ARMY_HOME, AS_HARD, asHardNet, BUILD_FARMERS, choose, features, forward, MIX_SPEAR, NET_HEADS, NET_INPUTS, NET_SHAPE, type NetWeights, TOWN_GOVERN, TOWN_PLUNDER } from "../src/ai/net.ts";
 import { readFileSync } from "node:fs";
 import { Game } from "../src/core/game.ts";
-import { CAVALRY, DODGE, GARRISON, POPULATION_200, rules, TOWN_ONCE } from "../src/core/rules.ts";
+import { CAVALRY, DODGE, GARRISON, NO_CRYSTAL, POPULATION_200, rules, TOWN_ONCE } from "../src/core/rules.ts";
 import * as RULES from "../src/core/rules.ts";
 import { UNIT_KINDS } from "../src/core/world.ts";
 import { startCast } from "../src/core/units.ts";
@@ -629,7 +629,8 @@ test("hard: soldiers trained while the army is away wait at home and follow six 
     assert.ok(toBase().some((c) => fresh.every((id) => c.u.includes(id))), "the sixth: all six go");
   }));
 
-test("hard: the mage hall comes first once there is the crystal for a mage", () => {
+// D-135: with crystal (NO_CRYSTAL off), as before.
+test("hard: the mage hall comes first once there is the crystal for a mage", switchedOff(NO_CRYSTAL, () => {
   const plan = (crystal: number) => {
     const g = emptyGame();
     const w = g.w;
@@ -644,7 +645,7 @@ test("hard: the mage hall comes first once there is the crystal for a mage", () 
   };
   assert.equal(plan(50), BuildingType.MageHall);
   assert.notEqual(plan(0), BuildingType.MageHall);
-});
+}));
 
 test("hard: it trains spearmen rather than ranged units against an enemy with mages", () => {
   const first = (enemyMages: number) => {
@@ -2398,8 +2399,9 @@ test(
   "D-086 A3: hard never changes an order after sending it (the log must replay), with its farmers hunted far from home",
   // The bug was the AI's, not the map's: with gates hard plays seed 7 otherwise and never sends its farmers home
   // (war-game-core 2026-10-22), so they are off here.
-  // The game found was on the rules before the D-100 batch (KEEP, SIEGE, RICH, MARKET), off here too.
-  switchedOff([...(GATES === undefined ? [] : [GATES]), ...[KEEP, RULES.SIEGE, RULES.RICH, RULES.MARKET]], () => {
+  // The game found was on the rules before the D-100 batch (KEEP, SIEGE, RICH, MARKET), off here too; and with crystal
+  // (D-135's NO_CRYSTAL off: without it the game goes otherwise and its farmers are not hunted).
+  switchedOff([...(GATES === undefined ? [] : [GATES]), ...[KEEP, RULES.SIEGE, RULES.RICH, RULES.MARKET, NO_CRYSTAL]], () => {
     // The late group with its farmer hunters (scripted-games --late --harass 10) against hard, 20 minutes.
 
     // Seed 7 (D-089's map): farmers sent home from one spot twice from minute 11 (an order shared with its list was changed then).
@@ -2434,8 +2436,8 @@ test(
     assert.ok(before.hid > 0, "its farmers were sent home");
     assert.deepEqual(before.changed, [], "orders as sent");
     assert.deepEqual(play(true).changed, [], "orders as sent, with D-086 A6");
-    // And with the D-100 batch and gates on, as they ship.
-    const batch = [...(GATES === undefined ? [] : [GATES]), ...[KEEP, RULES.SIEGE, RULES.RICH, RULES.MARKET]];
+    // And with the D-100 batch, gates and D-135 (no crystal) on, as they ship.
+    const batch = [...(GATES === undefined ? [] : [GATES]), ...[KEEP, RULES.SIEGE, RULES.RICH, RULES.MARKET, NO_CRYSTAL]];
     for (const sw of batch) sw.on = true;
     try {
       assert.deepEqual(play(true).changed, [], "orders as sent, with the D-100 batch");
@@ -3746,7 +3748,8 @@ test("D-086 A6 (plan.goldCavalry): wood short and gold piled up, hard trains cav
   assert.equal(cavalry(0), false, "off: none");
 });
 
-test("D-086 A6 (plan.crystalStop): its mages at the cap with crystal for 4 more, hard takes its farmers off the crystal vein; off, they stay", () => {
+// D-135: with crystal (NO_CRYSTAL off), as before.
+test("D-086 A6 (plan.crystalStop): its mages at the cap with crystal for 4 more, hard takes its farmers off the crystal vein; off, they stay", switchedOff(NO_CRYSTAL, () => {
   const released = (crystalStop: boolean) => {
     const g = behindGame(0);
     const w = g.w;
@@ -3767,7 +3770,7 @@ test("D-086 A6 (plan.crystalStop): its mages at the cap with crystal for 4 more,
   };
   assert.equal(released(true), true, "on: off the vein");
   assert.equal(released(false), false, "off: they stay");
-});
+}));
 
 test("D-086 A5 (plan.holdTowns): enemy soldiers by a town it governs and the army at home 1.3 x them, hard goes to hold it; off, it stays", () => {
   const goes = (holdTowns: boolean) => {
@@ -3814,6 +3817,51 @@ test("D-099: an enemy siege engine in sight counts in the enemy's strength (it s
   assert.equal(backs(false), false, "14 against 14: on");
   assert.equal(backs(true), true, "14 and an engine against 14: stronger, back");
 }));
+
+// --- D-135: no crystal -----------------------------------------------------------------------------------------
+
+test("D-135 (no crystal): hard's mage hall comes first from minute mageHallFirst (not at once); normal's after the range from minute 10", () => {
+  assert.equal(NO_CRYSTAL.on, true);
+  const plan = (minute: number, range: boolean, difficulty: "hard" | "normal" = "hard") => {
+    const g = emptyGame();
+    const w = g.w;
+    w.tick = minute * 1200;
+    const s0 = w.map.spawns[0];
+    for (let k = 0; k < 14; k++) {
+      const id = put(g, 0, UnitType.Farmer, s0.cellX - 4 + (k % 7), s0.cellY + 4 + Math.trunc(k / 7));
+      w.units.col.order[slotOf(g, id)] = Order.Gather;
+    }
+    w.addBuilding(0, BuildingType.Granary, s0.cellX - 8, s0.cellY - 4, 500, 1000);
+    w.addBuilding(0, BuildingType.LumberCamp, s0.cellX + 8, s0.cellY + 6, 500, 1000);
+    w.addBuilding(0, BuildingType.Barracks, s0.cellX + 4, s0.cellY - 8, 500, 1000);
+    if (range) w.addBuilding(0, BuildingType.Range, s0.cellX + 8, s0.cellY - 8, 500, 1000);
+    for (let k = 0; k < 4; k++) w.addBuilding(0, BuildingType.House, s0.cellX - 8 + 3 * k, s0.cellY + 8, 200, 1000);
+    w.res.set([2000, 2000, 2000, 0], 0);
+    g.fog.update(w);
+    const ai = createAi(0, 1, { map: w.map, rules: rules(), frame: w.map.frames[0], maxTicks: 0, difficulty, hard: { dodge: false } }, 0);
+    return ai.think(buildView(g, 0)).some((c) => c.c === "build" && c.type === BuildingType.MageHall);
+  };
+  assert.equal(HARD.mageHallFirst, 10);
+  assert.equal(plan(1, false), false, "hard, minute 1: not first (with crystal 0 >= 0 it was)");
+  assert.equal(plan(9, true), false, "hard, minute 9: not yet");
+  assert.equal(plan(11, false), true, "hard, minute 11: the mage hall first");
+  assert.equal(plan(9, true, "normal"), false, "normal, minute 9 with a range: not yet");
+  assert.equal(plan(11, true, "normal"), true, "normal, minute 11 with a range: the mage hall");
+});
+
+test("D-135 (no crystal): hard trains mages up to the cap with gold alone; nothing kept for the cannon", () => {
+  const g = emptyGame();
+  const w = g.w;
+  w.tick = 15 * 1200;
+  const s0 = w.map.spawns[0];
+  w.addBuilding(0, BuildingType.MageHall, s0.cellX + 4, s0.cellY - 8, 500, 1000);
+  for (let k = 0; k < 4; k++) w.addBuilding(0, BuildingType.House, s0.cellX - 8 + 3 * k, s0.cellY + 6, 200, 1000);
+  for (let k = 0; k < 3; k++) put(g, 0, UnitType.Mage, s0.cellX + 6 + k, s0.cellY - 4);
+  w.res.set([500, 500, 500, 0], 0);
+  g.fog.update(w);
+  const out = hardAi(g, { dodge: false }).think(buildView(g, 0));
+  assert.ok(out.some((c) => c.c === "train" && c.type === UnitType.Mage), "a fourth mage, with no crystal");
+});
 
 // --- D-131: its ranged units' targets ---------------------------------------------------------------------------
 

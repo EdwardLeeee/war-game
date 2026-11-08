@@ -3,13 +3,13 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { MAIN_CRYSTAL } from "../src/core/rules.ts";
+import { MAIN_CRYSTAL, NO_CRYSTAL } from "../src/core/rules.ts";
 import { Resource } from "../src/protocol.ts";
-import { emptyGame, run } from "./helpers.ts";
+import { emptyGame, run, switchedOff } from "./helpers.ts";
 
 const crystal = (g: ReturnType<typeof emptyGame>, p: number) => g.w.res[p * 4 + Resource.Crystal];
 
-test("each main city gives its owner 1 crystal every 16 s, the same for both sides", () => {
+test("each main city gives its owner 1 crystal every 16 s, the same for both sides", switchedOff(NO_CRYSTAL, () => {
   const g = emptyGame();
   const start = [crystal(g, 0), crystal(g, 1)];
   // The tick numbered MAIN_CRYSTAL.every (16 s) is the one that pays: the first steps are ticks 0, 1, ...
@@ -19,9 +19,9 @@ test("each main city gives its owner 1 crystal every 16 s, the same for both sid
   assert.deepEqual([crystal(g, 0), crystal(g, 1)], start.map((c) => c + 1));
   run(g, 9 * MAIN_CRYSTAL.every);
   assert.deepEqual([crystal(g, 0), crystal(g, 1)], start.map((c) => c + 10), "10 after 160 s");
-});
+}));
 
-test("switched off (every 0), no main city gives crystal", () => {
+test("switched off (every 0), no main city gives crystal", switchedOff(NO_CRYSTAL, () => {
   const saved = MAIN_CRYSTAL.every;
   MAIN_CRYSTAL.every = 0;
   try {
@@ -32,4 +32,4 @@ test("switched off (every 0), no main city gives crystal", () => {
   } finally {
     MAIN_CRYSTAL.every = saved;
   }
-});
+}));

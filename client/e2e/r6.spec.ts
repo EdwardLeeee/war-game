@@ -35,7 +35,7 @@ test("正式介面關著（?ui=proto，ceo 2026-10-19）：畫面照原型——
   await page.waitForFunction(() => window.__proto?.ready === true);
   expect(await page.evaluate(() => document.documentElement.dataset.ui ?? null)).toBeNull();
   await expect(page.getByText("原型介面（非正式設計）")).toBeVisible();
-  await expect(page.locator(".res-bar")).toHaveText(/^糧 \d+　木 \d+　金 \d+　晶 \d+　人口 \d+\/\d+/);
+  await expect(page.locator(".res-bar")).toHaveText(/^糧 \d+　木 \d+　金 \d+　人口 \d+\/\d+/);
   await expect(page.getByRole("button", { name: "速度 正常" })).toHaveText("速度 正常");
   await expect(page.locator("#hud .b")).toHaveCount(0);
   await page.getByRole("button", { name: "選單" }).tap();
@@ -109,18 +109,21 @@ test("正式介面的資源列（R6-11，ceo 2026-11-06）：畫面上的數字�
   const read = () =>
     page.evaluate(() => {
       const bar = document.querySelector(".res-bar");
-      const figures = [...(bar?.querySelectorAll(".r > b") ?? [])].map((b) => b.textContent ?? "");
+      // The items showing (D-135, R15-01: no crystal's).
+      const figures = [...(bar?.querySelectorAll(".r > b") ?? [])].filter((b) => !(b.parentElement as HTMLElement).hidden).map((b) => b.textContent ?? "");
       const smalls = [...(bar?.querySelectorAll(".r > small") ?? [])].map((s) => ((s as HTMLElement).hidden ? "" : (s.textContent ?? "")));
       return { name: bar?.getAttribute("aria-label") ?? "", figures, smalls };
     });
   /** The name the figures on screen spell (names.ts resourceLine's whole line). */
   const spelled = (r: Awaited<ReturnType<typeof read>>) => {
-    const [food, wood, gold, crystal, pop, time] = r.figures;
+    const [food, wood, gold, pop, time] = r.figures;
     const [cap, training] = r.smalls;
-    return `糧 ${food}　木 ${wood}　金 ${gold}　晶 ${crystal}　人口 ${pop}${cap}${training === "" ? "" : `（${training}）`}　時間 ${time}`;
+    return `糧 ${food}　木 ${wood}　金 ${gold}　人口 ${pop}${cap}${training === "" ? "" : `（${training}）`}　時間 ${time}`;
   };
   const before = await read();
-  expect(before.figures, "food, wood, gold, crystal, population, time").toHaveLength(6);
+  // D-135 (R15-01): no crystal (the fake world plays without it, as the simulation).
+  expect(before.figures, "food, wood, gold, population, time").toHaveLength(5);
+  expect(await page.locator(".res-bar .ic.crys").isVisible()).toBe(false);
   expect(spelled(before)).toBe(before.name);
   // Training: 人口 counts them, and 訓練中 N shows (D-050).
   await page.evaluate(() => window.__proto?.game?.centerOn(5, 75, 1));

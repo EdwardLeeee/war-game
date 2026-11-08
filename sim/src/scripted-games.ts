@@ -16,7 +16,7 @@ import { SiegeWatch, type SiegeRecord } from "./siege-watch.ts";
 import { writeFileSync } from "node:fs";
 import { createScriptedPlayer, FORMATIONS, type Formation, planFor, SCRIPTED_THINK_EVERY, SPEEDS, type Speed, STRATEGIES, type Strategy } from "./ai/scripted-player.ts";
 import { type AiStyle, AI_STYLES, createAi } from "./ai/ai.ts";
-import { rules } from "./core/rules.ts";
+import { NO_CRYSTAL, rules } from "./core/rules.ts";
 import { UNIT_KINDS } from "./core/world.ts";
 import type { RandomMap } from "./core/random-map.ts";
 import { Action, AI_DIFFICULTIES, type AiDifficulty, BuildingType, MAP_MODES, type MapMode, NodeKind, Order, Resource, TownSize, TownState, UnitType } from "./protocol.ts";
@@ -183,6 +183,11 @@ const rushing = plan.towerRush > 0 || plan.rushBuildersOnly;
 const fortifying = rushing || plan.fortress;
 // D-072: the user's economy (ai's replay of the game they beat hard): automatic training, 16
 // farmers, no gold until the plunder, one trip, to the big town with 10 soldiers.
+// D-135: how early a mage may come (no crystal: as soon as it can pay for the hall and the mage).
+if (flag("mage-rush")) {
+  plan.mageRush = true;
+  plan.hallFirst = true;
+}
 if (flag("user-eco")) {
   plan.userEco = true;
   plan.bigTown = true;
@@ -236,7 +241,10 @@ interface GameRecord {
   /** Per player, per town: when that player first held it, or -1 (round 6: the corner towns). */
   taken: [number[], number[]];
   myMage: number;
-  /** When the player first had a mage's crystal (early balance, D-057), and its first mage hall stood: did crystal or the hall hold the first mage back? */
+  /**
+   * When the player first had a mage's crystal (early balance, D-057; with no crystal, D-135: a mage's gold), and its first
+   * mage hall stood: did crystal or the hall hold the first mage back?
+   */
   crystalForMage: number;
   hallDone: number;
   aiMage: number;
@@ -257,6 +265,10 @@ interface GameRecord {
   cannonShots: [number, number];
   /** Units each side's crystal cannon killed (round 8). */
   cannonKills: [number, number];
+  /** The cannon's shots and kills each side by minute 20 (D-135: are mages stronger early without crystal). */
+  cannonAt20: { shots: [number, number]; kills: [number, number] };
+  /** Each side's mages alive at minute 20 (D-135; the AI's is player 1's); null if the game ended before. */
+  magesAt20: [number, number] | null;
   rejected: number;
   /** Round 7 cavalry raids (--raid): raids sent, the first; the AI's farmers lost by minute 10 and in all. */
   raids: number;
@@ -435,6 +447,8 @@ function play(seed: number): GameRecord {
   const taken: [number[], number[]] = [map.towns.map(() => -1), map.towns.map(() => -1)];
   let myMage = -1;
   let crystalForMage = -1;
+  let cannonAt20: { shots: [number, number]; kills: [number, number] } | null = null;
+  let magesAt20: [number, number] | null = null;
   let hallDone = -1;
   let aiMage = -1;
   let cityHit = -1;
@@ -602,7 +616,11 @@ function play(seed: number): GameRecord {
     if (w.tick % 1200 === 0) goldWatch.minute(w);
     if (w.tick === 10 * 1200) armyAt.m10 = [soldiersOf(0), soldiersOf(1)];
     if (w.tick === 15 * 1200) armyAt.m15 = [soldiersOf(0), soldiersOf(1)];
-    if (w.tick === 20 * 1200) armyAt.m20 = [soldiersOf(0), soldiersOf(1)];
+    if (w.tick === 20 * 1200) {
+      armyAt.m20 = [soldiersOf(0), soldiersOf(1)];
+      cannonAt20 = { shots: [w.cannonShots[0], w.cannonShots[1]], kills: [w.cannonKills[0], w.cannonKills[1]] };
+      magesAt20 = [count(0, UnitType.Mage), count(1, UnitType.Mage)];
+    }
     if (w.tick === 30 * 1200) towersAt.m30 = [towersOf(0), towersOf(1)];
     if (w.tick === 45 * 1200) towersAt.m45 = [towersOf(0), towersOf(1)];
     if (w.tick % (5 * 1200) === 0 && w.tick > 0 && w.tick <= 30 * 1200) pace[`m${w.tick / 1200}`] = [count(0, UnitType.Farmer), soldiersOf(0), towersOf(0)];
@@ -610,7 +628,7 @@ function play(seed: number): GameRecord {
     if (town < 0 && w.townOwner[myTown.id] === 0) town = w.tick;
     for (let p = 0; p < 2; p++) for (let k = 0; k < taken[p].length; k++) if (taken[p][k] < 0 && w.townOwner[k] === p) taken[p][k] = w.tick;
     if (myMage < 0 && count(0, UnitType.Mage) > 0) myMage = w.tick;
-    if (crystalForMage < 0 && w.res[Resource.Crystal] >= rules().units[UnitType.Mage].cost.crystal) crystalForMage = w.tick;
+    if (crystalForMage < 0 && (NO_CRYSTAL.on ? w.res[Resource.Gold] >= rules().units[UnitType.Mage].cost.gold : w.res[Resource.Crystal] >= rules().units[UnitType.Mage].cost.crystal)) crystalForMage = w.tick;
     if (hallDone < 0) {
       for (let s = 0; s < w.buildings.count; s++) if (b.owner[s] === 0 && b.type[s] === BuildingType.MageHall && b.progress[s] >= 1000) hallDone = w.tick;
     }
@@ -872,6 +890,8 @@ function play(seed: number): GameRecord {
     trained: { mages: [w.trained[UnitType.Mage], w.trained[UNIT_KINDS + UnitType.Mage]], cavalry: [w.trained[UnitType.Cavalry], w.trained[UNIT_KINDS + UnitType.Cavalry]] },
     cannonShots: [w.cannonShots[0], w.cannonShots[1]],
     cannonKills: [w.cannonKills[0], w.cannonKills[1]],
+    cannonAt20: cannonAt20 ?? { shots: [w.cannonShots[0], w.cannonShots[1]], kills: [w.cannonKills[0], w.cannonKills[1]] },
+    magesAt20,
     rejected,
     ...(mapMode !== "fixed" ? { layout: (map as RandomMap).layout, found: st.found } : {}),
     finalHash: (g.hash() >>> 0).toString(16).padStart(8, "0"),
