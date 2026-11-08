@@ -499,6 +499,37 @@ export const WallSide = { North: 0, East: 1, South: 2, West: 3 } as const;
 /** A wall stretch's part: the gate's top, the half with smaller x (north, south) or y (east, west), the other half. */
 export const WallPart = { Gate: 0, First: 1, Second: 2 } as const;
 
+/**
+ * Why wall soldiers that would shift along the walls stay (R14-07, the screen's list's 3 and 5; Snapshot.wallHolds):
+ * too many enemies (more than WALL_SHIFT.odds times those on the walls), or the way there cut by broken gates.
+ */
+export const WallHold = { Outnumbered: 3, GateDown: 5 } as const;
+export type WallHold = (typeof WallHold)[keyof typeof WallHold];
+
+/**
+ * Wall soldiers that stay instead of shifting along a town's walls (WALL_SHIFT, R14-07; Snapshot.wallHolds, PROTOCOL.md
+ * 4.7): one row per town, owner, kind, from, to and gates, `n` of them. Stretches as in WallShiftField.
+ */
+export const WallHoldField = {
+  town: 0,
+  /** A player's; a player gets its own only (a spectator both). */
+  owner: 1,
+  /** WallHold. */
+  kind: 2,
+  n: 3,
+  /** The stretch they stand on, and the one they would go to. */
+  from: 4,
+  to: 5,
+  /** WallHold.GateDown: bits of the broken gates on the way there, 1 north, 2 east, 4 south, 8 west; else 0. */
+  gates: 6,
+  /** The enemies and the owner's soldiers on the town's walls the rule last weighed (WALL_SHIFT.odds), as the owner sees them. */
+  foes: 7,
+  mine: 8,
+  /** The tick they began to stay (the earliest of the row's). */
+  since: 9,
+} as const;
+export const WALL_HOLD_STRIDE = 10;
+
 /** Snapshot header, one Int32Array. */
 export const HeaderField = {
   tick: 0,
@@ -798,6 +829,8 @@ export interface Features {
   market?: boolean;
   /** Soldiers on the walls shift along them to where the enemy is (D-119), `Rules.wallShift`. Absent: off. */
   wallShift?: boolean;
+  /** Snapshots carry wallHolds, why wall soldiers stay instead of shifting (R14-07); with wallShift. Absent: none. */
+  wallHold?: boolean;
   /** Spearmen hide in outposts and strike from them (D-119), `Rules.outpost.poke`. Absent: off. */
   outpostHide?: boolean;
 }
@@ -1145,6 +1178,11 @@ export interface Snapshot {
    * from hand-made snapshots: nobody walking.
    */
   wallShifts?: Int32Array;
+  /**
+   * R14-07 (WALL_HOLD_STRIDE rows): the viewer's wall soldiers that stay instead of shifting along the walls, and why.
+   * Absent from older simulations and from hand-made snapshots: none.
+   */
+  wallHolds?: Int32Array;
   /** Rows that changed since the previous snapshot (new, amount changed, visibility changed). */
   nodes: Int32Array;
   /** size * size Fog values; present only in snapshots that carry a fog update. */
@@ -1177,6 +1215,18 @@ export interface GameTimeline {
   deaths: DeathRow[];
   /** Player 0, player 1. */
   sides: [TimelineSide, TimelineSide];
+  /**
+   * R13 (the post-game statistics' place names): every town by town id, and both main cities, both laid open like the rest.
+   * `towns.length` is the number of towns, so near[]'s `place` from it on is a main city. Absent from older simulations.
+   */
+  places?: TimelinePlaces;
+}
+
+export interface TimelinePlaces {
+  /** By town id: TownSize and centre cell, as in the map (MapInfo.towns, TownField). */
+  towns: { size: number; cellX: number; cellY: number }[];
+  /** Player 0's, player 1's: the main city's centre cell (World.homes; its 4 x 4 cells are round it), there from the start. */
+  cities: [{ cellX: number; cellY: number }, { cellX: number; cellY: number }];
 }
 
 export interface TimelineSample {

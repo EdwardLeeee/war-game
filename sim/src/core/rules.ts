@@ -202,6 +202,7 @@ export function rules(map?: { towerSize?: number } & Partial<CastleMap>): Requir
       ...(OUTPOST.on ? { outpost: true } : {}), ...(GATE.on ? { gates: true } : {}), ...(WALLS.on ? { walls: true } : {}),
       ...(CAV_FLANK.on ? { cavalryFlank: true } : {}), ...(SIEGE.on ? { siege: true } : {}), ...(KEEP.on ? { keep: true } : {}), ...(MARKET.on ? { market: true } : {}),
       ...(WALL_SHIFT.on && WALLS.on ? { wallShift: true } : {}),
+      ...(WALL_SHIFT.on && WALLS.on ? { wallHold: true } : {}),
       ...(OUTPOST.on && OUTPOST_HIDE.on ? { outpostHide: true } : {}),
     },
     arrows: {

@@ -2997,6 +2997,17 @@ export interface HardPlan {
    * set out gone) are remembered; after FORT_LOST_MOST lost in a row the memory holds again (0: as before).
    */
   fortExit: number;
+  /**
+   * D-131: every FOCUS_EVERY ticks its ranged units shoot the enemy soldiers in their reach with the least hp, as many on each
+   * as it takes; from its own view; one whose target left its reach goes back to the army's way (false: each shoots its nearest).
+   */
+  focusFire: boolean;
+  /**
+   * D-131 (seed 17: the army went for a town and broke off about once a second, 72 times in 2 minutes, 42 soldiers down to
+   * 14): after breaking off from a town within TOWN_QUICK of setting out for it, it leaves that town alone this many
+   * minutes; a break-off later on the way, or at the town, as before (townRest: after any). 0: never.
+   */
+  townQuickRest: number;
 }
 
 export const HARD: HardPlan = {
@@ -3106,6 +3117,14 @@ export const HARD: HardPlan = {
   // six active groups 10 of 240 as before; push-crush 10/24 -> 10/26. routeFromArmy alone turned back no less (12.7).
   routeFromArmy: true,
   fortExit: 3,
+  // D-131 (the user 2026-11-06; ceo 2026-11-07; docs/research/2026-11-ai-tactics.md): against hard without it, new seeds,
+  // 215-2-183 of 400 where the same AI against itself went 191-2-207; the six active groups 14 of 240 as before; the midway
+  // fortress 2 -> 0 of 160; hard against normal 80 -> 74, new seeds 82 -> 78 (fixed), 87 -> 88 (random).
+  focusFire: true,
+  // D-131 (ceo 2026-11-08; docs/research/2026-11-ai-tactics.md section 8): against hard without it 104-0-96 of 200 where the
+  // same AI against itself went 107-0-93; the six active groups 14 of 240 as before; sides turning back 10 or more times
+  // 18 -> 9, at most 27 -> 16; marches and games reaching the enemy's main city about as before.
+  townQuickRest: 1,
 };
 /** D-086 A4 (plan.townScout): a soldier lost scouting, the next goes this much later; told again this often. */
 const TOWN_SCOUT_AGAIN = 2 * 1200;
@@ -3133,6 +3152,10 @@ const BUILD_SAFE = 10;
 const CAVALRY_SEEN = 6;
 /** D-086 A4 (plan.charge): the least cavalry that charge, how far from them the targets may be, spearmen this near count as by them, and how often (ticks) it picks again. */
 const CHARGE_MIN = 3;
+/** D-131 (plan.focusFire): how often it picks targets, ticks. */
+const FOCUS_EVERY = 40;
+/** D-131 (plan.townQuickRest): a break-off this soon after setting out for the town (ticks). */
+const TOWN_QUICK = 10 * 20;
 const CHARGE_NEAR = 8;
 const CHARGE_SPEAR = 4;
 const CHARGE_MOVE = 40;
@@ -3241,6 +3264,8 @@ interface HardUnit extends Unit {
   /** Position in fixed point. */
   fx: number;
   fy: number;
+  /** Its hp, as the view shows it (D-131, plan.focusFire). */
+  hp: number;
 }
 interface HardTown extends Town {
   timer: number;
@@ -3401,6 +3426,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   /** Towns it fell back from because of forts (D-081, ceo 2026-10-10): the forts, and when. */
   const townForts = new Map<number, { ids: number[]; tick: number }>();
   const townRest = new Map<number, number>();
+  /** plan.townQuickRest: when it last set out for a town. */
+  let townSetOut = -100000;
   const fv = fortValues(know.rules);
   // D-086 A3: where its farmers were last think, and those that fell far from home in the last minute.
   const farmerSeen = new Map<number, { x: number; y: number }>();
@@ -3437,7 +3464,10 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   let chargeMove = -100000;
   const chargeRestAt = new Map<number, number>();
   let waveFrom: { x: number; y: number } | null = null;
-  const counted = { avoidSpots: 0, farmerIdle: 0, lumberLost: 0, governHeld: 0, governTowers: 0, governStayed: 0, governBrokeOff: 0, townsBehind: 0, crystalStopped: 0, goldCavalry: 0, behindThinks: 0, behindTowers: 0, townsHeld: 0, gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
+  /** plan.focusFire: when it last picked; each ranged unit's target it was told. */
+  let focusMove = -100000;
+  const focusOn = new Map<number, number>();
+  const counted = { townQuickRests: 0, focusOrders: 0, focusBack: 0, avoidSpots: 0, farmerIdle: 0, lumberLost: 0, governHeld: 0, governTowers: 0, governStayed: 0, governBrokeOff: 0, townsBehind: 0, crystalStopped: 0, goldCavalry: 0, behindThinks: 0, behindTowers: 0, townsHeld: 0, gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
 
   /** Nearest spot to (ax, ay) where `type` fits, with a free ring around it (farms may touch); as normal. */
   function spotNear(view: PlayerView, type: BuildingType, ax: number, ay: number, radius: number, fits?: (x: number, y: number) => boolean): { x: number; y: number } | null {
@@ -3568,6 +3598,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           y: fy >> CELL_SHIFT,
           fx,
           fy,
+          hp: view.units[r + UnitField.hp],
           order: view.units[r + UnitField.order],
           orderTarget: view.units[r + UnitField.orderTarget],
           flags: view.units[r + UnitField.flags],
@@ -5149,6 +5180,10 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             if (byArmy.length > 0) townForts.set(targetTown, { ids: byArmy.flatMap((g) => g.ids), tick });
             // D-081: not straight back to the same town (in 03a70878, 13 orders between it and home in 12 s).
             if (plan.townRest > 0) townRest.set(targetTown, tick + plan.townRest * TICKS_PER_MINUTE);
+            if (plan.townQuickRest > 0 && tick - townSetOut <= TOWN_QUICK) {
+              townRest.set(targetTown, tick + plan.townQuickRest * TICKS_PER_MINUTE);
+              counted.townQuickRests++;
+            }
             fallBackPast(byArmy, ac);
             return;
           } else {
@@ -5159,6 +5194,10 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
               if (plan.fortExit <= 0) remember(army, ahead);
               townForts.set(targetTown, { ids: ahead.flatMap((g) => g.ids), tick });
               if (plan.townRest > 0) townRest.set(targetTown, tick + plan.townRest * TICKS_PER_MINUTE);
+              if (plan.townQuickRest > 0 && tick - townSetOut <= TOWN_QUICK) {
+                townRest.set(targetTown, tick + plan.townQuickRest * TICKS_PER_MINUTE);
+                counted.townQuickRests++;
+              }
               fallBackPast(ahead, ac);
               return;
             }
@@ -5515,6 +5554,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           if (pick >= 0) {
             labels[HEAD_ARMY] = 1;
             targetTown = pick;
+            townSetOut = tick;
             townEven = townsBehind;
             // D-086 A7: a new trip, a new stay.
             holdTown = -1;
@@ -5540,6 +5580,49 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       const on = back.filter((id) => !late.includes(id));
       if (on.length > 0 && !sent) out.push({ c: "move", u: on, x: target.x, y: target.y });
       if (late.length > 0) out.push({ c: "move", u: late, x: post.x, y: post.y });
+      // D-131 (plan.focusFire): from its view only: the enemy soldiers in reach with the least hp first, as many on each as it takes.
+      if (plan.focusFire && tick - focusMove >= FOCUS_EVERY) {
+        focusMove = tick;
+        const info = rules.units[UnitType.Ranged];
+        const reach2 = info.range * info.range;
+        const inReach = (u: HardUnit, f: HardUnit) => (u.fx - f.fx) * (u.fx - f.fx) + (u.fy - f.fy) * (u.fy - f.fy) <= reach2;
+        const shooters = army.filter((u) => u.type === UnitType.Ranged && !detached(u.id) && u.order !== Order.Garrison && u.order !== Order.Retreat);
+        const targets = foes.filter((f) => f.order !== Order.Garrison).sort((a, b) => a.hp - b.hp || rank(a.fx, a.fy) - rank(b.fx, b.fy) || a.id - b.id);
+        const free = new Set(shooters.map((u) => u.id));
+        for (const f of targets) {
+          const need = Math.max(1, Math.ceil(f.hp / Math.max(1, info.attack)));
+          const on = shooters
+            .filter((u) => free.has(u.id) && inReach(u, f))
+            .sort((a, b) => (a.fx - f.fx) * (a.fx - f.fx) + (a.fy - f.fy) * (a.fy - f.fy) - (b.fx - f.fx) * (b.fx - f.fx) - (b.fy - f.fy) * (b.fy - f.fy) || rank(a.fx, a.fy) - rank(b.fx, b.fy) || a.id - b.id)
+            .slice(0, need);
+          for (const u of on) free.delete(u.id);
+          const fresh = on.filter((u) => focusOn.get(u.id) !== f.id).map((u) => u.id);
+          if (fresh.length === 0) continue;
+          out.push({ c: "attack", u: fresh, target: f.id });
+          counted.focusOrders++;
+          for (const id of fresh) focusOn.set(id, f.id);
+        }
+        // Told to shoot one that left its reach, or fell: back to the army's way (an attack order would run after it).
+        const foeById = new Map(foes.map((f) => [f.id, f]));
+        const back: number[] = [];
+        for (const [id, t] of focusOn) {
+          const u = byId.get(id);
+          if (u === undefined || u.order !== Order.Attack) {
+            focusOn.delete(id);
+            if (u !== undefined && free.has(id) && u.order === Order.None) back.push(id);
+            continue;
+          }
+          if (!free.has(id)) continue;
+          const f = foeById.get(t);
+          if (f !== undefined && inReach(u, f)) continue;
+          focusOn.delete(id);
+          back.push(id);
+        }
+        if (back.length > 0) {
+          out.push({ c: "move", u: back, x: target.x, y: target.y });
+          counted.focusBack += back.length;
+        }
+      }
       if (plan.netLog !== undefined && netX.length > 0) plan.netLog(netX, labels);
       return out;
     },

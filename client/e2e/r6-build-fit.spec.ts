@@ -63,6 +63,9 @@ for (const s of SETUPS) {
     await page.getByRole("button", { name: "開始" }).tap();
     await page.waitForFunction(() => window.__proto?.ready === true, null, { timeout: 90_000 });
     await injectSafeArea(page);
+    // The game held still: a farmer going idle while this runs shows 閒置 in the left column (#448's CI, real
+    // simulation on a slow runner), which is the game, not the menu moving it.
+    await page.evaluate(() => window.__proto?.game?.pause());
     const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
     const farmers = (await page.evaluate(() => window.__proto?.game?.units() ?? [])).filter((u) => u.owner === me && u.type === 0).map((u) => u.id);
     await selectForCommands(page, farmers);

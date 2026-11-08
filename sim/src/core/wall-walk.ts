@@ -20,9 +20,10 @@ export function wayOpen(w: World, c: number): boolean {
 
 /**
  * Steps from cell `from` to each cell of town t's way (by way index, -1 none; valid until the next
- * call): through open cells only, `from` and `also` taken as open whatever they are.
+ * call): through open cells only, `from` and `also` taken as open whatever they are; `through`, its
+ * broken gates' cells too (R14-07, for the screen only: where they would go, were the gates whole).
  */
-function spread(w: World, t: number, from: number, also: number): Int32Array {
+function spread(w: World, t: number, from: number, also: number, through = false): Int32Array {
   const cells = w.walkCells[t];
   const next = w.walkNext[t];
   const m = cells.length;
@@ -43,7 +44,7 @@ function spread(w: World, t: number, from: number, also: number): Int32Array {
       const j = next[k * 4 + d];
       if (j < 0 || dist[j] >= 0) continue;
       const c = cells[j];
-      if (c !== also && !wayOpen(w, c)) continue;
+      if (c !== also && !through && !wayOpen(w, c)) continue;
       dist[j] = dist[k] + 1;
       queue[tail++] = j;
     }
@@ -73,10 +74,10 @@ export function wayFrame(w: World, owner: number, t: number): Frame {
 
 /**
  * Of town t's wall cells (not its gates') `ok` takes, the one fewest steps from `from` along the
- * way; equally near, the first in frame f. -1 none.
+ * way (`through`: its broken gates' cells taken as open, spread); equally near, the first in frame f. -1 none.
  */
-export function wayPick(w: World, t: number, from: number, f: Frame, ok: (c: number) => boolean): number {
-  const d = spread(w, t, from, -1);
+export function wayPick(w: World, t: number, from: number, f: Frame, ok: (c: number) => boolean, through = false): number {
+  const d = spread(w, t, from, -1, through);
   const n = w.size;
   let best = -1;
   let bestD = 0;
@@ -115,6 +116,20 @@ export function wayGates(w: World, t: number, from: number, to: number, f: Frame
   return bits;
 }
 
+/**
+ * The broken gates (bit 1 << side) on the way from `from` to `to` were they whole (R14-07, WallHold.GateDown):
+ * the ones that keep a wall soldier from going there.
+ */
+export function wayGatesDown(w: World, t: number, from: number, to: number, f: Frame): number {
+  let bits = 0;
+  let c = from;
+  for (let k = 0; k < w.walkCells[t].length && c >= 0 && c !== to; k++) {
+    if (w.walkGate[c] === 1 && !wayOpen(w, c)) bits |= 1 << Math.trunc(wallStretch(w, c) / 3);
+    c = wayNext(w, t, c, to, f, true);
+  }
+  return bits;
+}
+
 /** Steps from `from` to `to` along town t's way, -1 if the way between them is closed. */
 export function waySteps(w: World, t: number, from: number, to: number): number {
   const i = w.walkIndex[to];
@@ -123,10 +138,11 @@ export function waySteps(w: World, t: number, from: number, to: number): number 
 
 /**
  * The way's cell next to `from` one step nearer `to` (`from` taken as open: it may be a gate broken
- * under the walker); equally near, the first in frame f. -1 if the way between them is closed.
+ * under the walker; `through`, every broken gate's cell, spread); equally near, the first in frame f.
+ * -1 if the way between them is closed.
  */
-export function wayNext(w: World, t: number, from: number, to: number, f: Frame): number {
-  const d = spread(w, t, to, from);
+export function wayNext(w: World, t: number, from: number, to: number, f: Frame, through = false): number {
+  const d = spread(w, t, to, from, through);
   const k = w.walkIndex[from];
   if (k < 0 || d[k] <= 0) return -1;
   const cells = w.walkCells[t];
