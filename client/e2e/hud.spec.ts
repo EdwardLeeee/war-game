@@ -178,13 +178,15 @@ for (const size of [
   });
 }
 
-test("開局提示：開局時說城鎮給什麼（D-135：先拿附近的城鎮，沒有魔晶）、最近的城鎮在哪裡；遊戲先暫停，小地圖閃那座城鎮；看那座城鎮會跳過去（D-044）", async ({ page }, info) => {
+test("開局提示：開局時說城鎮給什麼（D-135、R15-06：搶和治理各給多少，照規則的數字；沒有魔晶）、最近的城鎮在哪裡；遊戲先暫停，小地圖閃那座城鎮；看那座城鎮會跳過去（D-044）", async ({ page }, info) => {
   await page.goto("./?test=1&mock=1&hint=1");
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true);
-  const hint = page.getByRole("dialog", { name: "先拿附近的城鎮" });
+  const hint = page.getByRole("dialog", { name: "城鎮給什麼" });
   await expect(hint).toBeVisible();
-  await expect(hint).toContainText("城鎮給糧和金：帶兵打倒城裡的民兵，就能選搶或治理。治理還會加人口上限。");
+  await expect(hint).toContainText("帶兵打倒城裡的民兵，就能選「搶」或「治理」。");
+  // The fake world's towns are the simulation's (rules.towns).
+  await expect(hint).toContainText(/搶：馬上拿到一大筆糧和金（小鎮各 \d+、大城各 \d+）。治理：修好之後，每分鐘都有糧和金（小鎮各 \d+、大城各 \d+），人口上限也會加（小鎮 \d+、大城 \d+）。/);
   await expect(hint).not.toContainText("魔晶");
   // The fake world's nearest small town, (18, 62), is ours already: the next one, which we can take.
   await expect(hint).toContainText(/離你的主城最近、可以攻下的小鎮在主城的(右邊|右上方|上方|左上方|左邊|左下方|下方|右下方)，約 \d+ 格/);
@@ -214,7 +216,7 @@ test("開局提示：每局一次；繼續這局不再出現，重來是新的�
   await page.goto("./?test=1&mock=1&hint=1");
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true);
-  const hint = page.getByRole("dialog", { name: "先拿附近的城鎮" });
+  const hint = page.getByRole("dialog", { name: "城鎮給什麼" });
   await hint.getByRole("button", { name: "知道了" }).tap();
   await expect(hint).toBeHidden();
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused)).toBe(false);
@@ -232,17 +234,19 @@ test("開局提示：每局一次；繼續這局不再出現，重來是新的�
   await expect(hint).toBeVisible();
 });
 
-test("開局提示：按不再提示，記在這台裝置上，重來、重新整理都不再跳；選單的城鎮怎麼拿打得開，在那裡可以改回開局時要提示（D-044）", async ({ page }) => {
+test("開局提示：按不再提示，記在這台裝置上，重來、重新整理都不再跳；沒有魔晶時選單裡沒有提示那一行（R15-06）（D-044）", async ({ page }) => {
   await page.goto("./?test=1&mock=1&hint=1");
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true);
-  const hint = page.getByRole("dialog", { name: "先拿附近的城鎮" });
+  const hint = page.getByRole("dialog", { name: "城鎮給什麼" });
   const stored = () => page.evaluate(() => window.localStorage.getItem("war-game.proto.townHint"));
   await expect(hint).toBeVisible();
   expect(await stored(), "nothing kept before 不再提示").toBeNull();
   await hint.getByRole("button", { name: "不再提示" }).tap();
   await expect(hint).toBeHidden();
+  // Without crystal 選單 has no line for it (R15-06): the message points at nothing.
   await expectSaid(page, "之後開局不會再提示");
+  expect(await page.evaluate(() => (window as unknown as { __said?: { text: string }[] }).__said?.map((s) => s.text) ?? [])).not.toContain("之後開局不會再提示；選單裡的「魔晶怎麼拿」可以再看");
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused)).toBe(false);
   expect(await stored()).toBe("off");
   // 重來: a new game, and no hint (the Hud is new, so nothing points at a town).
@@ -260,38 +264,18 @@ test("開局提示：按不再提示，記在這台裝置上，重來、重新�
   await page.waitForTimeout(500);
   await expect(hint).toBeHidden();
   expect(await page.evaluate(() => window.__proto?.game?.townHint())).toBeNull();
-  // 選單 → 城鎮怎麼拿: the same hint, the game waits while it is open.
+  // 選單: no line for the hint (R15-06), neither the old one nor any other.
   await page.getByRole("button", { name: "選單" }).tap();
-  await page.getByRole("button", { name: "城鎮怎麼拿" }).tap();
-  await expect(hint).toBeVisible();
-  await expect(hint).toContainText("城鎮給糧和金");
-  const town = await hintTownOf(page);
-  expect(await page.evaluate(() => window.__proto?.game?.townHint())).toEqual({ town: town.id, open: true, flashing: true });
-  await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused), { message: "the game waits while the hint is open" }).toBe(true);
-  // Turned off, so its third button turns it back on.
-  await expect(hint.getByRole("button", { name: "不再提示" })).toHaveCount(0);
-  await hint.getByRole("button", { name: "開局時要提示" }).tap();
-  await expect(hint).toBeHidden();
-  await expectSaid(page, "之後每一局開局都會提示");
-  await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused)).toBe(false);
-  expect(await stored()).toBe("on");
-  await page.getByRole("button", { name: "選單" }).tap();
-  await page.getByRole("button", { name: "回開局畫面" }).tap();
-  await page.getByRole("button", { name: "重來" }).tap();
-  await page.waitForFunction(() => window.__proto?.ready === true);
-  await expect(hint).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "選單" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /怎麼拿/ })).toHaveCount(0);
 });
 
 test("開局提示：按知道了、看那座城鎮不算不再提示，重新整理後還會提示（D-044）", async ({ page }) => {
   await page.goto("./?test=1&mock=1&hint=1");
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true);
-  const hint = page.getByRole("dialog", { name: "先拿附近的城鎮" });
+  const hint = page.getByRole("dialog", { name: "城鎮給什麼" });
   await hint.getByRole("button", { name: "看那座城鎮" }).tap();
-  await expect(hint).toBeHidden();
-  await page.getByRole("button", { name: "選單" }).tap();
-  await page.getByRole("button", { name: "城鎮怎麼拿" }).tap();
-  await hint.getByRole("button", { name: "知道了" }).tap();
   await expect(hint).toBeHidden();
   expect(await page.evaluate(() => window.localStorage.getItem("war-game.proto.townHint"))).toBeNull();
   await page.goto("./?test=1&mock=1&hint=1");
@@ -314,7 +298,8 @@ for (const viewport of [null, FULL_SCREEN]) {
     const boxes = await visibleBoxes(page, ".menu button");
     // 正式介面 (D-087, R6-20): 全體回城 always here, and 設定.
     const formal = await formalOn(page);
-    expect(boxes.map((b) => b.label)).toEqual(formal ? ["城鎮怎麼拿", "兵種相剋", "全體回城", "電影色調：關", "設定", "量測與確定性檢查", "重來（開新的一局）", "投降", "回開局畫面", "關閉"] : ["城鎮怎麼拿", "兵種相剋", "電影色調：關", "量測與確定性檢查", "重來（開新的一局）", "投降", "回開局畫面", "關閉"]);
+    // D-135 (R15-06): no line for 開局提示 without crystal.
+    expect(boxes.map((b) => b.label)).toEqual(formal ? ["兵種相剋", "全體回城", "電影色調：關", "設定", "量測與確定性檢查", "重來（開新的一局）", "投降", "回開局畫面", "關閉"] : ["兵種相剋", "電影色調：關", "量測與確定性檢查", "重來（開新的一局）", "投降", "回開局畫面", "關閉"]);
     for (const b of boxes) {
       expect(Math.min(b.width, b.height), `${b.label} size`).toBeGreaterThanOrEqual(44);
       expect(b.x, `${b.label} left`).toBeGreaterThanOrEqual(IPHONE_SAFE.left);
@@ -1708,7 +1693,8 @@ test("預留：選主城 → 預留 → 對話框寫現在的預留額（預設�
   await page.locator(".cmds").getByRole("button", { name: /^預留/ }).tap();
   const dialog = page.getByRole("dialog", { name: "預留" });
   await expect(dialog).toBeVisible();
-  await expect(dialog).toContainText("自動訓練只用超過這些的資源；預設留的夠蓋法術營。");
+  // D-135 (ceo 2026-11-08): the mage hall's cost, read from the rules (the fake world's own placeholder here).
+  await expect(dialog).toContainText(/自動訓練只用超過這些的資源；要存錢蓋法術營（木 \d+、金 (\d+)），把金調到 \1。/);
   await expect(dialog).not.toContainText("晶");
   const value = (name: string) => dialog.getByRole("status", { name: `${name}預留` });
   await expect(value("糧")).toHaveText("0");

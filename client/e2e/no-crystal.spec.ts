@@ -1,6 +1,6 @@
 // 沒有魔晶（D-135, the user 2026-11-08: 「魔晶感覺很雞肋都用不到 好像可以拿掉」; rules.features.noCrystal): the screen shows
 // 魔晶 nowhere. The prototype's resource bar 糧、木、金 only (its one-letter 晶 is not 魔晶, so it is looked at by itself);
-// 開局提示 「先拿附近的城鎮」 (ceo 2026-11-08), 預留 three rows, 自動晶砲 without a cost, 搶 「糧和金」, the messages without
+// 開局提示 「城鎮給什麼」 and no line for it in 選單 (ui's R15-06, the user's approval 2026-11-08), 預留 three rows, 自動晶砲 without a cost, 搶 「糧和金」, the messages without
 // crystal. 晶砲 keeps its name: only 「魔晶」 is looked for. The fake world plays without crystal as the simulation does.
 
 import { expect, type Page, test } from "@playwright/test";
@@ -12,24 +12,28 @@ const noCrystalOnScreen = async (page: Page, where: string) => expect(await page
 test("沒有魔晶（假世界，原型介面）：資源列只有糧、木、金；開局提示、預留、法師說明、攻下城鎮、搶完、擊殺法師的訊息都沒有魔晶", async ({ page }) => {
   test.setTimeout(120_000);
   const check = watchErrors(page);
-  await page.goto("./?test=1&mock=1&ui=proto");
+  await page.goto("./?test=1&mock=1&ui=proto&hint=1");
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true);
   await recordToasts(page);
   expect((await page.evaluate(() => window.__proto?.game?.features() ?? {})).noCrystal).toBe(true);
+  // 開局提示: 「城鎮給什麼」.
+  const hint = page.getByRole("dialog", { name: "城鎮給什麼" });
+  await expect(hint).toContainText("帶兵打倒城裡的民兵，就能選「搶」或「治理」。");
+  await expect(hint).toContainText(/搶：馬上拿到一大筆糧和金（小鎮各 \d+、大城各 \d+）/);
+  await noCrystalOnScreen(page, "開局提示");
+  await hint.getByRole("button", { name: "知道了" }).tap();
+  await expect(hint).toBeHidden();
   await expect.poll(() => resBar(page)).toMatch(/^糧 \d+　木 \d+　金 \d+　人口 /);
   expect(await resBar(page)).not.toContain("晶");
   await noCrystalOnScreen(page, "at the start");
 
-  // 選單 → 城鎮怎麼拿: 「先拿附近的城鎮」.
+  // 選單: no line for the hint (R15-06).
   await page.getByRole("button", { name: "選單" }).tap();
-  await expect(page.getByRole("button", { name: "魔晶怎麼拿" })).toHaveCount(0);
-  await page.getByRole("button", { name: "城鎮怎麼拿" }).tap();
-  const hint = page.getByRole("dialog", { name: "先拿附近的城鎮" });
-  await expect(hint).toContainText("城鎮給糧和金：帶兵打倒城裡的民兵，就能選搶或治理。治理還會加人口上限。");
-  await noCrystalOnScreen(page, "開局提示");
-  await hint.getByRole("button", { name: "知道了" }).tap();
-  await expect(hint).toBeHidden();
+  await expect(page.getByRole("dialog", { name: "選單" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /怎麼拿/ })).toHaveCount(0);
+  await noCrystalOnScreen(page, "選單");
+  await page.getByRole("button", { name: "關閉" }).tap();
 
   // 預留: 糧、木、金.
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
@@ -43,6 +47,7 @@ test("沒有魔晶（假世界，原型介面）：資源列只有糧、木、�
   const reserve = page.getByRole("dialog", { name: "預留" });
   await expect(reserve.locator(".ratio-name")).toHaveText(["糧", "木", "金"]);
   await expect(reserve).not.toContainText("晶");
+  await expect(reserve).toContainText(/要存錢蓋法術營（木 \d+、金 (\d+)），把金調到 \1。/);
   await reserve.getByRole("button", { name: "取消" }).tap();
 
   // A mage: 自動晶砲 without a cost.

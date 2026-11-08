@@ -38,7 +38,7 @@ import { ORDER_TONE } from "../overlays.ts";
 import { adjustRatio, type Ratio } from "./economy-ratio.ts";
 import { loadTownHintOff, saveTownHintOff } from "../../hint-pref.ts";
 import { hasCrystal } from "../../game/features.ts";
-import { townHintMenu, townHintTitle } from "../../game/town-hint.ts";
+import { TOWN_HINT_MENU, townHintTitle } from "../../game/town-hint.ts";
 import { costText } from "../../game/govern-wait.ts";
 import { Minimap } from "./minimap.ts";
 import { armyText, buildingName, clock, GAME_OVER_REASON, UNIT_NAME } from "./names.ts";
@@ -641,7 +641,9 @@ export class Hud {
     if (r === null) return;
     const card = this.openDialog("預留", "economy reserve");
     // One line, so that four rows fit a phone held sideways without scrolling.
-    el("p", card, "small", this.crystal ? "自動訓練只用超過這些的資源；預設留的夠蓋法術營、放 3 發晶砲。" : "自動訓練只用超過這些的資源；預設留的夠蓋法術營。");
+    // D-135 (ceo 2026-11-08): the mage hall now costs more gold than the default keeps, so how to save for one, its cost read from the rules.
+    const hall = this.game.view?.rules.buildings[BuildingType.MageHall]?.cost;
+    el("p", card, "small", this.crystal ? "自動訓練只用超過這些的資源；預設留的夠蓋法術營、放 3 發晶砲。" : hall === undefined ? "自動訓練只用超過這些的資源。" : `自動訓練只用超過這些的資源；要存錢蓋法術營（木 ${hall.wood}、金 ${hall.gold}），把金調到 ${hall.gold}。`);
     // 等錢治理 (ceo 2026-10-21): the reserve in effect is raised to the waiting 治理's cost.
     const raised = this.game.raisedReserveText();
     if (raised !== "") el("p", card, "small reserve-raised", `預留暫時提高到 ${raised}（等治理）`);
@@ -812,7 +814,8 @@ export class Hud {
       () => {
         saveTownHintOff(!off);
         this.closeDialog();
-        this.game.toast(off ? "之後每一局開局都會提示" : `之後開局不會再提示；選單裡的「${townHintMenu(this.crystal)}」可以再看`);
+        // Without crystal 選單 has no line for the hint (R15-06): nothing to point at.
+        this.game.toast(off ? "之後每一局開局都會提示" : this.crystal ? `之後開局不會再提示；選單裡的「${TOWN_HINT_MENU}」可以再看` : "之後開局不會再提示");
       },
       "secondary",
     );
@@ -844,10 +847,12 @@ export class Hud {
     const card = this.openDialog("選單", "menu");
     const list = el("div", card, "dialog-buttons column");
     // 開局提示 again (D-044), also after 不再提示.
-    btn(list, townHintMenu(this.crystal), () => {
-      this.closeDialog();
-      this.game.showTownHint();
-    }, "secondary");
+    // Not without crystal (R15-06, D-135): the hint opens at the start of a game only.
+    if (this.crystal)
+      btn(list, TOWN_HINT_MENU, () => {
+        this.closeDialog();
+        this.game.showTownHint();
+      }, "secondary");
     btn(list, "兵種相剋", () => this.openCounters(), "secondary");
     // 全體回城 (D-087): always here; while the farmers hide, 回去工作.
     if (this.formal) {

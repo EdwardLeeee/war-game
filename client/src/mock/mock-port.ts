@@ -120,7 +120,8 @@ export const MOCK_RULES: Rules = {
     buildingInfo(BuildingType.Farm, 100, 3, cost(0, 60, 0), { walkable: true }),
     buildingInfo(BuildingType.Barracks, 600, 3, cost(0, 150, 0), { trains: [UnitType.Spearman] }),
     buildingInfo(BuildingType.Range, 600, 3, cost(0, 150, 0), { trains: [UnitType.Ranged] }),
-    buildingInfo(BuildingType.MageHall, 700, 3, cost(0, 200, 150), { trains: [UnitType.Mage] }),
+    // The simulation's cost (D-135 changed it), as 預留's note says it.
+    buildingInfo(BuildingType.MageHall, 700, 3, rules().buildings[BuildingType.MageHall].cost, { trains: [UnitType.Mage] }),
     buildingInfo(BuildingType.TownTower, 800, 2, cost(0, 0, 0)),
     // Round 7 (D-061): shown only while `features.towers` is on.
     buildingInfo(BuildingType.ArrowTower, 500, 2, cost(0, 100, 50), { sight: 8, holds: 3 }),

@@ -110,7 +110,7 @@ import { ASSAULT_JOIN_CELLS, type Attacker, type AssaultScene, Assaults, assault
 import { AUTO_HOUSE_TEXT, type Footprint, type Gatherer, HOME_CELLS, HOUSE_SENT_TICKS, type HouseBlock, houseBlock, houseSpot, nearFootprint, pickBuilder, type TownGround } from "./auto-house.ts";
 import { type Alarm, alarmText, GroupAlarms, groupAdvancing } from "./alarm.ts";
 import { isPosted, outpostModeText, POST_TYPE } from "./outpost.ts";
-import { hintTown, townHintLines } from "./town-hint.ts";
+import { hintTown, townGivesLines, townHintLines } from "./town-hint.ts";
 import { MAP_LABEL } from "../map-mode.ts";
 import type { StatsWorld } from "../ui/stats/model.ts";
 import type { SimPort } from "./port.ts";
@@ -488,7 +488,7 @@ export class Game implements GestureHost {
     this.pause();
     this.hud.openTownHint(
       // Directions as the camera shows the map (D-132).
-      townHintLines(town, home, hint?.passed ?? false, features(view.rules).plunderOnce, view.projection, hasCrystal(view.rules)),
+      townHintLines(town, home, hint?.passed ?? false, features(view.rules).plunderOnce, view.projection, hasCrystal(view.rules) ? null : townGivesLines(view.rules.towns)),
       town === null ? null : { id: town.id, cx: town.cellX, cy: town.cellY, radius: town.radius },
       () => {
         if (town !== null) this.camera?.centerOn((town.cellX + 0.5) * TILE_PX, (town.cellY + 0.5) * TILE_PX);
