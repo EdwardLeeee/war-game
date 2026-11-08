@@ -1074,6 +1074,13 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       const hallQueue = done(BuildingType.MageHall).reduce((a, b) => a + b.queue, 0);
       // Crystal kept for the cannon (mageReserve) only while there is crystal; without it, gold alone (trainAt).
       if (mages + hallQueue < rules.mageCap && (noCrystal || res.crystal >= mageCost.crystal + plan.mageReserve * mages)) trainAt(BuildingType.MageHall, UnitType.Mage);
+      // plan.mageRush: what its first mage costs is kept from the other soldiers until it is queued.
+      if (plan.mageRush && mages + hallQueue === 0 && has(BuildingType.MageHall)) {
+        reserve.food += mageCost.food;
+        reserve.wood += mageCost.wood;
+        reserve.gold += mageCost.gold;
+        reserve.crystal += mageCost.crystal;
+      }
       // plan.lateSiege: its engines before the rest, what they cost kept from it.
       if (plan.lateSiege && done(BuildingType.SiegeWorks).length > 0) {
         const c = rules.units[UnitType.Siege].cost;

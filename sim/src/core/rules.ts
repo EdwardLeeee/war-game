@@ -810,9 +810,12 @@ export const GATHER_UNIT = 60 * S;
  * give no crystal (MAIN_CRYSTAL), a mage's killer gets none (mageBounty), the auto-train reserve and the scenarios start
  * with none; towns pay none (with `townGold`, their crystal as as much gold instead: plunder, per minute, governing's
  * boost); the maps have no crystal vein. Resource.Crystal stays in the tables, always 0 (protocol: features.noCrystal).
+ * The mage hall costs `hallGold` gold (was 100): with crystal a first mage came at minute 11-14 (the user's 9.8-13);
+ * without it, a hall built from the starting stock gave one at 5.2 (src/scripted-games.ts --mage-rush, 20 seeds), the
+ * mage's gold barely moving it (180: 6.0, 220: 7.0); the hall at 200 gold, 10.3 on both maps (ceo: not before 7).
  * Off: as before. The tables read it (getters).
  */
-export const NO_CRYSTAL = { on: true, mageGold: 140, townGold: false };
+export const NO_CRYSTAL = { on: true, mageGold: 140, hallGold: 200, townGold: false };
 /** What a mage's killer gets (MAGE_BOUNTY; none with NO_CRYSTAL on). */
 export function mageBounty(): number {
   return NO_CRYSTAL.on ? 0 : MAGE_BOUNTY;
@@ -824,6 +827,8 @@ function noTownCrystal(c: Cost): Cost {
 {
   const mage = UNITS[UnitType.Mage].cost;
   switched(UNITS[UnitType.Mage], "cost", NO_CRYSTAL, () => cost(mage.food, mage.wood, NO_CRYSTAL.mageGold, 0));
+  const hall = BUILDINGS[BuildingType.MageHall].cost;
+  switched(BUILDINGS[BuildingType.MageHall], "cost", NO_CRYSTAL, () => cost(hall.food, hall.wood, NO_CRYSTAL.hallGold, hall.crystal));
   switched(CANNON, "crystal", NO_CRYSTAL, () => 0);
   switched(AUTO_TRAIN.reserve, "crystal", NO_CRYSTAL, () => 0);
   for (const size of [TownSize.Small, TownSize.Large]) {

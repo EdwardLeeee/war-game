@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { generateMap } from "../src/core/map.ts";
 import { generateRandomMap } from "../src/core/random-map.ts";
-import { AUTO_TRAIN, CANNON, GOVERN_INCOME, governPerMinute, MAIN_CRYSTAL, NO_CRYSTAL, rules, TOWNS, UNITS } from "../src/core/rules.ts";
+import { AUTO_TRAIN, BUILDINGS, CANNON, GOVERN_INCOME, governPerMinute, MAIN_CRYSTAL, NO_CRYSTAL, rules, TOWNS, UNITS } from "../src/core/rules.ts";
 import { twinRiversMap } from "../src/core/twin-rivers.ts";
 import { BuildingType, CELL, NodeKind, Reject, Resource, TownSize, UnitType } from "../src/protocol.ts";
 import { Runner } from "../src/runner.ts";
@@ -20,6 +20,7 @@ test("the rules: a mage costs gold only, the cannon and the reserve no crystal, 
   const r = rules();
   assert.equal(r.features.noCrystal, true);
   assert.deepEqual(r.units[UnitType.Mage].cost, { food: 0, wood: 0, gold: NO_CRYSTAL.mageGold, crystal: 0 });
+  assert.deepEqual(r.buildings[BuildingType.MageHall].cost, { food: 0, wood: 150, gold: NO_CRYSTAL.hallGold, crystal: 0 });
   assert.equal(CANNON.crystal, 0);
   assert.equal(AUTO_TRAIN.reserve.crystal, 0);
   for (const size of SIZES) {
@@ -31,6 +32,7 @@ test("the rules: a mage costs gold only, the cannon and the reserve no crystal, 
     const off = rules();
     assert.equal(off.features.noCrystal, undefined, "absent: crystal as before");
     assert.deepEqual(UNITS[UnitType.Mage].cost, { food: 0, wood: 0, gold: 90, crystal: 50 });
+    assert.deepEqual(BUILDINGS[BuildingType.MageHall].cost, { food: 0, wood: 150, gold: 100, crystal: 0 });
     assert.equal(CANNON.crystal, 5);
     assert.equal(AUTO_TRAIN.reserve.crystal, 15);
     assert.deepEqual([TOWNS[TownSize.Small].plunder.crystal, TOWNS[TownSize.Large].perMinute.crystal, GOVERN_INCOME.boost[TownSize.Large].crystal], [75, 30, 75]);
