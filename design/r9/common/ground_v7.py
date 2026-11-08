@@ -1,7 +1,8 @@
 """art-v7's additions to ground/ (D-118, design/r11/edge-format.md section 3): what the client's ground shader needs to draw R9's ground
 and water on the diamond camera, next to the art-v6 layers (they stay, the same files):
 
-- relief.png   the tileable relief map, lit by the diamond camera's sun (ground_r9.relief_tile): R = light / 2, G = rills, B = crowns.
+- relief.png   the tileable relief map, lit by the diamond camera's sun in the client's axes (ground_r9.relief_tile, client() below):
+               R = light / 2, G = rills, B = crowns.
 - ripple.png   the water's tileable ripple field: R = height, G, B = its slope along x and y, each stored as 0.5 + v / (2 * scale).
 - ground.json  gets "relief", "ripple" and "water" (ground_r9.R9's names, "version": "r9"; a later water changes the version, not the keys).
 - memory.json  counts them.
@@ -36,9 +37,24 @@ def ripple(d):
             "channels": "R height (standard deviations), G dh/dx, B dh/dy (per metre); each 0.5 + v / (2 * scale)"}
 
 
+def client(v):
+    """art-v7.7: a direction in the render's ground axes (ground_r9.SUN_D, VIEW_D: the diamond render's camera looks
+    north-east) in the client's (its projection looks north-west, client/src/camera/projection.ts), as the castles'
+    points of art-v7.6 (design/b1/common/atlas_b1.turn_point): the render's (x, y) is the client's (y, -x). The
+    client's ground shader takes the sun and the view in the sim's axes (x east, y south) and samples the relief tile
+    there, so both are written turned: the relief lit from the north (up and to the right on the client's screen) was
+    a quarter turn from the buildings and units, lit from up and to the left (design/release/build/v77-ground)."""
+    x, y, z = (float(c) for c in v)
+    return np.array([y + 0.0, -x + 0.0, z])
+
+
+SUN = client(R.SUN_D)
+VIEW = client(R.VIEW_D)
+
+
 def main(d, scale):
     ppm = 20 * scale
-    tile, _ = R.relief_tile(ppm=ppm, sun=R.SUN_D)
+    tile, _ = R.relief_tile(ppm=ppm, sun=SUN)
     R.save_tile(tile, d / "relief.png")
     import hashlib                                   # art-v7.4: the same on every machine (ground_r9.QUANT); the log shows it
     print(f"relief x{scale} sha256 {hashlib.sha256((d / 'relief.png').read_bytes()).hexdigest()}")
@@ -52,7 +68,7 @@ def main(d, scale):
     # drew the ground with no dirt blotches (scene_r9.ground_layers: noise_threshold 0.99), so the game draws it so too
     gj["rules"]["dirt"]["noise_threshold"] = 0.99
     gj["water"] = {"version": "r9", **{k: lists(v) for k, v in R.R9.items()},
-                   "sun": lists(R.SUN_D), "view": lists(R.VIEW_D), "sun_rgb": lists(R.SUN_RGB)}
+                   "sun": lists(SUN), "view": lists(VIEW), "sun_rgb": lists(R.SUN_RGB)}
     (d / "ground.json").write_text(json.dumps(gj, indent=1, ensure_ascii=False))
     px = sum(np.prod(Image.open(d / n).size) for n in ("relief.png", "ripple.png"))
     mem = json.loads((d / "memory.json").read_text())

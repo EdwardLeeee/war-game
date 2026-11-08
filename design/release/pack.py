@@ -316,6 +316,8 @@ def main():
         sources["castle"] = spec["castle_src"]
     if "buildings_json_src" in spec:      # art-v7.6: the buildings' manifests (their points) from another run
         sources["buildings_json"] = spec["buildings_json_src"]
+    if "ground_src" in spec:              # art-v7.7: ground/ alone from another run (the sun turned to the client's axes)
+        sources["ground"] = spec["ground_src"]
     base = {"format": "war-game art release 1", "tag": a.tag, "commit": a.commit, "sources": sources,
             **({"view": spec["view"]} if spec.get("view") else {})}     # D-118: "diamond" from art-v7 on
     notes = [f"{a.tag}：{spec.get('note', '')}", "", f"commit {a.commit or '(local)'}", ""]
@@ -328,6 +330,7 @@ def main():
     cas_src = fetch(spec["castle_src"]["run"], spec["castle_src"]["artifact"], dl) if "castle_src" in spec else bld_src
     bjs_src = (fetch(spec["buildings_json_src"]["run"], spec["buildings_json_src"]["artifact"], dl)
                if "buildings_json_src" in spec else None)
+    gnd_src = fetch(spec["ground_src"]["run"], spec["ground_src"]["artifact"], dl) if "ground_src" in spec else bld_src
     for scale in SCALES:
         files, rgba, astc_b = {}, 0, 0
         for u, src in unit_src.items():
@@ -347,7 +350,7 @@ def main():
                 rgba += m["total_rgba8_bytes"]
                 astc_b += m["total_astc_4x4_bytes"]
             if spec.get("ground"):                       # art-v6: the realistic ground (D-093) and its water
-                fs = ground_files(bld_src, scale)
+                fs = ground_files(gnd_src, scale)
                 files.update({f"ground/{n}": b for n, b in fs.items()})
                 m = json.loads(fs["memory.json"])
                 rgba += m["total_rgba8_bytes"]

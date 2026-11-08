@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { wallStretch } from "../src/core/wall-walk.ts";
 import { keepOf } from "../src/core/scenarios.ts";
-import { Action, Order, Stance, TownState, UnitType, WALL_SHIFT_STRIDE, WallShiftField } from "../src/protocol.ts";
+import { Action, CELL_SHIFT, Order, Stance, TownState, UNIT_STRIDE, UnitField, UnitType, WALL_SHIFT_STRIDE, WallShiftField } from "../src/protocol.ts";
 import { buildView, SnapshotEncoder } from "../src/view/view.ts";
 import { cmd, emptyGame, put, run, slotOf } from "./helpers.ts";
 
@@ -94,6 +94,33 @@ test("the viewer's soldiers walking: grouped by from, to, via and home; the enem
   const vis = g.fog.visible[0];
   vis.fill(0);
   assert.ok(rowsOf(buildView(g, 0).wallShifts).every((r) => r[WallShiftField.foes] === 0));
+});
+
+test("foes (ceo 2026-11-06): the enemies the viewer sees within 8 cells of the `to` stretch, as many as its units in view there", () => {
+  const { g } = attacked();
+  const w = g.w;
+  const n = w.size;
+  run(g, 4 * S);
+  const view = buildView(g, 0);
+  const rows = rowsOf(view.wallShifts);
+  assert.ok(rows.length > 0, "some walk");
+  // The enemy units in the viewer's own unit rows (those it sees), by cell.
+  const seen: [number, number][] = [];
+  for (let o = 0; o < view.units.length; o += UNIT_STRIDE) {
+    if (view.units[o + UnitField.owner] !== 1) continue;
+    seen.push([view.units[o + UnitField.x] >> CELL_SHIFT, view.units[o + UnitField.y] >> CELL_SHIFT]);
+  }
+  assert.ok(seen.length > 0, "the viewer sees spearmen out of the east gate");
+  for (const r of rows) {
+    const cells = Array.from(w.walkCells[T]).filter((c) => wallStretch(w, c) === r[WallShiftField.to]);
+    const x0 = Math.min(...cells.map((c) => c % n)) - 8;
+    const x1 = Math.max(...cells.map((c) => c % n)) + 8;
+    const y0 = Math.min(...cells.map((c) => Math.trunc(c / n))) - 8;
+    const y1 = Math.max(...cells.map((c) => Math.trunc(c / n))) + 8;
+    const near = seen.filter(([x, y]) => x >= x0 && x <= x1 && y >= y0 && y <= y1).length;
+    assert.ok(near > 0, `stretch ${r[WallShiftField.to]}: spearmen in sight within 8 cells`);
+    assert.equal(r[WallShiftField.foes], near, `stretch ${r[WallShiftField.to]}`);
+  }
 });
 
 test("walking home: home 1, from where the walk set off; the snapshot carries the rows", () => {
