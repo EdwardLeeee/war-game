@@ -289,3 +289,16 @@ test("the best shot's note names the kinds, and 大仗 when it fell in it", () =
     ["村民", "槍兵", "遠程兵", "法師"],
   );
 });
+
+test("沒有魔晶的一局（D-135，R15-05）：總覽的採集只寫金，資源只有糧、木、金；有魔晶（舊模擬）照舊", () => {
+  const { t, winner, reason, ticks } = game;
+  const m = statsModel(winner, reason, ticks, t, { ...game.world(winner), crystal: false });
+  assert.deepEqual(m.resourceKeys, ["food", "wood", "gold"]);
+  const row = m.numbers.find((r) => r.name.startsWith("採集 金"));
+  assert.equal(row?.name, "採集 金");
+  assert.ok(m.numbers.every((r) => !r.name.includes("魔晶")));
+  const old = statsModel(winner, reason, ticks, t, game.world(winner));
+  assert.deepEqual(old.resourceKeys, ["food", "wood", "gold", "crystal"]);
+  assert.ok(old.numbers.some((r) => r.name === "採集 金・魔晶"));
+  assert.equal(row?.me, old.numbers.find((r) => r.name === "採集 金・魔晶")?.me.split("・")[0]);
+});

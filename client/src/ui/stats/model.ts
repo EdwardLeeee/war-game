@@ -67,6 +67,8 @@ export interface StatsWorld {
   projection: Projection;
   /** 固定地圖, 隨機地圖, 雙河關 (map-mode.ts MAP_LABEL). */
   mapLabel: string;
+  /** Whether the game had crystal (D-135, rules.features.noCrystal; absent: it had, an older simulation). */
+  crystal?: boolean;
 }
 
 /**
@@ -163,6 +165,8 @@ export interface StatsModel {
   /** The time axis' step in minutes (5, 10, 15, 20 or 30: at most 6 steps). */
   axisMinutes: number;
   resources: Record<ResourceKey, Pair<Pt[]>>;
+  /** The resources 資源 offers, in order (D-135, R15-05: 糧、木、金 without crystal). */
+  resourceKeys: ResourceKey[];
   /** Soldiers (all but farmers), and when each side had the most. */
   army: Pair<Pt[]> & { peak: Pair<Pt> };
   fight: { rows: FightRow[]; lost: number; killed: number };
@@ -572,7 +576,10 @@ export function statsModel(winner: number, reason: number, ticks: number, t: Gam
   const trainedSoldiers = (s: GameTimeline["sides"][number]) => sum(s.trained) - (s.trained[UnitType.Farmer] ?? 0);
   const numbers: NumberRow[] = [
     { name: "採集 糧・木", me: `${end("food", "me")}・${end("wood", "me")}`, foe: `${end("food", "foe")}・${end("wood", "foe")}` },
-    { name: "採集 金・魔晶", me: `${end("gold", "me")}・${end("crystal", "me")}`, foe: `${end("gold", "foe")}・${end("crystal", "foe")}` },
+    // D-135 (R15-05): 金 alone without crystal.
+    w.crystal === false
+      ? { name: "採集 金", me: end("gold", "me"), foe: end("gold", "foe") }
+      : { name: "採集 金・魔晶", me: `${end("gold", "me")}・${end("crystal", "me")}`, foe: `${end("gold", "foe")}・${end("crystal", "foe")}` },
     { name: "訓練（不含村民）", me: `${trainedSoldiers(S0)}`, foe: `${trainedSoldiers(S1)}` },
     { name: "損失（含村民）", me: `${sum(S0.lost)}`, foe: `${sum(S1.lost)}` },
     { name: "法師（訓練／陣亡）", me: `${mage(S0).trained}／${mage(S0).lost}`, foe: `${mage(S1).trained}／${mage(S1).lost}` },
@@ -585,6 +592,7 @@ export function statsModel(winner: number, reason: number, ticks: number, t: Gam
     ticks,
     axisMinutes: axisMinutes(ticks),
     resources,
+    resourceKeys: RESOURCES.filter((k) => k !== "crystal" || w.crystal !== false),
     army: { ...army, peak: { me: peak(army.me), foe: peak(army.foe) } },
     fight: { rows, lost: sum(rows.map((r) => r.lost)), killed: sum(rows.map((r) => r.killed)) },
     towns: townBars(t, ticks, w),

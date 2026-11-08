@@ -55,6 +55,8 @@ const ALERT_MERGE_CELLS = 8;
 const MAX_ARROWS = 3;
 /** 開局提示: the minimap keeps flashing the town this long after the hint is closed (ms). */
 const TOWN_FLASH_AFTER_MS = 10_000;
+/** 不再提示 in 正式介面 without crystal (the user 2026-11-08): where to turn it back on. */
+export const TOWN_HINT_OFF_FORMAL_TEXT = "之後開局不會再提示，可以在設定裡打開";
 /**
  * 全體回城 跳出來 (R6-13, D-087): an enemy player's soldiers hurting our buildings or farmers
  * HOME_CELLS close to our main city (auto-house.ts: 自動蓋民居 waits for the same), and for this
@@ -814,8 +816,8 @@ export class Hud {
       () => {
         saveTownHintOff(!off);
         this.closeDialog();
-        // Without crystal 選單 has no line for the hint (R15-06): nothing to point at.
-        this.game.toast(off ? "之後每一局開局都會提示" : this.crystal ? `之後開局不會再提示；選單裡的「${TOWN_HINT_MENU}」可以再看` : "之後開局不會再提示");
+        // Without crystal 選單 has no line for the hint (R15-06): 正式介面's 設定 turns it back on (the user 2026-11-08), the prototype has no 設定.
+        this.game.toast(off ? "之後每一局開局都會提示" : this.crystal ? `之後開局不會再提示；選單裡的「${TOWN_HINT_MENU}」可以再看` : this.formal ? TOWN_HINT_OFF_FORMAL_TEXT : "之後開局不會再提示");
       },
       "secondary",
     );
@@ -944,6 +946,14 @@ export class Hud {
     };
     show();
     const end = el("div", card, "dialog-buttons");
+    // 開局提示 開／關 (the user 2026-11-08, chose 設定裡加開關): the same as 不再提示, remembered on this device; at once.
+    // At the left of the last row, so that the card still fits 932 × 336 without scrolling.
+    const hintOff = loadTownHintOff();
+    const hb = btn(end, `開局提示：${hintOff ? "關" : "開"}`, () => {
+      saveTownHintOff(!hintOff);
+      this.openSettings();
+    }, "secondary town-hint-pref");
+    hb.setAttribute("aria-pressed", hintOff ? "false" : "true");
     btn(end, "回選單", () => this.openMenu(), "secondary");
     btn(end, "關閉", () => this.closeDialog());
   }

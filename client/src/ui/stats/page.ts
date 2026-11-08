@@ -8,7 +8,7 @@
 // under 330) they go in a row under the header.
 
 import { butterfly, keyLine, lineChart, townsChart } from "./charts.ts";
-import { RESOURCE_NAME, RESOURCES, type ResourceKey, type StatsModel } from "./model.ts";
+import { RESOURCE_NAME, type ResourceKey, type StatsModel } from "./model.ts";
 import { clock } from "../hud/names.ts";
 import { icon } from "../icons.ts";
 
@@ -228,7 +228,7 @@ export class StatsPage {
         const seg = el("div", c, "st-seg");
         seg.setAttribute("role", "group");
         seg.setAttribute("aria-label", "資源");
-        for (const k of RESOURCES) {
+        for (const k of m.resourceKeys) {
           const b = this.button(seg, RESOURCE_NAME[k], k === this.res, () => {
             this.res = k;
             this.draw();

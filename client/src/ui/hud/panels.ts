@@ -1518,8 +1518,8 @@ export class ResourceBar {
     const h = view?.header;
     if (view === null || h === null || h === undefined) return;
     const training = view.trainingCount();
-    // 正式介面: its crystal figure (and the words of its name) as before, until ui's R15 drawing (D-135).
-    const lines = resourceLine(h, training, this.numbers !== null || hasCrystal(view.rules));
+    const crystal = hasCrystal(view.rules);
+    const lines = resourceLine(h, training, crystal);
     if (lines[0] === this.text && room === this.room) return;
     this.text = lines[0];
     this.room = room;
@@ -1537,6 +1537,8 @@ export class ResourceBar {
     n.wood.textContent = String(h[H.wood]);
     n.gold.textContent = String(h[H.gold]);
     n.crystal.textContent = String(h[H.crystal]);
+    // D-135 (R15-01): no crystal, no icon or figure.
+    (n.crystal.parentElement as HTMLElement).hidden = !crystal;
     n.pop.textContent = String(h[H.population] + training);
     n.cap.textContent = `/${h[H.populationCap]}`;
     n.training.textContent = training > 0 ? `訓練中 ${training}` : "";

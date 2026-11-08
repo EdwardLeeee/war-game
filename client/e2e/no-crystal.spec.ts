@@ -89,3 +89,16 @@ test("沒有魔晶（真的模擬）：規則送 noCrystal，資源列只有糧�
   await noCrystalOnScreen(page, "the real game's screen");
   check();
 });
+
+test("沒有魔晶（假世界，正式介面，R15-01）：資源列沒有魔晶的圖示和數字，畫面文字裡沒有魔晶", async ({ page }) => {
+  test.setTimeout(120_000);
+  const check = watchErrors(page);
+  await page.goto("./?test=1&mock=1&ui=r6");
+  await page.getByRole("button", { name: "開始" }).tap();
+  await page.waitForFunction(() => window.__proto?.ready === true);
+  await expect(page.locator(".res-bar .ic.food")).toBeVisible();
+  await expect(page.locator(".res-bar .ic.crys")).toBeHidden();
+  await expect(page.locator(".res-bar")).toHaveAttribute("aria-label", /^糧 \d+　木 \d+　金 \d+　人口 /);
+  await noCrystalOnScreen(page, "正式介面");
+  check();
+});
