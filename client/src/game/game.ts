@@ -166,6 +166,8 @@ export interface GameOptions {
   view?: Projection["kind"];
   /** Units behind a castle's wall as their rims only (?ghost=outline, D-089), instead of whole. */
   ghost?: "outline";
+  /** Where an order goes (?tapfx=, R18-01, for the user to choose): 甲 a bigger ring, 乙 and the units' rings flashing. */
+  tapFx?: "a" | "b";
   /** 寫實地面 (D-093, ?test=1&ground=real): its textures, and the quality to start with. */
   ground?: GroundTextures | null;
   /** 浮空大陸's edge (R11 C, D-118; render/edge.ts): drawn with the diamond only. */
@@ -691,6 +693,11 @@ export class Game implements GestureHost {
   /** The battlefield's clock held still or running again (the test page: the same frame twice). */
   freezeClockForTest(on: boolean): void {
     this.frozenNow = on ? performance.now() : null;
+  }
+
+  /** The held clock moved on by `ms` (the test page records frames at even steps); nothing while it runs. */
+  stepClockForTest(ms: number): void {
+    if (this.frozenNow !== null) this.frozenNow += ms;
   }
 
   /** Units with their owner's colour under their feet last frame (寫實地面), for the test page. */
@@ -2696,6 +2703,7 @@ export class Game implements GestureHost {
         this.renderer.pending = this.pending;
         this.renderer.autoPaused = (id) => this.autoArmy.paused.has(id);
         if (this.options.ghost === "outline") this.renderer.ghostStyle = "outline";
+        if (this.options.tapFx !== undefined) this.renderer.tapFeedback = this.options.tapFx;
         const ground = this.options.ground ?? null;
         if (ground !== null && !this.renderer.useGround(ground, this.options.groundQuality ?? "high")) console.warn("ground: 寫實地面 needs ui's terrain pictures (art-v5, square on); the flat ground stays");
         // 選單's 寫實地面 開／關 (ceo 2026-10-25), as this device was left.
@@ -3293,6 +3301,8 @@ export class Game implements GestureHost {
     if (view === null || r === null) return;
     // The frames' clock (held still on the test page: the ring then stays, to be compared).
     const now = this.frozenNow ?? performance.now();
+    // 乙 (R18-01): those ordered flash their rings.
+    if ("u" in cmd && Array.isArray(cmd.u)) r.ack(cmd.u, now);
     const cell = (x: number, y: number) => ({ x: (x + 0.5) * TILE_PX, y: (y + 0.5) * TILE_PX });
     let at: { x: number; y: number } | null = null;
     let color = 0xffffff;

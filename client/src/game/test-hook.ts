@@ -154,6 +154,10 @@ export interface GameHook {
   setGroundCache(on: boolean): void;
   /** The page's clock as the battlefield draws it held still (true) or running (false): the same frame twice, to compare pictures. */
   freezeClock(on: boolean): void;
+  /** The held clock on by `ms` (frames recorded at even steps). */
+  stepClock(ms: number): void;
+  /** Go on after pause() (as 繼續): the test page steps a paused game a tick at a time. */
+  resume(): void;
   /** Units drawn with their owner's colour under their feet last frame (寫實地面, ceo 2026-10-25). */
   feet(): number;
   /** 電影色調 (R9-05 B): the film grade over the battlefield now. */
@@ -407,6 +411,8 @@ export function gameHook(game: Game): GameHook {
     groundCache: () => game.groundCacheForTest,
     setGroundCache: (on) => game.setGroundCacheForTest(on),
     freezeClock: (on) => game.freezeClockForTest(on),
+    stepClock: (ms) => game.stepClockForTest(ms),
+    resume: () => game.resume(),
     feet: () => game.feetForTest,
     filmGrade: () => game.filmGradeForTest,
     edge: () => game.edgeForTest,

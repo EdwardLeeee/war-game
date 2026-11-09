@@ -520,6 +520,7 @@ async function newGame(scenario: ScenarioName = "standard", measure = false, var
     culture: params.culture ?? culture,
     view: params.view ?? (params.edge ? "diamond" : (loadedArt?.view ?? undefined)),
     ghost: params.ghost ?? undefined,
+    tapFx: params.tapFx ?? undefined,
     ground,
     edge: await edgeForGame(),
     groundQuality: params.groundQuality,

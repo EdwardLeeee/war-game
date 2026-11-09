@@ -117,6 +117,8 @@ interface Marker {
 }
 
 const MARKER_MS = 600;
+/** 甲、乙 (R18-01, ?tapfx=): the ring stays this long, and the ordered units' rings flash this long. */
+const MARKER_MS_STRONG = 800;
 
 interface UnitSprites {
   body: Sprite;
@@ -375,6 +377,10 @@ export class WorldRenderer {
    */
   private readonly overGround = new Graphics();
   ghostStyle: "fill" | "outline" = "fill";
+  /** Where an order goes (R18-01, ?tapfx=, for the user to choose): the ring as it is, 甲 bigger and longer, 乙 and the units' rings flash. */
+  tapFeedback: "now" | "a" | "b" = "now";
+  /** 乙: units ordered, and when (their rings flash). */
+  private readonly acked = new Map<number, number>();
   /** Units drawn behind a wall this frame (test page). */
   ghostCount = 0;
   /** Which (the test page). */
@@ -522,6 +528,13 @@ export class WorldRenderer {
   }
 
   /** Flash a ring at a world point (px). */
+  /** 乙 (R18-01): these units were just ordered; their rings flash. */
+  ack(ids: readonly number[], now: number): void {
+    if (this.tapFeedback !== "b") return;
+    for (const id of ids) this.acked.set(id, now);
+    if (this.acked.size > 200) for (const [id, at] of this.acked) if (now - at > MARKER_MS_STRONG) this.acked.delete(id);
+  }
+
   mark(x: number, y: number, color: number, now: number): void {
     this.markers.push({ x, y, color, at: now });
     if (this.markers.length > 8) this.markers.shift();
@@ -959,10 +972,14 @@ export class WorldRenderer {
   }
 
   private drawMarkers(now: number): void {
-    this.markers = this.markers.filter((m) => now - m.at < MARKER_MS);
+    const strong = this.tapFeedback !== "now";
+    const ms = strong ? MARKER_MS_STRONG : MARKER_MS;
+    this.markers = this.markers.filter((m) => now - m.at < ms);
     for (const m of this.markers) {
-      const k = (now - m.at) / MARKER_MS;
-      this.fx.circle(m.x, m.y, TILE_PX * (0.3 + 0.5 * k)).stroke({ width: 3, color: m.color, alpha: 1 - k });
+      const k = Math.max(0, (now - m.at) / ms);
+      // 甲、乙 (R18-01): half as big again, thicker, and bright longer before it fades.
+      if (strong) this.fx.circle(m.x, m.y, TILE_PX * (0.45 + 0.75 * k)).stroke({ width: 5, color: m.color, alpha: 1 - k * k });
+      else this.fx.circle(m.x, m.y, TILE_PX * (0.3 + 0.5 * k)).stroke({ width: 3, color: m.color, alpha: 1 - k });
     }
   }
 
@@ -1619,6 +1636,15 @@ export class WorldRenderer {
         p.ring.position.set(px, py);
         p.ring.scale.set(1.05);
         p.ring.tint = 0xfff3b0;
+      }
+      // 乙 (R18-01): just ordered, its ring swells white and back (收到).
+      const acked = this.acked.get(id);
+      if (acked !== undefined && now - acked < MARKER_MS_STRONG && owner === view.me) {
+        const k = Math.max(0, (now - acked) / MARKER_MS_STRONG);
+        p.ring.visible = true;
+        p.ring.position.set(px, py);
+        p.ring.scale.set(1.05 + 0.7 * Math.sin(Math.PI * k));
+        p.ring.tint = 0xffffff;
       }
       // Behind a castle's wall (D-089): drawn again over it, its ring too when selected. Not one
       // standing on the wall (D-096): it is drawn in front of it.

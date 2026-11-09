@@ -97,6 +97,11 @@ export interface PageParams {
   /** `?test=1&ghost=outline`: units behind a castle's wall drawn as their rims only, instead of whole (D-089, for ceo to compare). */
   ghost: "outline" | null;
   /**
+   * `?test=1&tapfx=a|b` (R18-01, for the user to choose; not the game's yet): where an order goes, 甲 a bigger, thicker ring
+   * that stays 0.8 s; 乙 that and the ordered units' rings flashing. Absent: the ring as it is.
+   */
+  tapFx: "a" | "b" | null;
+  /**
    * 寫實地面 (D-093), blended on the GPU from the art's ground set instead of the two greens: the
    * players' always (art-v6.1 on, ceo 2026-10-25: realistic buildings on the green grid looked a
    * prototype); a test page's only with `?test=1&ground=real` (its other tests keep the greens).
@@ -154,6 +159,8 @@ export function parseParams(search: string): PageParams {
   const v = q.get("view");
   const view = test && (v === "diamond" || v === "oblique" || v === "top") ? v : null;
   const ghost = test && q.get("ghost") === "outline" ? "outline" : null;
+  const tf = q.get("tapfx");
+  const tapFx = test && (tf === "a" || tf === "b") ? tf : null;
   const u = q.get("ui");
   const ui = test && (u === "r6" || u === "proto") ? u : null;
   const t = q.get("tex");
@@ -161,5 +168,5 @@ export function parseParams(search: string): PageParams {
   const measure = artVariant(q.get("measure"))?.id ?? null;
   const ms = q.get("measures");
   const measureSeconds = test && ms !== null && /^[1-9][0-9]{0,3}$/.test(ms) ? Number(ms) : null;
-  return { test, tps, mock: test && q.get("mock") === "1", round7: test && q.get("r7") === "1", scenario, enemyAi: !(test && q.get("ai") === "0"), hint: !test || q.get("hint") === "1", logsUrl, map, watch: test && q.get("watch") === "1", seed, outpost: test && q.get("mock") === "1" && q.get("outpost") === "1", outpostHide: test && q.get("mock") === "1" && q.get("outpost") === "1" && q.get("hide") === "1", walls: test && q.get("mock") === "1" && q.get("walls") === "1", siege: test && q.get("mock") === "1" && q.get("siege") === "1", keep: test && q.get("mock") === "1" && q.get("keep") === "1", market: test && q.get("mock") === "1" && q.get("market") === "1", mine: test && q.get("mock") === "1" && q.get("mine") === "1", art, culture, gallery, ui, view, ghost, loadTimes: test && q.get("loadtimes") === "1", ground: !test || q.get("ground") === "real" ? "real" : null, groundQuality: q.get("groundq") === "low" ? "low" : "high", edge: test && q.get("edge") === "1", tex, measure, measureSeconds, artLab: test && q.get("artlab") === "1", res: test && q.get("res") === "device" ? "device" : 2, groundCache: !(test && q.get("gcache") === "0") };
+  return { test, tps, mock: test && q.get("mock") === "1", round7: test && q.get("r7") === "1", scenario, enemyAi: !(test && q.get("ai") === "0"), hint: !test || q.get("hint") === "1", logsUrl, map, watch: test && q.get("watch") === "1", seed, outpost: test && q.get("mock") === "1" && q.get("outpost") === "1", outpostHide: test && q.get("mock") === "1" && q.get("outpost") === "1" && q.get("hide") === "1", walls: test && q.get("mock") === "1" && q.get("walls") === "1", siege: test && q.get("mock") === "1" && q.get("siege") === "1", keep: test && q.get("mock") === "1" && q.get("keep") === "1", market: test && q.get("mock") === "1" && q.get("market") === "1", mine: test && q.get("mock") === "1" && q.get("mine") === "1", art, culture, gallery, ui, view, ghost, tapFx, loadTimes: test && q.get("loadtimes") === "1", ground: !test || q.get("ground") === "real" ? "real" : null, groundQuality: q.get("groundq") === "low" ? "low" : "high", edge: test && q.get("edge") === "1", tex, measure, measureSeconds, artLab: test && q.get("artlab") === "1", res: test && q.get("res") === "device" ? "device" : 2, groundCache: !(test && q.get("gcache") === "0") };
 }
