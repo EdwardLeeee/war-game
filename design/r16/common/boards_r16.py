@@ -141,16 +141,18 @@ def board02(renders, atlas, out):
         for key, tag in (("old", "改前"), ("B", "改後")):
             rows.append((f"{NAME[c]}　{tag}", strip(f"{prefix(renders, c, key)}_work_farm_f7", range(8))))
     cw, ch = rows[0][1][0].size
-    gap, top, lab = 10, 200, 52
+    gap, top, lab = 10, 250, 52
     W = 8 * (cw + gap) + gap
     H = top + len(rows) * (ch + lab + gap)
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
     d.text((20, 12), "R16-02-種田動作-關鍵格-phone", font=font(52), fill=(240, 240, 240))
-    d.text((20, 84), "改後：兩手都握柄（左手柄尾、右手前面、會沿柄滑）；舉到胸口到頭的高度、刃往下垂；第 3 格刃口先入土，"
-           "落在前腳前方約 1 公尺；往腳邊拉 25–30 公分；再舉起", font=font(28), fill=(250, 220, 140))
-    d.text((20, 128), "8 格、每秒 10 格、重複播（第 7 格接回第 0 格）；第 3 格是入土那一下（hit 照舊）。方向 7，放大 2 倍，"
-           "鋤頭用 B（放大 1.5 倍；選 A 動作一樣）。草稿算圖", font=font(26, False), fill=(200, 200, 200))
+    d.text((20, 84), "改後：兩手都握柄（左手柄尾、右手前面、會沿柄滑）；舉到胸口到頭的高度、刃往下垂；", font=font(28),
+           fill=(250, 220, 140))
+    d.text((20, 124), "第 3 格刃口先入土，落在前腳前方約 1 公尺；往腳邊拉 25–30 公分；再舉起", font=font(28), fill=(250, 220, 140))
+    d.text((20, 172), "8 格、每秒 10 格、重複播（第 7 格接回第 0 格）；第 3 格是入土那一下（hit 照舊）。", font=font(26, False),
+           fill=(200, 200, 200))
+    d.text((20, 208), "方向 7，放大 2 倍；鋤頭用 B（放大 1.5 倍，選 A 動作一樣）。草稿算圖", font=font(26, False), fill=(200, 200, 200))
     y = top
     for name, cells in rows:
         d.text((20, y + 4), name, font=font(36), fill=(255, 255, 255) if "前" in name else (255, 214, 40))
@@ -186,19 +188,21 @@ def board03(renders, out):
             ("death", range(10), "倒下")]
     blocks = []
     for anim, frames, name in ROWS:
-        before = strip(f"{renders}/w_old3/wold3_{anim}_f7", frames, zoom=1)
-        after = strip(f"{renders}/w_B3/wB3_{anim}_f7", frames, zoom=1)
+        before = strip(f"{renders}/w_old3/wold3_{anim}_f7", frames, zoom=2)
+        after = strip(f"{renders}/w_B3/wB3_{anim}_f7", frames, zoom=2)
         blocks.append((name, before, after))
-    gap, top, lab = 8, 200, 48
-    W = max(len(b) * (b[0].width + gap) for _, b, _ in blocks) + 40
+    gap, top, lab = 8, 290, 48
+    W = max(max(len(b) * (b[0].width + gap), len(a) * (a[0].width + gap)) for _, b, a in blocks) + 40
     H = top + sum(2 * (b[0].height + lab) + 30 for _, b, _ in blocks)
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
     d.text((20, 12), "R16-03-西陸農民平常拿鋤頭-改前改後-phone", font=font(52), fill=(240, 240, 240))
-    d.text((20, 84), "平常拿法也改了：改前是握在柄尾、整支柄往前伸 1.3 公尺、刃平放在遠處地上（R5 D-021 的輪廓、R8 調過）；"
-           "改後右手垂在身側握柄中段、鋤頭頭朝下在右腳旁、刃離地", font=font(28), fill=(250, 220, 140))
-    d.text((20, 128), "攻擊改成兩手握柄、舉過右肩往前劈下（改前是握柄尾往下戳）；倒下時鋤頭鬆手、刃側著和柄一起躺在身旁。"
-           "方向 7、x3 原大，鋤頭用 B（放大 1.5 倍）。草稿算圖", font=font(26, False), fill=(200, 200, 200))
+    for k, ln in enumerate(("平常拿法也改了：改前是握在柄尾、整支柄往前伸 1.3 公尺、刃平放在遠處地上（R5 D-021 的輪廓、R8 調過）；",
+                            "改後右手垂在身側握柄中段、鋤頭頭朝下在右腳旁、刃離地；左手也垂下，走路時擺動。")):
+        d.text((20, 84 + 40 * k), ln, font=font(28), fill=(250, 220, 140))
+    for k, ln in enumerate(("攻擊改成兩手握柄、舉過右肩往前劈下，第 7 格打中（改前是握柄尾往下戳）；倒下時鋤頭鬆手、刃側著和柄一起躺在身旁。",
+                            "方向 7、放大 2 倍；鋤頭用 B（放大 1.5 倍）。草稿算圖")):
+        d.text((20, 176 + 38 * k), ln, font=font(26, False), fill=(200, 200, 200))
     y = top
     for name, before, after in blocks:
         for tag, cells, col in (("改前", before, (255, 255, 255)), ("改後", after, (255, 214, 40))):

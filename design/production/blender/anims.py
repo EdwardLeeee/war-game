@@ -873,7 +873,8 @@ def extend_farmer(u, kind):
         ang = {"hips": hips_rot, "torso": k["torso"], "neck": k.get("neck", (0, 0, 0))}
         ang.update(motion.plant(r, k["hips"], hips_rot, w["feet"]))
         r.pose(ang, {"hips": k["hips"]})
-        W = u.root.matrix_world
+        bpy.context.view_layer.update()      # R16: the facing just set (the first pose of a process read the last one's)
+        W = u.root.matrix_world.copy()
         motion.reach(r, "R", W @ Vector(k["hand"]))
         M = motion.aim_tool(u, grip, tool_root, k["h"], w["edge"](k["h"]), k["g"][0])
         if w["two_hands"]:
