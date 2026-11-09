@@ -110,6 +110,8 @@ export interface GameHook {
   remove(ids: number[]): void;
   /** Fake world only: a building's hit points (a gate damaged, D-096). */
   damage(id: number, hp: number): void;
+  /** Fake world only: a finished building of ours of this type at (cx, cy), 自動訓練 on (D-138 B: a range); its id. */
+  addBuilding(type: number, cx: number, cy: number): number;
   /** Fake world only: the game over, `winner` winning for `reason` (GameOverReason; the result screen); `timeline`: 局後統計's (a test's fixture). */
   endGame(winner: number, reason: number, timeline?: GameTimeline): void;
   /** Fake world only: the snapshot's 牆上換邊 rows from now on (R14-07; WALL_SHIFT_STRIDE numbers each, [] none). */
@@ -372,6 +374,7 @@ export function gameHook(game: Game): GameHook {
     damage: (id, hp) => {
       if (game.portForTest instanceof MockPort) game.portForTest.damage(id, hp);
     },
+    addBuilding: (type, cx, cy) => (game.portForTest instanceof MockPort ? game.portForTest.addBuilding(type as Parameters<MockPort["addBuilding"]>[0], cx, cy) : -1),
     endGame: (winner, reason, timeline) => {
       if (game.portForTest instanceof MockPort) game.portForTest.endGame(winner, reason, timeline);
     },

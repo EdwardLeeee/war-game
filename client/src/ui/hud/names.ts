@@ -99,6 +99,9 @@ export const GAME_OVER_REASON: Record<number, string> = {
   [GameOverReason.TimeLimit]: "時間到（30 分鐘）",
 };
 
+/** ＋遠程／＋法師 (D-080): the short word on a panel's call-in button, and in what it says (D-138 B). */
+export const CALL_WORD: Record<number, string> = { [UnitType.Ranged]: "遠程", [UnitType.Mage]: "法師" };
+
 /** "糧 40 木 20" from a cost, skipping zeros. */
 export function costText(c: { food: number; wood: number; gold: number; crystal: number }): string {
   const parts: string[] = [];

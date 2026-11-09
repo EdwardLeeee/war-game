@@ -680,6 +680,13 @@ export class MockPort implements SimPort {
     if (b !== undefined) b.hp = hp;
   }
 
+  /** Tests (D-138 B): a finished building of ours here (a range, so that 自動訓練 trains ranged); its id. */
+  addBuilding(type: BuildingType, cx: number, cy: number): number {
+    const b = this.building(ME, type, cx, cy);
+    b.flags = BuildingFlag.AutoTrain;
+    return b.id;
+  }
+
   /** 牆上換邊 (R14-07): the snapshot's wallShifts rows from now on (WALL_SHIFT_STRIDE each; none: the field left out). */
   private wallShiftRows: Int32Array | undefined;
   setWallShifts(rows: number[]): void {
