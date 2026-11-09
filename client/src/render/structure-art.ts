@@ -397,6 +397,11 @@ export class ArtStructures {
     return depth;
   }
 
+  /** The buildings drawn now, their pictures on the plane (the test page). */
+  get picturesForTest(): { id: number; box: { x0: number; y0: number; x1: number; y1: number } }[] {
+    return this.drawn.map((d) => ({ id: d.id, box: { x0: d.x0, y0: d.y0, x1: d.x1, y1: d.y1 } }));
+  }
+
   /** The building whose picture is under (px, py) on the plane, the nearest in front. */
   pictureAt(px: number, py: number): number | null {
     let best: Drawn | null = null;

@@ -422,6 +422,7 @@ export class WorldRenderer {
     this.ghostLayers = { own: ghostLayer(OWN_TINT), enemy: ghostLayer(ENEMY_TINT), neutral: ghostLayer(NEUTRAL_TINT) };
     const castle = this.castle;
     view.wallPictureAt = (px, py) => castle.wallPictureAt(px, py);
+    view.gatePictureAt = (px, py) => castle.gatePictureAt(px, py);
     const size = view.map.size;
 
     const terrain = document.createElement("canvas");
@@ -1463,6 +1464,11 @@ export class WorldRenderer {
   }
 
   /** The castles as drawn (castle-draw.ts), for the test page: with their gates' looks and whether those on a wall stand on its walk (D-096). */
+  /** The pictures a tap may land on, on the plane (the test page): the buildings drawn from the atlases, and the gates' pieces. */
+  get picturesForTest(): { buildings: { id: number; box: { x0: number; y0: number; x1: number; y1: number } }[]; gates: { cells: number[]; box: { x0: number; y0: number; x1: number; y1: number } }[] } {
+    return { buildings: this.artStructures?.picturesForTest ?? [], gates: this.castle.gatePictures };
+  }
+
   get castleCounts(): { pieces: number; tiles: number; blockTowns: number; misfit: number; walkable: boolean; gates: Record<string, number>; decor: number; decorLeftOut: number } {
     return { ...this.castle.counts, walkable: this.castle.walkable, gates: this.castle.gateLookCounts };
   }
