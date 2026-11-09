@@ -517,17 +517,22 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   expect(nearest[0], shown).toBeGreaterThanOrEqual(1.2);
   expect(mean, `not scattered: ${shown}`).toBeLessThanOrEqual(2.6);
 
-  // 11. 全軍撤退（使用者 2026-10-01）：什麼都沒選，按一下，所有士兵（留守的不算）退回主城前面
+  // 11. 全軍撤退（使用者 2026-10-01; D-138 A）：什麼都沒選，按一下，所有士兵（留守的不算）退：編隊回它留過守的城，其他的回主城前面
   await resetAll(page);
   await expect.poll(() => selection(page)).toEqual({ units: [], building: null });
+  const sentBefore = (await page.evaluate(() => window.__proto?.game?.sent() ?? [])).length;
   await page.getByRole("button", { name: "全軍撤退" }).tap();
-  await expect.poll(() => lastSent(page)).toMatchObject({ c: "retreat", u: troops });
+  const orders = async () => ((await page.evaluate(() => window.__proto?.game?.sent() ?? [])) as Record<string, unknown>[]).slice(sentBefore).filter((c) => c.auto !== true && c.c === "retreat");
+  await expect.poll(async () => (await orders()).flatMap((c) => c.u as number[]).sort((a, b) => a - b)).toEqual([...troops].sort((a, b) => a - b));
   expect(troops, "the garrison stays").not.toContain(kept);
-  const back = (await lastSent(page)) as { x: number; y: number };
   const city = (await buildings(page)).find((b) => b.owner === me && b.type === MAIN_CITY);
   if (city === undefined) throw new Error("no main city");
-  expect(Math.abs(back.x - (city.cx + city.size / 2)), "in front of the main city").toBeLessThanOrEqual(city.size);
-  expect(Math.abs(back.y - (city.cy + city.size / 2)), "in front of the main city").toBeLessThanOrEqual(city.size);
+  // Those going home: in front of the main city; a group going back to its town: at the town it kept.
+  for (const back of (await orders()) as { x: number; y: number }[]) {
+    const home = Math.abs(back.x - (city.cx + city.size / 2)) <= city.size && Math.abs(back.y - (city.cy + city.size / 2)) <= city.size;
+    const town = (await page.evaluate(() => window.__proto?.game?.towns() ?? [])).some((t) => t.owner === me && Math.hypot(back.x - t.cx, back.y - t.cy) <= t.radius + 2);
+    expect(home || town, `in front of the main city or at our town: ${JSON.stringify(back)}`).toBe(true);
+  }
   // On their way: the order is Retreat (2), and they hold (D-061: once home they do not run out after enemies).
   await expect.poll(async () => (await units(page)).filter((u) => troops.includes(u.id)).every((u) => u.order === 2 && u.stance === 1)).toBe(true);
   await shot(page, info, "11-retreat-all");

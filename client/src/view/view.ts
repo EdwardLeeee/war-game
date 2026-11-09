@@ -420,6 +420,35 @@ export class GameView implements IntentWorld {
     return { x: u[o + U.x] * FIXED_TO_PX, y: u[o + U.y] * FIXED_TO_PX };
   }
 
+  /**
+   * The nearest cell to (cx, cy) a soldier can stand on: open ground, no resource, not a building's nor next to one; `explored`
+   * only (else any, the map's terrain known from the start); `within` (map cells, inclusive) only, when given. Null: none.
+   */
+  openCellNear(cx: number, cy: number, explored = true, within: { x0: number; y0: number; x1: number; y1: number } | null = null): { x: number; y: number } | null {
+    if (this.fog === null) return null;
+    const size = this.map.size;
+    const taken = new Uint8Array(size * size);
+    const b = this.curr?.snap.buildings ?? new Int32Array(0);
+    for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
+      const s = this.rules.buildings[b[o + B.type]]?.size ?? 1;
+      for (let y = b[o + B.cellY] - 1; y <= b[o + B.cellY] + s; y++) {
+        for (let x = b[o + B.cellX] - 1; x <= b[o + B.cellX] + s; x++) if (x >= 0 && y >= 0 && x < size && y < size) taken[y * size + x] = 1;
+      }
+    }
+    for (let r = 0; r < size; r++) {
+      for (let y = cy - r; y <= cy + r; y++) {
+        for (let x = cx - r; x <= cx + r; x++) {
+          if (Math.max(Math.abs(x - cx), Math.abs(y - cy)) !== r || x < 1 || y < 1 || x >= size - 1 || y >= size - 1) continue;
+          if (within !== null && (x < within.x0 || x > within.x1 || y < within.y0 || y > within.y1)) continue;
+          const i = y * size + x;
+          if (this.ground[i] !== Terrain.Open || this.map.terrain[i] !== Terrain.Open || this.nodeAt[i] >= 0 || taken[i] === 1 || (explored && this.fog[i] === 0)) continue;
+          return { x, y };
+        }
+      }
+    }
+    return null;
+  }
+
   pick(wx: number, wy: number, r: number): Pick | null {
     const snap = this.curr?.snap;
     if (snap === undefined) return null;
