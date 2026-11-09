@@ -3,7 +3,7 @@
 // does (駐N on its button); a town lost on the way, it goes to our other town; those in no group go to the main city.
 
 import { expect, type Page, test } from "@playwright/test";
-import { expectSaid, recordToasts, saveGroup, selectForCommands, watchErrors } from "./helpers.ts";
+import { expectSaid, openPanel, recordToasts, saveGroup, selectForCommands, watchErrors } from "./helpers.ts";
 import { tap } from "./touch.ts";
 
 const SPEARMAN = 1;
@@ -44,9 +44,9 @@ async function setUp(page: Page): Promise<{ ids: number[]; box: { x0: number; y0
   // Out with 全部帶走 (軍團畫面), then away by his own order, far from both towns.
   await page.evaluate(() => window.__proto?.game?.select([]));
   await page.locator(GROUP_1).tap();
-  const panel = page.locator(".sel-info");
-  if (await panel.getByRole("button", { name: "展開選取資訊" }).isVisible()) await panel.getByRole("button", { name: "展開選取資訊" }).tap();
-  await panel.getByRole("button", { name: "全部帶走" }).tap();
+  // 軍團畫面 open whatever the panel did with the tap (CI's WebKit draws it late).
+  await openPanel(page);
+  await page.locator(".sel-info").getByRole("button", { name: "全部帶走" }).tap();
   await expect.poll(() => page.evaluate((t) => window.__proto?.game?.garrison(t) ?? [], OTHER_TOWN)).toEqual([]);
   await page.evaluate((u) => window.__proto?.game?.send({ c: "move", u, x: 60, y: 40 }), ids);
   await page.evaluate((i) => window.__proto?.game?.place(i, [{ x: 60, y: 40 }, { x: 61, y: 40 }, { x: 62, y: 40 }]), ids);
