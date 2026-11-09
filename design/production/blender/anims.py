@@ -17,6 +17,7 @@ The root of every rig is reset at the start of each pose, so a fall does not lea
 animation rendered in the same Blender process.
 """
 import math
+import os
 
 import bpy
 from mathutils import Euler, Matrix, Vector
@@ -25,7 +26,7 @@ import humanoid2 as h2
 import lib
 import motion
 from humanoid import blend, ease, fall, fall_root_tilt, idle
-from lib import box, fx_mat, ico, rod, slab
+from lib import box, cyl, fx_mat, ico, rod, slab
 
 CRYSTAL = (0.35, 0.95, 1.0)
 MAGE_NEW = ("attack", "hit", "shatter", "fall", "dead")
@@ -656,6 +657,117 @@ WORKS = {
 # forearm (tool +Z along the hand's -Z), the hand 0.12 m (axe) or 0.30 m (hoe) from the butt
 CARRY = {"axe": ((0, 0, 0.12), (0, 180, 0)), "hoe": ((0, 0, 0.30), (180, 0, 0))}
 
+# R16 (the user 2026-11-10: 「種田的農民圖看起來好像有點怪」, 「鋤頭太大太白」, 「手拿鋤頭感覺不太符合真實拿法」): a farm hoe
+# as it was, not a weapon: a dark, worn iron blade a hand and a half across (the steel plate of art-v7 was 34 x 40 cm and
+# lit white), set at HOE_ANGLE to the haft so that it bites into the soil edge first and draws it back. East: the 钁鋤
+# of the rice country (王禎《農書》卷十三, 1313, the earliest drawing found: 「江淮間…但用直項鋤頭…其用如劚，是名钁鋤」;
+# the 钁 「銎柄為身首半圭，非鋒非刃截然齊」: a squared head the haft goes through, its end showing above, a straight
+# edge); West: the eye hoe of the Roman and medieval finds (Enns, Römermuseum: an eye loop, the blade widening below
+# it to a broad edge). R16_HOE_SCALE: 1.0 the real size (option A), more the readable one (option B); R16_OLD=1 the
+# art-v7 hoe and farm keys, for the before boards.
+R16_OLD = os.environ.get("R16_OLD") == "1"
+HOE_SCALE = float(os.environ.get("R16_HOE_SCALE", "1.0"))
+HOE_ANGLE = 70.0          # degrees between the blade and the haft, the edge toward the hands
+HOE_GRIP = 0.50           # the right hand's place on the haft, metres up from the butt, carried (hoeing: 0.40-0.55)
+HOE_HAND = (0.20, 0.10, -0.15)    # the right hand carrying it, from the hips (unit space): hanging at his side
+HOE_LIFT = 0.10           # the hoe's head at least this high off the ground when carried
+# (haft length, haft radius, blade top width, edge width, blade length, the eye's radius and length along the haft)
+HOE = {"E": dict(haft=1.30, r=0.018, top=0.14, edge=0.15, length=0.17, eye=0.03, eye_h=0.09),
+       "W": dict(haft=1.25, r=0.019, top=0.11, edge=0.19, length=0.19, eye=0.03, eye_h=0.06)}
+
+
+def _hoe(n, g, c):
+    """The R16 hoe in the tool frame (butt at the origin, +Z up the haft to the head, +Y toward the working edge):
+    the haft, the iron socket (East) or eye (West) round its end, the blade hanging from it at HOE_ANGLE toward the
+    hands, a worn bright strip along the edge. Iron named iron_<c> (look.MATCH "iron": rusty_metal_02; unit_r9: dull),
+    the haft shaft5 (look.MATCH "shaft": fine_grained_wood)."""
+    h = HOE[c]
+    s = HOE_SCALE
+    iron = lib.mat(f"iron_{c.lower()}", (0.17, 0.16, 0.15), 0.62, 0.85, pattern="worn_metal")
+    worn = lib.mat("hoeedge_r16", (0.46, 0.45, 0.43), 0.38, 1.0)
+    wood = lib.mat("shaft5", (0.47, 0.36, 0.24), 0.65, noise=0.2, noise_scale=10)
+    L = h["haft"]
+    rod(f"{n}_hoe_haft", (0, 0, 0), (0, 0, L), h["r"], wood, parent=g, r2=h["r"] * 0.9)
+    if c == "E":                 # the squared head the haft goes through, the haft's end 2 cm above it
+        box(f"{n}_hoe_socket", (h["eye"] * 2 * s, h["eye"] * 2.2 * s, h["eye_h"] * s), iron, g,
+            at=(0, 0, L - 0.02 - h["eye_h"] * s / 2), bevel=0.004)
+    else:
+        cyl(f"{n}_hoe_socket", h["eye"] * s, h["eye_h"] * s, iron, g, at=(0, 0, L - h["eye_h"] * s * 0.8), segs=12)
+    # the blade: a trapezoid in its own plane (x across, y from the socket to the edge), turned so that y points
+    # HOE_ANGLE from the haft's butt end: (0, sin a, -cos a)
+    tw, ew, ln, t = h["top"] * s, h["edge"] * s, h["length"] * s, 0.012 * s
+    y0 = h["eye"] * s * 0.6
+    pts = [(-tw / 2, y0), (tw / 2, y0), (ew / 2, y0 + ln - 0.02 * s), (ew / 2 - 0.012 * s, y0 + ln),
+           (-ew / 2 + 0.012 * s, y0 + ln), (-ew / 2, y0 + ln - 0.02 * s)]
+    tilt = -(90.0 - HOE_ANGLE)
+    top = (0, 0, L - 0.02 - h["eye_h"] * s * 0.5) if c == "E" else (0, 0, L - h["eye_h"] * s * 0.3)
+    slab(f"{n}_hoe_blade", pts, t, iron, parent=g, loc=top, rot=(tilt, 0, 0), plane="XY")
+    strip = [(-ew / 2 + 0.004 * s, y0 + ln - 0.016 * s), (ew / 2 - 0.004 * s, y0 + ln - 0.016 * s),
+             (ew / 2 - 0.012 * s, y0 + ln + 0.001 * s), (-ew / 2 + 0.012 * s, y0 + ln + 0.001 * s)]
+    slab(f"{n}_hoe_edge", strip, t * 1.08, worn, parent=g, loc=top, rot=(tilt, 0, 0), plane="XY")
+    if c == "W":                 # the eye's neck: the blade narrows into it
+        box(f"{n}_hoe_neck", (tw * 0.7, y0 + 0.03 * s, t * 1.4), iron, g, loc=top, rot=(tilt, 0, 0),
+            at=(0, (y0 + 0.03 * s) / 2, 0))
+
+
+def _farm_keys():
+    """R16's hoeing stroke (8 frames, the blade in the soil on frame 3 as before): the left hand at the butt, the right
+    hand forward on the haft, sliding (0.40 m up the haft at the top, 0.55 at the end of the pull); the hoe raised to
+    about head height in front, its blade hanging down (not held up face first like a sign), brought down so that the
+    edge bites into the soil a metre ahead, then drawn back along it toward the feet, 1-3 cm deep, and lifted again.
+    Each key: the butt's place (x right, y forward, z up), the haft's pitch (degrees above level), the right hand's
+    grip, the body. hand and h follow from them (the tool frame: +Z up the haft)."""
+    def k(butt, pitch, g, body):
+        p = math.radians(pitch)
+        h = (0.0, math.cos(p), math.sin(p))
+        hand = tuple(b + g * hh for b, hh in zip(butt, h))
+        return dict(body, hand=hand, h=h, g=(g,), gl=(0.04,))
+    return [
+        (0.0, k((0.04, 0.24, 0.92), -12, 0.46, dict(hips=(0.02, -0.02, -0.06), hips_rot=(0, 0, -10), torso=(-12, 0, -6),
+                                                    neck=(10, 0, 6))), "out"),
+        (0.125, k((0.04, 0.24, 0.98), 12, 0.42, dict(hips=(0.02, -0.04, -0.04), torso=(-6, 0, -8), neck=(6, 0, 8))), "out"),
+        (0.25, k((0.04, 0.22, 1.02), 32, 0.40, dict(hips=(0.02, -0.05, -0.03), torso=(-2, 0, -10), neck=(2, 0, 8))), "in"),
+        (0.375, k((0.04, 0.32, 0.765), -30, 0.50, dict(hips=(0.0, 0.08, -0.14), hips_rot=(0, 0, -6), torso=(-30, 0, 4),
+                                                       neck=(20, 0, -2))), "lin"),
+        (0.5, k((0.04, 0.30, 0.75), -31, 0.51, dict(hips=(0.0, 0.07, -0.15), torso=(-31, 0, 4), neck=(21, 0, -2))), "smooth"),
+        (0.625, k((0.04, 0.24, 0.84), -36, 0.54, dict(hips=(0.01, 0.02, -0.14), hips_rot=(0, 0, -8), torso=(-28, 0, 0),
+                                                      neck=(18, 0, 2))), "smooth"),
+        (0.75, k((0.04, 0.18, 0.87), -40, 0.55, dict(hips=(0.02, -0.03, -0.12), torso=(-24, 0, -2), neck=(16, 0, 4))), "smooth"),
+        (0.875, k((0.04, 0.20, 0.90), -26, 0.50, dict(hips=(0.02, -0.03, -0.09), hips_rot=(0, 0, -10), torso=(-18, 0, -4),
+                                                      neck=(12, 0, 6))), "smooth"),
+    ]
+
+
+def _hoe_key(butt, pitch, g, body):
+    p = math.radians(pitch)
+    h = (0.0, math.cos(p), math.sin(p))
+    return dict(body, hand=tuple(b + g * hh for b, hh in zip(butt, h)), h=h, g=(g,), gl=(0.04,))
+
+
+# R16: the West farmer's attack with his hoe (10 frames, the blow on frame 7 as art-v7's): both hands on the haft as
+# when hoeing, raised high over the right shoulder and brought down hard a metre ahead, the blade first; the first
+# and last frames the ready stance (art-v7's attack thrust the butt-held hoe down like a stick)
+HOE_ATTACK = dict(
+    tool="hoe", two_hands=True,
+    feet={"L": (-0.12, 0.28, 0.05), "R": (0.16, -0.16, 0.05)},
+    edge=lambda h: (0, h[2], -h[1]),
+    keys=[
+        (0.0, _hoe_key((0.06, 0.24, 0.92), -28, 0.50, dict(hips=(0.02, 0.0, -0.06), hips_rot=(0, 0, -8), torso=(-10, 0, -4),
+                                                           neck=(8, 0, 4))), "smooth"),
+        (0.33, _hoe_key((0.08, 0.10, 1.06), 48, 0.40, dict(hips=(0.03, -0.06, -0.03), hips_rot=(0, 0, -14), torso=(6, 0, -12),
+                                                           neck=(-4, 0, 10))), "out"),
+        (0.6, _hoe_key((0.08, 0.04, 1.14), 70, 0.38, dict(hips=(0.03, -0.08, -0.02), hips_rot=(0, 0, -16), torso=(10, 0, -14),
+                                                          neck=(-8, 0, 12))), "smooth"),
+        (0.78, _hoe_key((0.04, 0.34, 0.80), -22, 0.50, dict(hips=(0.0, 0.10, -0.13), hips_rot=(0, 0, -4), torso=(-28, 0, 6),
+                                                            neck=(18, 0, -4))), "in"),
+        (0.89, _hoe_key((0.04, 0.32, 0.80), -24, 0.50, dict(hips=(0.0, 0.09, -0.13), torso=(-27, 0, 5), neck=(17, 0, -3))), "lin"),
+        (1.0, _hoe_key((0.06, 0.24, 0.92), -28, 0.50, dict(hips=(0.02, 0.0, -0.06), hips_rot=(0, 0, -8), torso=(-10, 0, -4),
+                                                           neck=(8, 0, 4))), "smooth"),
+    ])
+
+if not R16_OLD:
+    WORKS["work_farm"]["keys"] = _farm_keys()
+
 
 def _tools(kind, grip, P):
     """Four tools, larger than R5's so each reads at actual size (heads 0.3-0.4 m across, hafts
@@ -680,12 +792,15 @@ def _tools(kind, grip, P):
     rod(f"{n}_pick_a", (0, 0.04, 0.86), (0, 0.42, 0.72), 0.044, steel, parent=g, r2=0.008)
     rod(f"{n}_pick_b", (0, -0.04, 0.86), (0, -0.38, 0.74), 0.044, steel, parent=g, r2=0.012)
     g = groups["hoe"]
-    rod(f"{n}_hoe_haft", (0, 0, 0), (0, 0, 1.43), 0.023, haft, parent=g, r2=0.02)
-    box(f"{n}_hoe_socket", (0.06, 0.08, 0.10), iron, g, at=(0, 0.0, 1.40), bevel=0.01)
-    # folded 40 degrees toward the haft: with the head resting on the ground in the idle pose the
-    # blade lies flat and shows its face to the camera (at 28 degrees it was seen almost edge-on)
-    box(f"{n}_hoe_blade", (0.34, 0.40, 0.045), steel, g, loc=(0, 0.02, 1.42), rot=(-40, 0, 0), at=(0, 0.20, 0),
-        bevel=0.008)
+    if R16_OLD:
+        rod(f"{n}_hoe_haft", (0, 0, 0), (0, 0, 1.43), 0.023, haft, parent=g, r2=0.02)
+        box(f"{n}_hoe_socket", (0.06, 0.08, 0.10), iron, g, at=(0, 0.0, 1.40), bevel=0.01)
+        # folded 40 degrees toward the haft: with the head resting on the ground in the idle pose the
+        # blade lies flat and shows its face to the camera (at 28 degrees it was seen almost edge-on)
+        box(f"{n}_hoe_blade", (0.34, 0.40, 0.045), steel, g, loc=(0, 0.02, 1.42), rot=(-40, 0, 0), at=(0, 0.20, 0),
+            bevel=0.008)
+    else:
+        _hoe(n, g, "E" if kind == "farmer_e" else "W")
     g = groups["hammer"]
     rod(f"{n}_hammer_haft", (0, 0, 0), (0, 0, 0.46), 0.024, haft, parent=g, r2=0.022)
     box(f"{n}_hammer_head", (0.17, 0.34, 0.17), pale, g, at=(0, 0, 0.42), bevel=0.03)
@@ -705,19 +820,55 @@ def extend_farmer(u, kind):
         for name, g in groups.items():
             g.scale = (1, 1, 1) if name == tool else (0.001,) * 3
 
+    def carry_hoe(anim, frame):
+        """R16: the West farmer's own hoe outside the work loops, as a farmer holds one standing or walking: in the
+        right hand hanging at his side, the hand where it holds the haft when hoeing (HOE_GRIP up from the butt), the
+        hoe head down by the right foot, its blade off the ground (art-v7 held the butt and reached the haft 1.3 m
+        out in front, the blade lying flat far ahead). The left arm hangs too (it reached for that haft), swinging a
+        little when he walks."""
+        bpy.context.view_layer.update()
+        W = u.root.matrix_world
+        Wi = W.inverted()
+        hips = Wi @ r.j["hips"].matrix_world.translation
+        sw = 0.0
+        if anim == "walk":
+            sw = math.sin(2 * math.pi * frame / max(1, u.frames.get("walk", 8)))
+        motion.reach(r, "L", W @ (hips + Vector((-HOE_HAND[0], 0.04 + 0.10 * sw, HOE_HAND[2] + 0.02))))
+        motion.reach(r, "R", W @ (hips + Vector((HOE_HAND[0], HOE_HAND[1] - 0.04 * sw, HOE_HAND[2]))))
+        h2.update(r)
+        bpy.context.view_layer.update()
+        hand = Wi @ grip.matrix_world.translation
+        reach = HOE["W"]["haft"] - HOE_GRIP
+        dz = min(reach, max(0.0, hand.z - HOE_LIFT))
+        fwd = math.sqrt(max(0.0, reach * reach - dz * dz))
+        hv = Vector((0.02, fwd + 0.05, -dz)).normalized()
+        motion.aim_tool(u, grip, tool_root, hv, (0, 1, 0), HOE_GRIP)
+        h2.update(r)
+
     def pose(anim, frame):
         r.root.rotation_euler = (0, 0, 0)
-        if anim not in WORKS:
+        if anim not in WORKS and own == "hoe" and not R16_OLD and anim != "attack":
+            show(own)
+            tool_root.scale = (1, 1, 1)
+            inner(anim, frame)
+            carry_hoe(anim, frame)
+            return
+        hoe_attack = anim == "attack" and own == "hoe" and not R16_OLD
+        if anim not in WORKS and not hoe_attack:
             show(own)
             tool_root.location = CARRY[own][0]
             tool_root.rotation_euler = [a * lib.D2R for a in CARRY[own][1]]
             tool_root.scale = (1, 1, 1)
             inner(anim, frame)
             return
-        w = WORKS[anim]
+        w = HOE_ATTACK if hoe_attack else WORKS[anim]
         show(w["tool"])
+        tool_root.scale = (1, 1, 1)
         n = u.frames.get(anim, 8)
-        k = motion.sample(w["keys"], (frame % n) / n, loop=True)
+        if hoe_attack:                       # once, not a loop: the first frame and the last are the ready stance
+            k = motion.sample(w["keys"], frame / max(1, n - 1))
+        else:
+            k = motion.sample(w["keys"], (frame % n) / n, loop=True)
         hips_rot = k.get("hips_rot", (0, 0, 0))
         ang = {"hips": hips_rot, "torso": k["torso"], "neck": k.get("neck", (0, 0, 0))}
         ang.update(motion.plant(r, k["hips"], hips_rot, w["feet"]))
