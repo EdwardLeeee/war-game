@@ -19,9 +19,10 @@
 //        mostly new, none idle 5 minutes, so it is the crowd that counts). Both while the enemy main city stands.
 // 3. never there: never IDLE.armyNear or more of its soldiers at once within IDLE.cityNear of the enemy main city, in a game
 //    of IDLE.neverTicks or more (64a27f8a: a lone scout passed within 12 cells at minute 8.5; the army never came).
-// 4. stuck sends: IDLE.sends or more moves in a row to the same cell, IDLE.orderUnits or more each, between which those
-//    units' centre moved less than IDLE.sendMove cells; the most sends to one cell is kept as a column, not a signal (the
-//    AI resends its moves as it thinks).
+// 4. stuck sends: IDLE.sends or more moves in a row to the same cell over IDLE.stuckTicks or longer, IDLE.orderUnits or more
+//    each, fewer than half of them fighting, while those units' centre stays within IDLE.stuckCells of where it was at the
+//    first; the most sends to one cell is kept as a column, not a signal (the AI resends its moves as it thinks, in a
+//    fight as often as every 10 ticks, when an army moves less than a cell between sends).
 // Tags for what the AI does on purpose (war-game-ai 2026-11-10): staging out of an enemy main city's reach before a siege
 // (D-089), staging out of a fort's (D-081 fortStage), waiting at home after a broken-off march (D-081), keeping home
 // against enemies near it.
@@ -52,7 +53,8 @@ export const IDLE = {
   cityNear: 12,
   neverTicks: 25 * MIN,
   sends: 40,
-  sendMove: 2,
+  stuckCells: 4,
+  stuckTicks: 2 * MIN,
   /** A send this long after the one before starts a new run. */
   sendGap: MIN,
   /** Staging before a siege: this far from the enemy main city, at most stagingTicks (D-089: about 16 cells, 3 minutes). */
@@ -116,6 +118,7 @@ interface Settled {
 
 interface SendRun {
   last: number;
+  /** Where the units' centre was at the run's first send. */
   cx: number;
   cy: number;
   run: number;
@@ -223,23 +226,25 @@ export class IdleWatch {
     }
     r.total++;
     if (r.total > side.mostSends.sends) side.mostSends = { x: c.x, y: c.y, sends: r.total };
-    const still = r.last >= 0 && w.tick - r.last <= IDLE.sendGap && Math.max(Math.abs(cx - r.cx), Math.abs(cy - r.cy)) < IDLE.sendMove;
+    let fighting = 0;
+    for (const s of slots) if (u.action[s] === Action.Attack || u.action[s] === Action.Calibrate) fighting++;
+    const still = r.last >= 0 && w.tick - r.last <= IDLE.sendGap && Math.max(Math.abs(cx - r.cx), Math.abs(cy - r.cy)) <= IDLE.stuckCells && fighting * 2 < slots.length;
     if (still) {
       r.run++;
       r.units = Math.max(r.units, slots.length);
     } else {
       this.closeRun(p, c.x, c.y, r);
-      r.run = 1;
+      r.run = fighting * 2 < slots.length ? 1 : 0;
       r.start = w.tick;
       r.units = slots.length;
+      r.cx = cx;
+      r.cy = cy;
     }
     r.last = w.tick;
-    r.cx = cx;
-    r.cy = cy;
   }
 
   private closeRun(p: number, x: number, y: number, r: SendRun): void {
-    if (r.run < IDLE.sends) return;
+    if (r.run < IDLE.sends || r.last - r.start < IDLE.stuckTicks) return;
     const tag = this.stagingAt(this.game.w, p, r.cx, r.cy) && r.last - r.start <= IDLE.stagingTicks ? "staging" : "";
     this.sides[p].stuck.push({ x, y, start: r.start, end: r.last, sends: r.run, units: r.units, tag });
   }
