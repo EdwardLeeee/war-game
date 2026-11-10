@@ -463,8 +463,6 @@ def extend_siege(u, kind):
     wreck = motion.Wreck([])
     planks = _debris(u, kind, lib.MATS["wood5"]["mat"] if "wood5" in lib.MATS else None)
     loose_shot = [o for o in (O("stone"), O("sling")) if o is not None] if east else []
-    rollers = [o for o in (O(f"roller{k}") for k in range(12)) if o is not None]            # R21_W=B (west_r8)
-    roller_rest = [o.location.copy() for o in rollers]
     # R21_E: the pull ropes (rods from p0 to p1, as roster5 built them: the same numbers)
     ropes = []
     if east and R21_E:
@@ -504,9 +502,6 @@ def extend_siege(u, kind):
         for o in wheels + [base]:
             loc, rot = rest[o.name]
             o.location, o.rotation_euler = loc.copy(), rot.copy()
-        for o, loc in zip(rollers, roller_rest):
-            o.location = loc.copy()
-            o.rotation_euler = (0, 90 * lib.D2R, 0)
         for k, ob, x, foot, h0, m0 in ropes:
             ob.matrix_basis = m0.copy()
             if O(f"pullgrip{k}") is not None:
@@ -592,11 +587,20 @@ def extend_siege(u, kind):
         wreck.move(O("winch"), _drop(t, 0.1, 0.66), shift=(-0.15, -0.55, -0.43), rot=(0, 0, 24))
         wreck.move(pole, _drop(t, 0.04, 0.68), shift=(0.75, 0.15, -1.47), rot=(22, 84, 0))
         kw = _drop(t, 0.04, 0.55)
-        wreck.move(O("w1a"), kw, shift=(0.55, 0.30, -0.29), rot=(0, -82, 30), pivot=(0.6, 0.75, 0.36))
-        wreck.move(O("w-1b"), _drop(t, 0.12, 0.66), shift=(-0.25, -0.2, -0.10), rot=(0, 38, -12), pivot=(-0.6, -0.75, 0.0))
-        wreck.move(O("rail1"), _drop(t, 0.12, 0.66), shift=(0.22, 0.0, -0.05), rot=(0, 0, -9), pivot=(0.45, -1.1, 0.45))
         kc = _drop(t, 0.04, 0.6, 0.1)
-        base.location = Vector(rest[base.name][0]) + Vector((0, 0, -0.16)) * kc
+        lifted = rest[base.name][0].z            # R21: the frame on its four small wheels (west_r8.WHEEL_R21), 0.14 up
+        if lifted > 0.01:
+            # the frame comes down between its wheels: the front right one off its axle and flat on the ground, the
+            # back left one leaning out against the sill, the other two left standing, a little askew
+            wreck.move(O("w1a"), kw, shift=(0.45, 0.25, 0.11), rot=(0, -82, 30), pivot=(0.72, 1.15, 0.10))
+            wreck.move(O("w-1b"), _drop(t, 0.12, 0.66), shift=(-0.14, -0.10, lifted), rot=(0, 30, -12), pivot=(-0.72, -1.35, -0.14))
+            wreck.move(O("w-1a"), kc, shift=(-0.05, 0.0, lifted), rot=(0, 10, 6))
+            wreck.move(O("w1b"), kc, shift=(0.05, 0.0, lifted), rot=(0, -8, -5))
+        else:
+            wreck.move(O("w1a"), kw, shift=(0.55, 0.30, -0.29), rot=(0, -82, 30), pivot=(0.6, 0.75, 0.36))
+            wreck.move(O("w-1b"), _drop(t, 0.12, 0.66), shift=(-0.25, -0.2, -0.10), rot=(0, 38, -12), pivot=(-0.6, -0.75, 0.0))
+        wreck.move(O("rail1"), _drop(t, 0.12, 0.66), shift=(0.22, 0.0, -0.05), rot=(0, 0, -9), pivot=(0.45, -1.1, 0.45))
+        base.location = Vector(rest[base.name][0]) + Vector((0, 0, -max(0.16, lifted))) * kc
         base.rotation_euler = (-4 * kc * lib.D2R, (10 * kc - 3.5 * jolt(t)) * lib.D2R, 0)
         scatter(t, 0.12, 0.74)
 
@@ -607,11 +611,6 @@ def extend_siege(u, kind):
             n = u.frames.get("walk", 8)
             for o in wheels:
                 spin(o, -SPIN_PER_CYCLE * (frame % n) / n)
-            q = (frame % n) / n                       # R21_W=B: each roller back a place and round once in a cycle
-            for o, loc in zip(rollers, roller_rest):
-                gap = roller_rest[0].y - roller_rest[1].y
-                o.location = loc + Vector((0, -gap * q, 0))
-                spin(o, -360.0 * q)
             ropes_follow(anim, frame)
             return
         if anim != "death":

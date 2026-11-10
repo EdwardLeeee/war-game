@@ -320,48 +320,36 @@ def dress_knight(u):
     return u
 
 
-# R21 (D-142, R19's item 7: the West's trebuchet has no wheels, its 8 walk frames are one picture, it slides over the
-# ground): options for the user. The fixed frame is the history (2026-10-21: a counterweight trebuchet was taken apart
-# to move and set up again; R5's wheeled engine had no medieval evidence), so either is for the game's sake, and the
-# boards say so. R21_W=A: four small solid wooden wheels under the sills (anims.extend_siege turns <kind>_w<s><e> as
-# it does the East's; a wheeled base is rare in the pictures but there: R. Miners' survey). R21_W=B: the frame on
-# rollers, logs laid across under the sills (extend_siege rolls <kind>_roller<k> back a place a cycle). Unset: as it is.
-R21_W = os.environ.get("R21_W", "")
+# R21 (D-142, R19's item 7: the West's trebuchet had no wheels, its 8 walk frames were one picture, it slid over the
+# ground). The user chose A, four small solid wooden wheels under the sills (2026-11-11, D-143; not B, rollers laid
+# under it): from art-v7.10. Not the history, and the boards said so: the fixed frame came 2026-10-21, when R5's
+# wheeled torsion engine (no medieval evidence) became a counterweight trebuchet; a wheeled base is rare in the
+# pictures but there (R. Miners' survey). anims.extend_siege turns <kind>_w<s><e> as it does the East's wheels;
+# spec.STRIDE_M has the ground a quarter turn covers. R21_W=0: art-v7.9's frame, for the before side of the boards.
+R21_W = os.environ.get("R21_W", "A")
 WHEEL_R21 = dict(r=0.24, thick=0.09, x=0.72, ys=(("a", 1.15), ("b", -1.35)))
-ROLLER_R21 = dict(r=0.0987, gap=0.62, n=5, y0=1.33, length=1.7)        # a turn a place: gap = 2 pi r
 
 
 def _siege_r21(kind, base, u, wood, dark, iron):
-    def lift(dz):
-        """The frame up by dz; its pile of shot (a child of the base) stays on the ground, out past the wheels' and
-        the rollers' ends."""
-        base.location.z += dz
-        for ob in bpy.data.objects:
-            if ob.name.split(".")[0].startswith(f"{kind}_pile") and ob.parent is base:
-                ob.location.x += 0.30
-                ob.location.z -= dz
-
-    if R21_W == "A":
-        w = WHEEL_R21
-        lift(w["r"] - 0.10)                                   # the axles through the sills' middles (0.10 up)
-        for e, y in w["ys"]:
-            rod(f"{kind}_r21axle{e}", (-w["x"], y, 0.10), (w["x"], y, 0.10), 0.035, dark, parent=base)
-            for s in (-1, 1):
-                o = lib.empty(f"{kind}_w{s}{e}", parent=base, loc=(w["x"] * s, y, 0.10), rot=(0, 90, 0))
-                cyl(f"{kind}_w{s}{e}_disc", w["r"], w["thick"], wood, o, at=(0, 0, -w["thick"] / 2), segs=20)
-                cyl(f"{kind}_w{s}{e}_hub", 0.06, w["thick"] + 0.06, iron, o, at=(0, 0, -w["thick"] / 2 - 0.03), segs=10)
-                for k in range(2):                          # two battens across each face: the same every quarter turn
-                    for f in (-1, 1):
-                        box(f"{kind}_w{s}{e}_batten{k}{f}", (w["r"] * 1.8, 0.06, 0.02), dark, o, rot=(0, 0, 90 * k),
-                            at=(0, 0, f * (w["thick"] / 2 + 0.01)))
-    elif R21_W == "B":
-        q = ROLLER_R21
-        lift(2 * q["r"])                                     # the sills ride on the rollers
-        log = lib.mat("logend5", (0.50, 0.38, 0.24), 0.8, noise=0.3, noise_scale=8)
-        for k in range(q["n"] + 1):                          # one more than lie under it: the one coming out behind
-            o = lib.empty(f"{kind}_roller{k}", parent=u.root, loc=(0, q["y0"] - q["gap"] * k, q["r"]), rot=(0, 90, 0))
-            cyl(f"{kind}_roller{k}_log", q["r"], q["length"], log, o, at=(0, 0, -q["length"] / 2), segs=12)
-            box(f"{kind}_roller{k}_knot", (0.04, 0.05, 0.3), dark, o, at=(q["r"] - 0.01, 0, 0.3 - 0.2 * (k % 3)))
+    if R21_W != "A":
+        return
+    w = WHEEL_R21
+    dz = w["r"] - 0.10                                        # the axles through the sills' middles (0.10 up)
+    base.location.z += dz
+    for ob in bpy.data.objects:                               # its pile of shot stays on the ground, out past the wheels
+        if ob.name.split(".")[0].startswith(f"{kind}_pile") and ob.parent is base:
+            ob.location.x += 0.30
+            ob.location.z -= dz
+    for e, y in w["ys"]:
+        rod(f"{kind}_r21axle{e}", (-w["x"], y, 0.10), (w["x"], y, 0.10), 0.035, dark, parent=base)
+        for s in (-1, 1):
+            o = lib.empty(f"{kind}_w{s}{e}", parent=base, loc=(w["x"] * s, y, 0.10), rot=(0, 90, 0))
+            cyl(f"{kind}_w{s}{e}_disc", w["r"], w["thick"], wood, o, at=(0, 0, -w["thick"] / 2), segs=20)
+            cyl(f"{kind}_w{s}{e}_hub", 0.06, w["thick"] + 0.06, iron, o, at=(0, 0, -w["thick"] / 2 - 0.03), segs=10)
+            for k in range(2):                              # two battens across each face: the same every quarter turn
+                for f in (-1, 1):
+                    box(f"{kind}_w{s}{e}_batten{k}{f}", (w["r"] * 1.8, 0.06, 0.02), dark, o, rot=(0, 0, 90 * k),
+                        at=(0, 0, f * (w["thick"] / 2 + 0.01)))
 
 
 def dress_siege(u):
