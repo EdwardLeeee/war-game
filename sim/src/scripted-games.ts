@@ -86,6 +86,8 @@ plan.raid = Number(arg("raid", "0"));
 // PROBE.out cells of its city) or at home (PROBE.homeMin or more within PROBE.home, fewer than PROBE.outFew out). The
 // scripted player builds no such group itself against hard (it trains 5-12 cavalry and loses its army by minute 25), so
 // the probe puts it there: whether a steal takes the city, how long the city holds, whether the AI comes back for it.
+// D-141: this many siege engines kept up and taken along on marches on the AI's main city (plan.engines).
+plan.engines = Number(arg("engines", "0"));
 const probeMode = arg("steal-probe", "");
 const PROBE = { cavalry: 30, from: 22, home: 20, out: 40, outMin: 15, homeMin: 15, outFew: 5, fromMinute: Number(arg("steal-from", "15")) };
 // D-141: stealing the main city with 30 cavalry (or --raid N): "home" as soon as the group is full, "away" while the AI's army is out.

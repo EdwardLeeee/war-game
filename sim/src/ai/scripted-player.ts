@@ -237,6 +237,12 @@ export interface Plan {
    * engines, whatever it has seen of the enemy.
    */
   lateSiege: boolean;
+  /**
+   * D-141 (a main city that holds a while: an army that means to take one brings engines): a siege works once its range
+   * stands and it has 14 farmers, this many engines kept up, and its marches on the enemy's main city wait for them (with
+   * the works up). 0: none, as before.
+   */
+  engines: number;
 }
 
 /**
@@ -534,6 +540,7 @@ export function planFor(strategy: Strategy, speed: Speed, formation: Formation):
     crush: false,
     earlyTowns: false,
     lateSiege: false,
+    engines: 0,
   };
 }
 
@@ -1038,6 +1045,8 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         // D-086 A: towers by home and a stable, as the user had them in the long wins.
         if (plan.homeTowers > 0 && has(BuildingType.Range) && count(BuildingType.ArrowTower) < plan.homeTowers) add(BuildingType.ArrowTower, towerAt);
         if (plan.cavalryShare > 0 && rules.features?.cavalry === true && !has(BuildingType.Stable) && has(BuildingType.Range) && stableReady) add(BuildingType.Stable, rally);
+        // D-141 (plan.engines): a siege works once the range stands.
+        if (plan.engines > 0 && rules.features?.siege === true && !has(BuildingType.SiegeWorks) && has(BuildingType.Range) && farmers.length >= 14) add(BuildingType.SiegeWorks, rally);
         // D-086 A5 (plan.turtle): towers round home by the clock, TURTLE.townTowers by every governed town, outposts by home.
         if (plan.turtle && has(BuildingType.Range)) {
           const near = (x: number, y: number, r: number) => own.filter((b) => b.type === BuildingType.ArrowTower && dist2(b.x, b.y, x, y) <= r * r).length;
@@ -1121,9 +1130,9 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         reserve.crystal += mageCost.crystal;
       }
       // plan.lateSiege: its engines before the rest, what they cost kept from it.
-      if (plan.lateSiege && done(BuildingType.SiegeWorks).length > 0) {
+      if ((plan.lateSiege || plan.engines > 0) && done(BuildingType.SiegeWorks).length > 0) {
         const c = rules.units[UnitType.Siege].cost;
-        if (soldiers.filter((u) => u.type === UnitType.Siege).length + done(BuildingType.SiegeWorks).reduce((a, b) => a + b.queue, 0) < LATE_SIEGE.engines) {
+        if (soldiers.filter((u) => u.type === UnitType.Siege).length + done(BuildingType.SiegeWorks).reduce((a, b) => a + b.queue, 0) < (plan.lateSiege ? LATE_SIEGE.engines : plan.engines)) {
           if (afford(c)) trainAt(BuildingType.SiegeWorks, UnitType.Siege);
           else {
             reserve.wood += c.wood;
@@ -1948,7 +1957,9 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       const towersByHome = done(BuildingType.ArrowTower).filter((b) => dist2(b.x, b.y, home.cellX, home.cellY) <= TURTLE.homeR * TURTLE.homeR).length;
       // plan.lateSiege: the soldiers and the engines, whatever it saw of the enemy (the towers it should have no longer count).
       const lateReady = army.length >= LATE_SIEGE.army && soldiers.filter((u) => u.type === UnitType.Siege).length >= LATE_SIEGE.engines;
-      const go = !holding && found >= 0 && (plan.lateSiege ? lateReady : rushPush || (counterReady && army.length >= plan.counterAt && ahead) || (plan.pushAt > 0 && army.length >= plan.pushAt && ahead));
+      // D-141 (plan.engines): with the works up, a march waits for its engines.
+      const enginesReady = plan.engines === 0 || done(BuildingType.SiegeWorks).length === 0 || soldiers.filter((u) => u.type === UnitType.Siege).length >= plan.engines;
+      const go = !holding && found >= 0 && enginesReady && (plan.lateSiege ? lateReady : rushPush || (counterReady && army.length >= plan.counterAt && ahead) || (plan.pushAt > 0 && army.length >= plan.pushAt && ahead));
       if (go) rushPush = false;
       const townOpen =
         t !== undefined &&
