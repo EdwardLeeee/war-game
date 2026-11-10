@@ -679,14 +679,15 @@ HOE = {"E": dict(haft=1.30, r=0.018, top=0.14, edge=0.15, length=0.17, eye=0.03,
 # the mallet at their real sizes, in dark worn iron and plain wood, as R16's hoe. art-v7's were made large on purpose
 # (_tools: "so each reads at actual size"): the axe's head 41 cm long with an edge of 34, the pick 80 cm across and 9
 # thick at the eye, the mallet's head 17 x 34 cm, the irons in the weapons' bright steel. Sizes after finds and tools:
-#   axe      medieval finds 15.5-19 cm long, the edge 10-15 (Highland HER MHG9044, Dingwall: 15.5 x 12.3; Historic
-#            Environment Scotland, Caerlaverock: 17.5 x 15; Higgins Armory: 19.1 x 10.2). No Tang axe's measures found.
+#   axe      medieval finds 15.5-17.5 cm long, the edge 12-15 (Highland HER MHG9044, Dingwall: 15.5 x 12.3; Historic
+#            Environment Scotland, Caerlaverock: 17.5 x 15); an undated museum head 19.1 x 10.2 (Worcester Art Museum,
+#            once the Higgins Armory). No Tang axe's measures found.
 #   pick     Roman dolabrae 33-52.5 cm (National Museum of Transylvanian History); a 5 lb pick's head today 48-55 cm
 #   mallet   joiners' mallets' heads 6 x 12 to 8 x 14 cm, an old pattern 15-16.5 cm long (R. Underhill)
 # The East farmer carries his axe as one is carried (USDA Forest Service, An Ax to Grind and the volunteers' guide:
 # held near the head where it balances, the edge down, the arm hanging at the side; art-v7 held the butt and reached
-# the haft out in front, the head on the ground a pace ahead) and strikes with both hands on the haft, over the right
-# shoulder (art-v7: one hand at the butt, both arms straight up). The pick is raised over the right shoulder (the left
+# the haft out in front, the head on the ground a pace ahead) and strikes with both hands on the haft, the axe swung
+# round his right side to behind the shoulder and down (art-v7: one hand at the butt, both arms straight up). The pick is raised over the right shoulder (the left
 # forearm crossed the face). R20=1 turns all of it on, until the user approves the boards (design/r20).
 R20 = os.environ.get("R20") == "1"
 # (haft length and radius; the head's middle up the haft; the poll behind the haft, the head's length poll to edge, its
@@ -792,9 +793,16 @@ if not R16_OLD:
     WORKS["work_farm"]["keys"] = _farm_keys()
 
 # R20: the East farmer's attack with his axe (10 frames, the blow on frame 7 as art-v7's): both hands on the haft, the
-# left at the butt; from the ready stance (the axe across the chest, its head up in front of the right shoulder) up
-# and back over the right shoulder (the head behind it, clear of the face), then down and forward to a man's waist a
-# metre ahead, the edge first
+# left at the butt. From the ready stance (the axe across the chest, its head up in front of the right shoulder) the
+# head swings out and back round his right side at chest height, up behind the right shoulder, then down and forward to
+# a man's waist a metre ahead, the edge first. (Straight up past the face, the first draft: the head covered the face
+# for two frames from the front and the side.)
+def _axe_key(butt, h, g, body):
+    n = math.sqrt(sum(v * v for v in h))
+    h = tuple(v / n for v in h)
+    return dict(body, hand=tuple(b + g * hh for b, hh in zip(butt, h)), h=h, g=(g,), gl=(0.04,))
+
+
 AXE_ATTACK = dict(
     tool="axe", two_hands=True,
     feet={"L": (-0.12, 0.28, 0.05), "R": (0.16, -0.16, 0.05)},
@@ -802,10 +810,10 @@ AXE_ATTACK = dict(
     keys=[
         (0.0, _hoe_key((0.08, 0.10, 0.95), 35, 0.40, dict(hips=(0.02, 0.0, -0.05), hips_rot=(0, 0, -10), torso=(-6, 0, -6),
                                                           neck=(6, 0, 6))), "smooth"),
-        (0.33, _hoe_key((0.24, 0.12, 1.07), 88, 0.37, dict(hips=(0.03, -0.05, -0.03), hips_rot=(0, 0, -16), torso=(6, 0, -14),
-                                                           neck=(-4, 0, 12))), "out"),
-        (0.6, _hoe_key((0.28, 0.16, 1.20), 135, 0.34, dict(hips=(0.03, -0.08, -0.02), hips_rot=(0, 0, -18), torso=(10, 0, -16),
-                                                           neck=(-8, 0, 14))), "smooth"),
+        (0.44, _axe_key((-0.02, 0.22, 1.20), (0.86, -0.35, 0.40), 0.38, dict(hips=(0.03, -0.04, -0.04), hips_rot=(0, 0, -20),
+                                                                             torso=(2, 0, -18), neck=(-2, 0, 18))), "out"),
+        (0.6, _axe_key((0.24, 0.16, 1.18), (0.20, -0.66, 0.72), 0.34, dict(hips=(0.03, -0.08, -0.02), hips_rot=(0, 0, -18),
+                                                                           torso=(10, 0, -16), neck=(-8, 0, 14))), "smooth"),
         (0.78, _hoe_key((0.06, 0.30, 1.12), -10, 0.44, dict(hips=(0.0, 0.09, -0.09), hips_rot=(0, 0, -4), torso=(-20, 0, 8),
                                                             neck=(14, 0, -4))), "in"),
         (0.89, _hoe_key((0.06, 0.29, 1.11), -12, 0.44, dict(hips=(0.0, 0.08, -0.09), torso=(-19, 0, 7), neck=(13, 0, -3))), "lin"),
