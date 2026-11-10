@@ -67,6 +67,10 @@ export interface Group {
   saved: number;
   /** 自動補兵 is on. */
   refill: boolean;
+  /** 自動擴編 is on (D-141; off by default). */
+  grow: boolean;
+  /** The mix 自動擴編 grows in: the setting as it was before it first grew; null: the setting now (changed by the player since). */
+  growBase: Record<number, number> | null;
   recruits: Recruit[];
   /** Where marching recruits were last sent (fixed point). */
   goal: { x: number; y: number } | null;
@@ -79,7 +83,8 @@ export interface Group {
  * IndexedDB; a group's `checked` −∞ (never checked) is null.
  */
 export interface ArmyState {
-  groups: (Omit<Group, "checked"> & { checked: number | null })[];
+  /** `grow` and `growBase` absent in saves from before 自動擴編 (D-141): off. */
+  groups: (Omit<Group, "checked" | "grow" | "growBase"> & { checked: number | null; grow?: boolean; growBase?: Record<number, number> | null })[];
   garrisons: [number, number[]][];
   /**
    * Those once kept out of 自動補兵 after hiding (D083-1-A, overturned by the user 2026-10-26):
@@ -97,7 +102,7 @@ export interface MarchOrder {
   cellY: number;
 }
 
-const emptyGroup = (): Group => ({ ids: [], want: {}, saved: 0, refill: true, recruits: [], goal: null, checked: Number.NEGATIVE_INFINITY });
+const emptyGroup = (): Group => ({ ids: [], want: {}, saved: 0, refill: true, grow: false, growBase: null, recruits: [], goal: null, checked: Number.NEGATIVE_INFINITY });
 
 /** The soldier types 軍團設定 sets, in the order of its rows (騎兵 only while `features.cavalry`, round 7). */
 export const GROUP_TYPES = [UnitType.Spearman, UnitType.Ranged, UnitType.Mage, UnitType.Cavalry, UnitType.Siege] as const;
@@ -443,6 +448,8 @@ export class ArmyBook {
         want: { ...g.want },
         saved: g.saved,
         refill: g.refill,
+        grow: g.grow,
+        growBase: g.growBase === null ? null : { ...g.growBase },
         recruits: g.recruits.map((r) => ({ ...r })),
         goal: g.goal === null ? null : { ...g.goal },
         checked: Number.isFinite(g.checked) ? g.checked : null,
@@ -462,6 +469,8 @@ export class ArmyBook {
       g.want = { ...k.want };
       g.saved = k.saved;
       g.refill = k.refill;
+      g.grow = k.grow ?? false;
+      g.growBase = k.growBase == null ? null : { ...k.growBase };
       g.recruits = k.recruits.map((r) => ({ ...r }));
       g.goal = k.goal === null ? null : { ...k.goal };
       g.checked = k.checked ?? Number.NEGATIVE_INFINITY;
@@ -568,6 +577,7 @@ export class ArmyBook {
     const out = g.ids.filter((id) => !ids.includes(id));
     g.ids = ids;
     g.want = want;
+    g.growBase = null;
     g.saved = ids.length;
     g.recruits = g.recruits.filter((r) => ids.includes(r.id));
     return out;
@@ -669,8 +679,10 @@ export class ArmyBook {
    * towns or at outposts last. Returns those.
    * `typeOf`: the type of a living unit, null for a dead one.
    */
-  setWant(i: number, type: number, n: number, typeOf: (id: number) => number | null): number[] {
+  setWant(i: number, type: number, n: number, typeOf: (id: number) => number | null, grown = false): number[] {
     const g = this.groups[i];
+    // Set by the player: 自動擴編 grows in this mix from now on.
+    if (!grown) g.growBase = null;
     const want = Math.max(0, Math.floor(n));
     g.want = { ...g.want, [type]: want };
     const ofType = g.ids.filter((id) => typeOf(id) === type);
@@ -688,11 +700,19 @@ export class ArmyBook {
   }
 
   /** 軍團設定 清空: group i has nobody and wants nobody. Returns who was in it. */
+  /** 自動擴編 (D-141): one more of `type` wanted by group i, in the mix set before it first grew; those who leave (none). */
+  grow(i: number, type: number, typeOf: (id: number) => number | null): number[] {
+    const g = this.groups[i];
+    if (g.growBase === null) g.growBase = { ...g.want };
+    return this.setWant(i, type, (g.want[type] ?? 0) + 1, typeOf, true);
+  }
+
   clearGroup(i: number): number[] {
     const g = this.groups[i];
     const was = g.ids;
     g.ids = [];
     g.want = {};
+    g.growBase = null;
     g.saved = 0;
     g.recruits = [];
     g.goal = null;

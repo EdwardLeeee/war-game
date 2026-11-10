@@ -126,6 +126,57 @@ export function pickTrains(need: ArmyNeed, sites: readonly Site[], cost: (type: 
   return { trains, blocked };
 }
 
+/**
+ * 自動擴編 (D-141, the user chose 「自動擴編，預設關」): what must stay above the reserve of each resource a soldier costs,
+ * after paying for it. 300: wood for a barracks (120), a house (30) and a tower (60) is always left; in the player's
+ * games, minute 20 had about 2,000 in stock (food 1,122, wood 285, gold 497, medians of 14) and 44 soldiers to the
+ * computer's 57; with this margin about 9 more by then (0–35, client's replay, review/r17).
+ */
+export const GROW_MARGIN = 300;
+
+/** A group as 自動擴編 sees it: its switches, the soldiers it wants, and the mix it grows in (its setting's). */
+export interface GrowGroup {
+  grow: boolean;
+  refill: boolean;
+  want: Readonly<Record<number, number>>;
+  base: Readonly<Record<number, number>>;
+}
+
+/** Why nothing grows while a group's 自動擴編 is on and every group is full. */
+export type GrowBlock = "population" | "money";
+
+/**
+ * 自動擴編: once every group with 自動補兵 is full (nothing missing), one more soldier for a group with 自動擴編 on, its
+ * fewest wanted first; of the type furthest behind its mix (want ÷ base, the lower type on a tie) that has a free
+ * building, the mage cap allowing, paid with GROW_MARGIN left above the reserve of each resource it costs, room in the
+ * population. Null with `block` when one is on and nothing can grow now (no free building: nothing said, it is training).
+ */
+export function pickGrowth(need: ArmyNeed, groups: readonly GrowGroup[], sites: readonly Site[], cost: (type: number) => Cost, budget: Budget): { group: number; type: number } | { block: GrowBlock | null } {
+  const on = groups.map((g, i) => ({ g, i })).filter(({ g }) => g.grow && g.refill && Object.values(g.base).some((n) => n > 0));
+  if (on.length === 0 || need.reason !== "full") return { block: null };
+  if (budget.room <= 0) return { block: "population" };
+  const total = (w: Readonly<Record<number, number>>) => Object.values(w).reduce((a, n) => a + n, 0);
+  on.sort((a, b) => total(a.g.want) - total(b.g.want) || a.i - b.i);
+  let block: GrowBlock | null = null;
+  for (const { g, i } of on) {
+    const types = Object.keys(g.base)
+      .map(Number)
+      .filter((t) => g.base[t] > 0)
+      .sort((a, b) => (g.want[a] ?? 0) / g.base[a] - (g.want[b] ?? 0) / g.base[b] || a - b);
+    for (const t of types) {
+      if (!sites.some((s) => s.free && s.trains === t)) continue;
+      if (t === UnitType.Mage && budget.mageRoom <= 0) continue;
+      const c = cost(t);
+      if (!KEYS.every((k) => c[k] <= 0 || budget.have[k] - budget.reserve[k] - c[k] >= GROW_MARGIN)) {
+        block = "money";
+        continue;
+      }
+      return { group: i, type: t };
+    }
+  }
+  return { block };
+}
+
 /** 「槍 3、遠 2」: what is missing, short names, in the order of the types. */
 export function missingText(missing: Readonly<Record<number, number>>): string {
   const SHORT: Record<number, string> = { [UnitType.Spearman]: "槍", [UnitType.Ranged]: "遠", [UnitType.Mage]: "法", [UnitType.Cavalry]: "騎" };

@@ -106,7 +106,7 @@ import { heldTown, leaveWalls } from "./walls.ts";
 import { SHORT_GARRISON_TEXT, SHORT_PLUNDER_TEXT } from "./station.ts";
 import { affords, costText, GovernWaits, shortfall } from "./govern-wait.ts";
 import { CallSlots, withCalls } from "./call-slots.ts";
-import { AutoArmyBook, type ArmyNeed, armyNeed, affordsAbove, type Block, type GroupNeed, missingText, pickTrains, POPULATION_CEILING_TEXT, type SentTrain, type Site, stillSent, villagersMissing } from "./auto-army.ts";
+import { AutoArmyBook, type ArmyNeed, armyNeed, affordsAbove, type Block, GROW_MARGIN, type GrowBlock, type GroupNeed, missingText, pickGrowth, pickTrains, POPULATION_CEILING_TEXT, type SentTrain, type Site, stillSent, villagersMissing } from "./auto-army.ts";
 import { ASSAULT_JOIN_CELLS, type Attacker, type AssaultScene, Assaults, assaultOrders, GATE_FOCUS_TEXT, type Target, type WallTarget } from "./assault.ts";
 import { AUTO_HOUSE_TEXT, type Footprint, type Gatherer, HOME_CELLS, HOUSE_SENT_TICKS, type HouseBlock, houseBlock, houseSpot, nearFootprint, pickBuilder, type TownGround } from "./auto-house.ts";
 import { type Alarm, alarmText, GroupAlarms, groupAdvancing } from "./alarm.ts";
@@ -591,6 +591,11 @@ export class Game implements GestureHost {
   private offEachBuilding = false;
   private armyNeedSeen: ArmyNeed = { reason: "none", missing: {}, want: {} };
   private armyBlocked = new Map<number, Block>();
+  /** 自動擴編 (D-141): a group has it on (with 自動補兵); the tick one last grew; why none grows now. */
+  private growOn = false;
+  private grewAt = Number.NEGATIVE_INFINITY;
+  private growBlock: GrowBlock | null = null;
+  private autoArmyTick = 0;
   private villagersSeen = { living: 0, queued: 0, block: null as Block | null };
   /** 自動訓練 stopped by a full population (D-054's message strip), as last seen. */
   autoPopulationFull = false;
@@ -1438,7 +1443,18 @@ export class Game implements GestureHost {
       }
       return { refill: g.refill, want: g.want, have };
     });
-    const groupNeed = armyNeed(groups, queued);
+    let groupNeed = armyNeed(groups, queued);
+    // 自動擴編 (D-141): every group full and much more than the reserve: one more for a group with it on, in its mix.
+    this.growOn = this.army.groups.some((g) => g.grow && g.refill);
+    this.autoArmyTick = tick;
+    const grown = paused ? { block: null } : pickGrowth(groupNeed, this.army.groups.map((g) => ({ grow: g.grow, refill: g.refill, want: g.want, base: g.growBase ?? g.want })), sites, cost, budget);
+    if ("group" in grown) {
+      this.regroup(this.army.grow(grown.group, grown.type, (id) => (view.unitRow(id) >= 0 ? view.unitType(id) : null)));
+      groups[grown.group].want = this.army.groups[grown.group].want;
+      groupNeed = armyNeed(groups, queued);
+      this.grewAt = tick;
+      this.growBlock = null;
+    } else this.growBlock = grown.block;
     // ＋遠程／＋法師 with nobody near (D-138 B): one more of that type for each place a building keeps.
     const lost = this.callSlots.prune((id) => {
       const o = view.buildingRow(id);
@@ -1732,6 +1748,12 @@ export class Game implements GestureHost {
     const need = this.armyNeedSeen;
     if (need.reason === "none") return "還沒設軍團，不會自動訓練";
     if (need.reason === "off") return "軍團都關了自動補兵，不會自動訓練";
+    // 自動擴編 (D-141): why it trains, or why not (money: a building free and too little; none: still training the last).
+    if (need.reason === "full" && this.growOn) {
+      if (this.growBlock === "population") return `軍團都滿，不擴編：${this.populationAtCeiling ? POPULATION_CEILING_TEXT : "人口滿了"}`;
+      if (this.growBlock === "money") return `軍團都滿；資源沒多到預留以上各 ${GROW_MARGIN}，不擴編`;
+      return "資源多，自動擴編中";
+    }
     if (need.reason === "full") return "軍團都滿，不訓練";
     const view = this.view;
     const o = view?.buildingRow(building) ?? -1;
@@ -1740,7 +1762,7 @@ export class Game implements GestureHost {
     const block = trains === undefined ? undefined : this.armyBlocked.get(trains);
     const full = this.populationAtCeiling ? `（${POPULATION_CEILING_TEXT}）` : "（人口滿了：蓋民居）";
     const why = block === "population" ? full : block === "money" ? "（錢不夠：只用預留以上的）" : block === "mages" ? "（法師已到上限）" : "";
-    return `補軍團缺的：${missingText(need.missing)}${why}`;
+    return `${this.grewAt === this.autoArmyTick ? "資源多，自動擴編：" : "補軍團缺的："}${missingText(need.missing)}${why}`;
   }
 
   /** The main city's villagers (D-098): 「村民 32／40，訓練中」. */
