@@ -203,6 +203,13 @@ export interface GameHook {
   mapSize(): number;
   /** What a tap at this screen point would hit (unit, building, node, town), or null for open ground. */
   pickAt(sx: number, sy: number): string | null;
+  /** The same, with what was picked: a building's id and type (the gate under its picture's top, D-096). */
+  pickIdAt(sx: number, sy: number): { kind: string; id: number; type: number } | null;
+  /**
+   * The pictures a tap may land on, on the screen (CSS px): the buildings drawn from the atlases (id) and the gates' pieces
+   * (their opening's map cells as [x, y]); empty without the pictures.
+   */
+  pictures(): { buildings: { id: number; x0: number; y0: number; x1: number; y1: number }[]; gates: { cells: [number, number][]; x0: number; y0: number; x1: number; y1: number }[] };
   /** Every town on the map (size 0 small, 1 large): state, holder and militia as last seen (-1 before it is explored). */
   towns(): { id: number; size: number; state: number; owner: number; cx: number; cy: number; radius: number; militia: number; garrison: number; garrisonNeeded: number; revoltTimer: number }[];
 }
@@ -438,6 +445,26 @@ export function gameHook(game: Game): GameHook {
       if (cam === null || view === null) return null;
       const w = cam.screenToWorld(sx, sy);
       return view.pick(w.x, w.y, HIT_RADIUS_PT / cam.scale)?.kind ?? null;
+    },
+    pickIdAt: (sx, sy) => {
+      const cam = game.camera;
+      const view = game.view;
+      if (cam === null || view === null) return null;
+      const w = cam.screenToWorld(sx, sy);
+      const p = view.pick(w.x, w.y, HIT_RADIUS_PT / cam.scale);
+      return p === null ? null : { kind: p.kind, id: p.id, type: p.type };
+    },
+    pictures: () => {
+      const cam = game.camera;
+      const view = game.view;
+      const p = game.picturesForTest;
+      if (cam === null || view === null || p === null) return { buildings: [], gates: [] };
+      const box = (b: { x0: number; y0: number; x1: number; y1: number }) => ({ x0: (b.x0 - cam.x) * cam.scale, y0: (b.y0 - cam.y) * cam.scale, x1: (b.x1 - cam.x) * cam.scale, y1: (b.y1 - cam.y) * cam.scale });
+      const n = view.map.size;
+      return {
+        buildings: p.buildings.map((b) => ({ id: b.id, ...box(b.box) })),
+        gates: p.gates.map((g) => ({ cells: g.cells.map((c) => [c % n, Math.floor(c / n)] as [number, number]), ...box(g.box) })),
+      };
     },
     towns: () => {
       const view = game.view;
