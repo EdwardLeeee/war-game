@@ -130,7 +130,7 @@ test("a crowd at home that never marches: 2b after 5 minutes; enemies near it mo
 });
 
 test("never at the enemy's main city: 3 once a game lasts IDLE.neverTicks, not before; reaching it with an army clears it", () => {
-  const side = (reached: number): IdleRecord["sides"][number] => ({ badTargets: [], badTargetCount: 0, away: [], home: [], reachedCity: reached, stuck: [], mostSends: { x: -1, y: -1, sends: 0 } });
+  const side = (reached: number): IdleRecord["sides"][number] => ({ badTargets: [], badTargetCount: 0, away: [], home: [], reachedCity: reached, stuck: [], mostSends: { x: -1, y: -1, sends: 0 }, marches: [], cityRetreats: [] });
   const rec = (ticks: number, reached: number): IdleRecord => ({ ticks, sides: [side(5000), side(reached)] });
   assert.deepEqual(idleFindings(rec(IDLE.neverTicks, -1), 1).map((f) => f.signal), ["3"]);
   assert.deepEqual(idleFindings(rec(IDLE.neverTicks - 1, -1), 1), []);

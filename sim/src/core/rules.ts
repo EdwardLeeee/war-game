@@ -844,3 +844,12 @@ function noTownCrystal(c: Cost): Cost {
   const boost = GOVERN_INCOME.boost;
   switched(GOVERN_INCOME, "boost", NO_CRYSTAL, () => boost.map(noTownCrystal));
 }
+
+/**
+ * A main city that holds a while (D-141; the user 2026-11-10: 「其實偷襲也是一種玩法指示要平衡好」, chose 「偷得掉，但要
+ * 打得夠久（推薦）」: about a minute, a warning as soon as it is hit; an enemy that cannot come back in time, with enough
+ * soldiers, still takes it; one that comes back has a battle). A unit's own attack on a main city does `num` / `den` of
+ * itself, summed over the city each tick, the rest carried to the next (Building.toughRem); siege stones as before (so
+ * an army that means to take one brings engines). 30 cavalry took an unguarded one in about 6-20 s before. Off: as before.
+ */
+export const MAIN_CITY_TOUGH = { on: false, num: 1, den: 3 };

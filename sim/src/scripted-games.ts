@@ -11,6 +11,7 @@
 
 import { CrushWatch, type CrushRecord } from "./crush-watch.ts";
 import { IdleWatch, type IdleRecord } from "./idle-watch.ts";
+import { CityWatch, type CityRecord } from "./city-watch.ts";
 import { DeathWatch, type DeathRecord } from "./death-watch.ts";
 import { GoldWatch, type GoldRecord } from "./gold-watch.ts";
 import { SiegeWatch, type SiegeRecord } from "./siege-watch.ts";
@@ -20,6 +21,7 @@ import { type AiStyle, AI_STYLES, createAi } from "./ai/ai.ts";
 import { NO_CRYSTAL, rules } from "./core/rules.ts";
 import { UNIT_KINDS } from "./core/world.ts";
 import type { RandomMap } from "./core/random-map.ts";
+import { nearestWalkable } from "./core/paths.ts";
 import { Action, AI_DIFFICULTIES, type AiDifficulty, BuildingType, MAP_MODES, type MapMode, NodeKind, Order, Resource, TownSize, TownState, UnitType } from "./protocol.ts";
 import { aiKnowledge, Runner } from "./runner.ts";
 import { AiSeat, Bonus, lateSiege, WATCH_TICKS } from "./late-start.ts";
@@ -79,6 +81,21 @@ if (arg("guards", "") !== "") plan.guards = Number(arg("guards", ""));
 if (flag("town-guard")) plan.townGuard = true;
 // Round 7 (D-061): cavalry raiders, this many (--raid 4).
 plan.raid = Number(arg("raid", "0"));
+// D-141 --steal-probe away|home (from minute --steal-from, 15): the player gets PROBE.cavalry cavalry PROBE.from cells
+// from the AI's main city, sent at it, the first time the AI's army is out (PROBE.outMin or more of its soldiers beyond
+// PROBE.out cells of its city) or at home (PROBE.homeMin or more within PROBE.home, fewer than PROBE.outFew out). The
+// scripted player builds no such group itself against hard (it trains 5-12 cavalry and loses its army by minute 25), so
+// the probe puts it there: whether a steal takes the city, how long the city holds, whether the AI comes back for it.
+const probeMode = arg("steal-probe", "");
+const PROBE = { cavalry: 30, from: 22, home: 20, out: 40, outMin: 15, homeMin: 15, outFew: 5, fromMinute: Number(arg("steal-from", "15")) };
+// D-141: stealing the main city with 30 cavalry (or --raid N): "home" as soon as the group is full, "away" while the AI's army is out.
+const steal = arg("steal", "");
+if (steal === "home" || steal === "away") {
+  plan.steal = steal;
+  if (plan.raid === 0) plan.raid = 30;
+  // Its cavalry are the group's.
+  plan.cavalryShare = 0;
+}
 // D-072: racing the AI to its main city (--race edge|sentry), with these numbers.
 const race = arg("race", "");
 if (race !== "" && race !== "edge" && race !== "sentry") throw new Error(`--race ${race}: edge or sentry`);
@@ -350,6 +367,13 @@ interface GameRecord {
   crush: CrushRecord | null;
   /** D-139: an idle army, each side (idle-watch.ts); the AI is side 1. */
   idle: IdleRecord;
+  /** D-141: fights at either main city (city-watch.ts); fights[0] the player's at the AI's. */
+  city: CityRecord;
+  /**
+   * D-141 --steal-probe: when the probe's 30 cavalry came (-1: the moment never came), the AI's soldiers then within
+   * PROBE.home cells of its main city and beyond PROBE.out, and the first fight at its city from then on (city-watch.ts).
+   */
+  probe?: { at: number; aiHome: number; aiOut: number; fight: CityRecord["fights"][number][number] | null };
   /** push-late-siege: the player's engines (siege-watch.ts), and what each side had at minutes 30, 45, 60, 90. */
   siege?: SiegeRecord;
   lateAt?: Record<string, [LateSide, LateSide]>;
@@ -529,6 +553,7 @@ function play(seed: number): GameRecord {
   const goldWatch = new GoldWatch(w);
   const crushWatch = new CrushWatch();
   const idleWatch = new IdleWatch(g);
+  const cityWatch = new CityWatch();
   const siegeWatch = new SiegeWatch(0);
   const lateAt: Record<string, [LateSide, LateSide]> = {};
   const lateSide = (p: number): LateSide => ({
@@ -558,9 +583,49 @@ function play(seed: number): GameRecord {
     for (let i = 0; i < w.units.count; i++) if (u.owner[i] === p && u.type[i] !== UnitType.Farmer && u.type[i] !== UnitType.Militia) n++;
     return n;
   };
+  let probe: GameRecord["probe"] = probeMode === "" ? undefined : { at: -1, aiHome: 0, aiOut: 0, fight: null };
+  let probeIds: number[] = [];
   while (!r.over && w.tick < CAP) {
     if (w.tick % think === 0) {
       for (const body of player.think(buildView(g, 0))) r.command(0, { ...body, seq: seq++ });
+    }
+    if (probe !== undefined && w.tick >= PROBE.fromMinute * 1200 && w.tick % 20 === 0) {
+      const cs = w.mainCity(1);
+      if (cs >= 0 && probe.at < 0) {
+        const cx = b.cellX[cs] + 2;
+        const cy = b.cellY[cs] + 2;
+        let near = 0;
+        let far = 0;
+        for (let s = 0; s < w.units.count; s++) {
+          if (u.owner[s] !== 1 || u.type[s] === UnitType.Farmer) continue;
+          const d = Math.max(Math.abs((u.x[s] >> 10) - cx), Math.abs((u.y[s] >> 10) - cy));
+          if (d <= PROBE.home) near++;
+          else if (d > PROBE.out) far++;
+        }
+        const go = probeMode === "away" ? far >= PROBE.outMin : near >= PROBE.homeMin && far < PROBE.outFew;
+        if (go) {
+          // From the AI's main city toward the map's middle.
+          const n = w.size;
+          const len = Math.max(1, Math.hypot(n / 2 - cx, n / 2 - cy));
+          const at = nearestWalkable(w, Math.round(cx + ((n / 2 - cx) * PROBE.from) / len), Math.round(cy + ((n / 2 - cy) * PROBE.from) / len));
+          for (let k = 0; k < PROBE.cavalry; k++) probeIds.push(w.addUnit(0, UnitType.Cavalry, ((at % n) << 10) + 512, (Math.trunc(at / n) << 10) + 512, rules().units[UnitType.Cavalry].hp));
+          plan.ignore = new Set(probeIds);
+          probe.at = w.tick;
+          probe.aiHome = near;
+          probe.aiOut = far;
+        }
+      }
+      // The probe's cavalry keep at the city.
+      probeIds = probeIds.filter((id) => w.unit(id) >= 0);
+      // At the city once it is in sight; till then toward it (an attack-move).
+      if (probe.at >= 0 && probeIds.length > 0 && cs >= 0 && (w.tick - probe.at) % 200 === 0) {
+        const seen = g.fog.visible[0][(b.cellY[cs] + 1) * w.size + b.cellX[cs] + 1] === 1;
+        r.command(0, seen ? { c: "attack", u: probeIds, target: b.id[cs], seq: seq++ } : { c: "move", u: probeIds, x: b.cellX[cs] + 1, y: b.cellY[cs] + 4, seq: seq++ });
+      }
+      if (process.env.PROBE_DEBUG && probe.at >= 0 && (w.tick - probe.at) % 100 === 0 && w.tick - probe.at <= 2400) {
+        const xs = probeIds.map((id) => u.x[w.unit(id)] >> 10), ys = probeIds.map((id) => u.y[w.unit(id)] >> 10);
+        console.error(`PROBE t${((w.tick - probe.at) / 20).toFixed(0)}s alive ${probeIds.length} centre ${Math.round(xs.reduce((a, v) => a + v, 0) / Math.max(1, xs.length))},${Math.round(ys.reduce((a, v) => a + v, 0) / Math.max(1, ys.length))} city ${cs >= 0 ? b.cellX[cs] + "," + b.cellY[cs] + " hp " + b.hp[cs] : "down"} actions ${probeIds.slice(0, 3).map((id) => u.action[w.unit(id)] + "/" + u.order[w.unit(id)]).join(" ")}`);
+      }
     }
     if (seat !== null) {
       if (w.tick === TAKEOVER - WATCH_TICKS) seat.takeOver(aiOf(difficulty), TAKEOVER);
@@ -571,6 +636,7 @@ function play(seed: number): GameRecord {
     deaths.tick(w);
     crushWatch.tick(w);
     idleWatch.tick();
+    cityWatch.tick(w);
     if (plan.lateSiege) {
       siegeWatch.tick(w, g.events, player.state().mode === "base");
       if (w.tick % (15 * 1200) === 0 && w.tick >= 30 * 1200 && w.tick <= 90 * 1200) lateAt[`m${w.tick / 1200}`] = [lateSide(0), lateSide(1)];
@@ -885,6 +951,8 @@ function play(seed: number): GameRecord {
     governedEnd: [0, 1].map((p) => w.townOwner.filter((o, t) => o === p && w.townState[t] === TownState.Governed).length) as [number, number],
     crush: crushWatch.result(),
     idle: idleWatch.result(),
+    city: cityWatch.result(w),
+    ...(probe !== undefined ? { probe: { ...probe, fight: probe.at < 0 ? null : (cityWatch.result(w).fights[0].find((f) => f.start >= probe!.at - 20) ?? null) } } : {}),
     ...(plan.lateSiege ? { siege: siegeWatch.result(), lateAt } : {}),
     aiFarmers,
     aiRescue,

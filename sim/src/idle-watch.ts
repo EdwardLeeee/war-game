@@ -65,6 +65,8 @@ export const IDLE = {
   /** Waiting after a broken-off march: a retreat of retreatUnits or more within retreatTicks before. */
   retreatUnits: 20,
   retreatTicks: 10 * MIN,
+  /** A new march: none of the side's armies near the enemy main city for this long before. */
+  marchGap: 2 * MIN,
   /** Keeping home: enemy soldiers this near its main city. */
   defendCells: 24,
 };
@@ -96,6 +98,13 @@ export interface IdleSide {
   /** Signal 4: runs of stuck sends; and the cell sent to most, how often (a column only). */
   stuck: { x: number; y: number; start: number; end: number; sends: number; units: number; tag: string }[];
   mostSends: { x: number; y: number; sends: number };
+  /**
+   * D-141 (a main city that holds a while; #192's lesson: an attack that cannot finish breaks off and the game drags): the
+   * ticks its armies came near the enemy main city (IDLE.armyNear or more within IDLE.marchCells, after none there for
+   * IDLE.marchGap), and its retreats of IDLE.orderUnits or more from there, with the enemy city's hp then (per mille).
+   */
+  marches: number[];
+  cityRetreats: { tick: number; units: number; cityHp: number }[];
 }
 
 export interface IdleRecord {
@@ -151,7 +160,7 @@ export class IdleWatch {
   constructor(game: Game) {
     this.game = game;
     for (let p = 0; p < PLAYER_COUNT; p++) {
-      this.sides.push({ badTargets: [], badTargetCount: 0, away: [], home: [], reachedCity: -1, stuck: [], mostSends: { x: -1, y: -1, sends: 0 } });
+      this.sides.push({ badTargets: [], badTargetCount: 0, away: [], home: [], reachedCity: -1, stuck: [], mostSends: { x: -1, y: -1, sends: 0 }, marches: [], cityRetreats: [] });
       this.openAway.push(null);
       this.openHome.push(null);
       this.lastMarch.push(0);
@@ -176,6 +185,26 @@ export class IdleWatch {
     const u = w.units.col;
     const slots = c.u.map((id) => w.unit(id)).filter((s) => s >= 0);
     if (c.c === "retreat" && slots.length >= IDLE.retreatUnits) this.lastRetreat[p] = w.tick;
+    if (c.c === "retreat" && slots.length >= IDLE.orderUnits) {
+      // D-141: a retreat from the enemy main city, with its hp then.
+      const e = this.enemyCity(w, p);
+      if (e !== null) {
+        let ax = 0;
+        let ay = 0;
+        for (const s of slots) {
+          ax += u.x[s] >> CELL_SHIFT;
+          ay += u.y[s] >> CELL_SHIFT;
+        }
+        const last = this.sides[p].cityRetreats.at(-1);
+        // One break-off: retreats resent within IDLE.marchGap of it count once.
+        if ((last === undefined || w.tick - last.tick >= IDLE.marchGap) && toRect(Math.round(ax / slots.length), Math.round(ay / slots.length), e[0], e[1], e[2]) <= IDLE.marchCells) {
+          const b = w.buildings.col;
+          const cs = w.building(w.buildingAt[e[1] * w.size + e[0]]);
+          const hp = cs >= 0 ? Math.round((b.hp[cs] * 1000) / w.maxHp(cs)) : 0;
+          this.sides[p].cityRetreats.push({ tick: w.tick, units: slots.length, cityHp: hp });
+        }
+      }
+    }
     if (slots.length < IDLE.orderUnits) return;
     const n = w.size;
     const side = this.sides[p];
@@ -328,7 +357,10 @@ export class IdleWatch {
     }
     for (const id of this.settled.keys()) if (!seen.has(id)) this.settled.delete(id);
     for (let p = 0; p < PLAYER_COUNT; p++) {
-      if (nearMarch[p] >= IDLE.armyNear) this.lastMarch[p] = w.tick;
+      if (nearMarch[p] >= IDLE.armyNear) {
+        if (w.tick - this.lastMarch[p] >= IDLE.marchGap || this.sides[p].marches.length === 0) this.sides[p].marches.push(w.tick);
+        this.lastMarch[p] = w.tick;
+      }
       if (nearCity[p] >= IDLE.armyNear && this.sides[p].reachedCity < 0) this.sides[p].reachedCity = w.tick;
       const up = enemy[p] !== null;
       // 2a.
