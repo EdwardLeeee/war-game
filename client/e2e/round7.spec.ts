@@ -262,7 +262,8 @@ test("＋遠程／＋法師（D-080）：選自己的主城就能叫兵躲進來
   // No mage within 30 cells: told so, no order.
   const mark = (await sent(page)).length;
   await callMage.tap();
-  await expectSaid(page, "30 格內沒有可以叫來的法師");
+  // D-138 B: nobody within 30 cells, a place is kept where mages are trained; the fake world has no mage hall.
+  await expectSaid(page, "沒有法術營，練不出法師");
   expect((await sent(page)).slice(mark).filter((c) => c.c === "garrison")).toEqual([]);
   // Then the walking one: not the one hiding already, not those far off.
   await callRanged.tap();

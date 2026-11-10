@@ -110,6 +110,8 @@ export interface GameHook {
   remove(ids: number[]): void;
   /** Fake world only: a building's hit points (a gate damaged, D-096). */
   damage(id: number, hp: number): void;
+  /** Fake world only: a finished building of ours of this type at (cx, cy), 自動訓練 on (D-138 B: a range); its id. */
+  addBuilding(type: number, cx: number, cy: number): number;
   /** Fake world only: a town's state (TownState) and owner from now (D-138 A: a town lost on the way). */
   setTown(id: number, state: number, owner: number): void;
   /** Fake world only: the game over, `winner` winning for `reason` (GameOverReason; the result screen); `timeline`: 局後統計's (a test's fixture). */
@@ -358,6 +360,7 @@ export function gameHook(game: Game): GameHook {
     damage: (id, hp) => {
       if (game.portForTest instanceof MockPort) game.portForTest.damage(id, hp);
     },
+    addBuilding: (type, cx, cy) => (game.portForTest instanceof MockPort ? game.portForTest.addBuilding(type as Parameters<MockPort["addBuilding"]>[0], cx, cy) : -1),
     setTown: (id, state, owner) => {
       if (game.portForTest instanceof MockPort) game.portForTest.setTown(id, state as Parameters<MockPort["setTown"]>[1], owner);
     },

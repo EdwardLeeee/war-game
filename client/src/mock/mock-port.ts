@@ -680,6 +680,13 @@ export class MockPort implements SimPort {
     if (b !== undefined) b.hp = hp;
   }
 
+  /** Tests (D-138 B): a finished building of ours here (a range, so that 自動訓練 trains ranged); its id. */
+  addBuilding(type: BuildingType, cx: number, cy: number): number {
+    const b = this.building(ME, type, cx, cy);
+    b.flags = BuildingFlag.AutoTrain;
+    return b.id;
+  }
+
   /** Tests (D-138 A): a town's state and owner from now (a town lost, or taken). */
   setTown(id: number, state: TownState, owner: number): void {
     const t = this.towns.find((v) => v.id === id);
