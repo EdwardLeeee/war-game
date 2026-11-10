@@ -90,7 +90,7 @@ import { formalUi } from "../ui/formal.ts";
 import { type PromptButton, Overlays, REPAIR_LOCKED_TEXT, rejectText, type ToastKind } from "../ui/overlays.ts";
 import { Placement, placeReason, towerLandOk } from "../ui/placement.ts";
 import { GameView } from "../view/view.ts";
-import { ArmyBook, type ArmyUnit, groupWantMax, isSoldier, mostlyLoose, movedText, RECRUIT_MESSAGE_TICKS, redirects, type TownArea } from "./army.ts";
+import { ArmyBook, type ArmyUnit, groupWantMax, inTown, isSoldier, mostlyLoose, movedText, RECRUIT_MESSAGE_TICKS, redirects, type TownArea } from "./army.ts";
 import { MILITIA_WARNING, militiaTownNear } from "./militia.ts";
 import { crystalSentText, type Depot, type DepotFarm, type DepotNode, DEPOT_RESOURCES, DEPOT_WORD, depotFor, panelResources, pickToSend, pickToTake, sendTarget, type Worker, workersAt } from "./depot.ts";
 import { type DispatchPool, dispatchCount, dispatchPool, NODE_RESOURCE, RESOURCE_WORD, type Villager } from "./dispatch.ts";
@@ -112,7 +112,8 @@ import { type Alarm, alarmText, GroupAlarms, groupAdvancing } from "./alarm.ts";
 import { isPosted, outpostModeText, POST_TYPE } from "./outpost.ts";
 import { hintTown, townGivesLines, townHintLines } from "./town-hint.ts";
 import { MAP_LABEL } from "../map-mode.ts";
-import type { StatsWorld } from "../ui/stats/model.ts";
+import { type StatsWorld, townNames } from "../ui/stats/model.ts";
+import { type OwnTown, retreatTown } from "./retreat.ts";
 import type { SimPort } from "./port.ts";
 
 type InitMessage = Extract<ToWorker, { type: "init" }>;
@@ -1041,6 +1042,8 @@ export class Game implements GestureHost {
     // 進攻到底 (D-080): another order of his, 堅守 or 躲進去 included, ends it; an attack starts it.
     const named = (cmd as { u?: number | number[] }).u;
     if (named !== undefined && (cmd.c === "stance" || cmd.c === "garrison" || cmd.c === "post" || redirects(cmd))) this.charges.drop(Array.isArray(named) ? named : [named]);
+    // 退回駐守的城 (D-138 A): his own order for them ends their way back (theirs is the last word).
+    if (named !== undefined && redirects(cmd)) this.dropRetreats(Array.isArray(named) ? named : [named]);
     if (cmd.c === "attack") this.charges.start(cmd.u, cmd.target, this.targetCell(cmd.target), this.view?.header?.[H.tick] ?? 0);
     return seq;
   }
@@ -2626,14 +2629,119 @@ export class Game implements GestureHost {
     const view = this.view;
     if (view === null) return;
     const u = this.groupMarching(i).filter((id) => !isHiding(view.unitOrder(id)));
-    const home = view.homeCell();
     if (u.length === 0) return;
-    if (home === null) {
+    // D-138 A: back to the town it last left soldiers in, while ours; else our nearest; else the main city.
+    const to = this.fallBack(i, u);
+    if (to === undefined) {
       this.toast("主城不在了，沒有地方可以撤退");
       return;
     }
-    this.command({ c: "retreat", u, x: home.x, y: home.y }, true);
-    this.toast(`編隊 ${i + 1} 撤回主城`);
+    this.toast(to === null ? `編隊 ${i + 1} 撤回主城` : `編隊 ${i + 1} 退回${this.townName(to)}`);
+  }
+
+  /** 退回駐守的城 (D-138 A): each group on its way back to a town, stationed there as each comes in (as 進駐). */
+  private retreats: { group: number; town: number; ids: number[]; inside: number }[] = [];
+
+  /** Our towns a group may fall back to: governed or being repaired (D-138 A). */
+  private ownTowns(): OwnTown[] {
+    const view = this.view;
+    if (view === null) return [];
+    return view
+      .townsNow()
+      .filter((t) => t.owner === view.me && (t.state === TownState.Governed || t.state === TownState.Repairing))
+      .map((t) => ({ id: t.id, cellX: t.cellX, cellY: t.cellY }));
+  }
+
+  /** Where these units stand on average (cells), or null: none alive. */
+  private middleOf(ids: readonly number[]): { x: number; y: number } | null {
+    const view = this.view;
+    const u = view?.curr?.snap.units;
+    if (view === null || u === undefined) return null;
+    const rows = ids.map((id) => view.unitRow(id)).filter((o) => o >= 0);
+    if (rows.length === 0) return null;
+    return { x: rows.reduce((n, o) => n + u[o + UnitField.x], 0) / rows.length / CELL, y: rows.reduce((n, o) => n + u[o + UnitField.y], 0) / rows.length / CELL };
+  }
+
+  /** A town's name as the game's statistics write it (D-132: 小鎮・左上, as the screen shows the map). */
+  private townName(town: number): string {
+    const w = this.statsWorld();
+    if (w === null) return "城鎮";
+    return townNames(w, [...w.towns.keys()]).get(town)?.name ?? (this.view?.knownTowns.get(town)?.size === TownSize.Large ? "大城" : "小鎮");
+  }
+
+  /** A cell inside the town's walls a soldier can stand on, nearest its middle; or nearest the town's centre without walls. */
+  private townCell(town: number): { x: number; y: number } | null {
+    const view = this.view;
+    const area = this.townArea(town);
+    if (view === null || area === null) return null;
+    const box = area.inside ?? null;
+    const cx = box === null ? area.cellX : Math.round((box.x0 + box.x1) / 2);
+    const cy = box === null ? area.cellY : Math.round((box.y0 + box.y1) / 2);
+    return view.openCellNear(cx, cy, false, box);
+  }
+
+  /**
+   * Group i's `ids` fall back (D-138 A): to its town (the way back watched: stationed as they come in) or the main city
+   * (撤到就堅守, as before). Returns the town, null for the main city, undefined: nowhere (no main city).
+   */
+  private fallBack(i: number, ids: number[]): number | null | undefined {
+    const view = this.view;
+    if (view === null) return undefined;
+    const town = retreatTown(this.army.lastTown[i], this.ownTowns(), this.middleOf(ids));
+    const cell = town === null ? null : this.townCell(town);
+    if (town !== null && cell !== null) {
+      this.command({ c: "retreat", u: ids, x: cell.x, y: cell.y }, true);
+      this.retreats = this.retreats.filter((r) => r.group !== i);
+      this.retreats.push({ group: i, town, ids: [...ids], inside: 0 });
+      return town;
+    }
+    const home = view.homeCell();
+    if (home === null) return undefined;
+    this.command({ c: "retreat", u: ids, x: home.x, y: home.y }, true);
+    return null;
+  }
+
+  /** His own order for these ends their way back to a town (D-138 A). */
+  private dropRetreats(ids: readonly number[]): void {
+    if (this.retreats.length === 0) return;
+    for (const r of this.retreats) r.ids = r.ids.filter((id) => !ids.includes(id));
+    this.retreats = this.retreats.filter((r) => r.ids.length > 0);
+  }
+
+  /**
+   * Every snapshot: those back inside their town are stationed there, as 進駐 does (guard; 駐N on the group's button;
+   * 全軍 and 撤退 no longer take them); a town lost on the way, they fall back again by the same rule (D-138 A).
+   */
+  private checkRetreats(): void {
+    const view = this.view;
+    if (view === null || this.retreats.length === 0) return;
+    const own = new Set(this.ownTowns().map((t) => t.id));
+    const units = this.soldiers();
+    for (const r of [...this.retreats]) {
+      r.ids = r.ids.filter((id) => view.unitRow(id) >= 0 && !this.army.isGarrisoned(id));
+      if (r.ids.length === 0) {
+        this.retreats = this.retreats.filter((x) => x !== r);
+        continue;
+      }
+      if (!own.has(r.town)) {
+        this.retreats = this.retreats.filter((x) => x !== r);
+        const to = this.fallBack(r.group, r.ids);
+        if (to !== undefined) this.toast(`${this.townName(r.town)}丟了，編隊 ${r.group + 1} ${to === null ? "撤回主城" : `改去${this.townName(to)}`}`);
+        continue;
+      }
+      const area = this.townArea(r.town);
+      if (area === null) continue;
+      const inside = units.filter((u) => r.ids.includes(u.id) && inTown(u, area)).map((u) => u.id);
+      if (inside.length === 0) continue;
+      this.autoCommand({ c: "guard", u: inside, town: r.town });
+      this.keepIn(r.town, inside);
+      r.ids = r.ids.filter((id) => !inside.includes(id));
+      r.inside += inside.length;
+      if (r.ids.length === 0) {
+        this.retreats = this.retreats.filter((x) => x !== r);
+        this.toast(`編隊 ${r.group + 1} 到了${this.townName(r.town)}，留守 ${r.inside} 名`, "ok");
+      }
+    }
   }
 
   /** The most of one type a group may want: the population's ceiling (D-083), the snapshot's. */
@@ -2787,6 +2895,7 @@ export class Game implements GestureHost {
         this.tickAssaults();
         this.draftArmy();
         this.musterRecruits();
+        this.checkRetreats();
         this.followCharges();
         this.updateGroupAlarms();
         if (this.placement !== null) {
@@ -3579,13 +3688,27 @@ export class Game implements GestureHost {
       this.toast("沒有可以撤退的士兵");
       return;
     }
+    // D-138 A: each group back to its own town by the same rule as its 退; those in no group to the main city.
+    const parts: string[] = [];
+    const taken = new Set<number>();
+    for (let i = 0; i < this.army.groups.length; i++) {
+      const ids = this.groupMarching(i).filter((id) => u.includes(id) && !taken.has(id) && !isHiding(view.unitOrder(id)));
+      if (ids.length === 0) continue;
+      const town = retreatTown(this.army.lastTown[i], this.ownTowns(), this.middleOf(ids));
+      // Those going home go with the rest (one order below).
+      if (town === null || this.townCell(town) === null) continue;
+      for (const id of ids) taken.add(id);
+      if (this.fallBack(i, ids) === town) parts.push(`編隊 ${i + 1} ${this.townName(town)}`);
+    }
+    const rest = u.filter((id) => !taken.has(id));
     const home = view.homeCell();
-    if (home === null) {
+    if (rest.length > 0 && home === null && parts.length === 0) {
       this.toast("主城不在了，沒有地方可以撤退");
       return;
     }
-    this.command({ c: "retreat", u, x: home.x, y: home.y }, true);
-    this.toast(`全軍 ${u.length} 名退回主城`);
+    if (rest.length > 0 && home !== null) this.command({ c: "retreat", u: rest, x: home.x, y: home.y }, true);
+    if (parts.length === 0) this.toast(`全軍 ${u.length} 名退回主城`);
+    else this.toast(`全軍退回：${parts.join("、")}${rest.length > 0 && home !== null ? `，其他 ${rest.length} 名回主城` : ""}`);
   }
 
   setMode(mode: Mode): void {
