@@ -852,4 +852,4 @@ function noTownCrystal(c: Cost): Cost {
  * itself, summed over the city each tick, the rest carried to the next (Building.toughRem); siege stones as before (so
  * an army that means to take one brings engines). 30 cavalry took an unguarded one in about 6-20 s before. Off: as before.
  */
-export const MAIN_CITY_TOUGH = { on: false, num: 1, den: 3 };
+export const MAIN_CITY_TOUGH = { on: true, num: 1, den: 7 };
