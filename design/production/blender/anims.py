@@ -68,8 +68,8 @@ FALL_KEYS = [
 ]
 # R22 (D-142, R19's items 8 and 9; R22=1 until the user approves the boards, design/r22):
 # 8  the recoil that opens the fall (approved as P2-03) flung both arms out level to the sides: for two or three
-#    frames a T, the rig's rest pose to the eye. The arms unlike now: the right thrown up and back, bent, the left
-#    low and a little forward. The same times, the same landing (INF_IMPACT, the mages' impact frame).
+#    frames a T, the rig's rest pose to the eye. The arms unlike now: the right bent up to the chest (struck there),
+#    the left hanging at his side. The same times, the same landing (INF_IMPACT, the mages' impact frame).
 # 9  the sword in its scabbard at the left hip (the East's 橫刀, the West's falchion and arming sword) kept its
 #    standing angle on a body lying down: through the ground under a spearman on his back, straight up over a rider
 #    lying prone. As the body goes down it comes round to lie along the thigh (_lay_swords).
