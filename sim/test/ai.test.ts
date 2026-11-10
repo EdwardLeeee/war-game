@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { type AiStyle, aroundForts, createAi, enemyForts, FORT_HIDE_AI, type Fort, fortGroups, groupWorth, fortStagePoint, fortValues, GATE_AI, gateLoss, KEEP_AI, mopUpOrders, townDefence, gateOrders, groupsOnWay, HARD, type HardPlan, NORMAL_FORT, onWalls, SIEGE, STAGING, stagePoint, townGates } from "../src/ai/ai.ts";
+import { type AiStyle, Known, mapMemory, aroundForts, createAi, enemyForts, FORT_HIDE_AI, type Fort, fortGroups, groupWorth, fortStagePoint, fortValues, GATE_AI, gateLoss, KEEP_AI, mopUpOrders, townDefence, gateOrders, groupsOnWay, HARD, type HardPlan, NORMAL_FORT, onWalls, SIEGE, STAGING, stagePoint, townGates } from "../src/ai/ai.ts";
 import { ARMY_BASE, ARMY_HOME, AS_HARD, asHardNet, BUILD_FARMERS, choose, features, forward, MIX_SPEAR, NET_HEADS, NET_INPUTS, NET_SHAPE, type NetWeights, TOWN_GOVERN, TOWN_PLUNDER } from "../src/ai/net.ts";
 import { readFileSync } from "node:fs";
 import { Game } from "../src/core/game.ts";
@@ -11,7 +11,7 @@ import * as RULES from "../src/core/rules.ts";
 import { UNIT_KINDS } from "../src/core/world.ts";
 import { startCast } from "../src/core/units.ts";
 import { Action, type AiDifficulty, BuildingFlag, BuildingType, CELL, type CommandBody, HeaderField, MAX_TICKS, NO_OWNER, NodeKind, Order, Reject, TownChoice, TownSize, TownState, UNIT_STRIDE, UnitField, UnitType } from "../src/protocol.ts";
-import { aiKnowledge, Runner } from "../src/runner.ts";
+import { AI_THINK_EVERY, aiKnowledge, Runner } from "../src/runner.ts";
 import { buildView, mapInfo } from "../src/view/view.ts";
 import { fromCanon, spawnCentre, toCanon } from "../src/frame.ts";
 import { emptyGame, put, slotOf, switchedOff, switchedOn } from "./helpers.ts";
@@ -3959,4 +3959,86 @@ test("D-131 (plan.townQuickRest): broken off as soon as it set out for a town, i
   assert.ok(on.retreats * 3 <= off.retreats, `on: far fewer (${on.retreats} against ${off.retreats})`);
   assert.ok(on.quick >= 1, `it counted (${on.quick})`);
   assert.equal(HARD.townQuickRest, 1, "on for hard");
+});
+
+// --- D-139: the enemy's main city guessed in a corner (the user's 64a27f8a, seed 862721567) ----------------------
+
+/** The user's 64a27f8a map (random, seed 862721567): hard is player 1 at (18,113), the user's main city at (112,17). */
+function cornerGame() {
+  const g = new Game({ seed: 862721567, scenario: "standard", map: "random" });
+  const know = aiKnowledge(g.w.map, 1, 0, "hard");
+  const mem = mapMemory(know.map, know.frame, 1);
+  return { g, w: g.w, know, mem };
+}
+
+test("D-139: a town's gate far from every corner guesses no corner (64a27f8a: (17,16) from the gate of the town the user governed)", () => {
+  const { g, w, mem } = cornerGame();
+  // The user's gate at (61,30), hard's soldier beside it.
+  w.addBuilding(0, BuildingType.Gate, 61, 30, 500, 1000);
+  put(g, 1, UnitType.Spearman, 61, 33);
+  g.fog.update(w);
+  mem.observe(buildView(g, 1));
+  assert.equal(mem.known, Known.None, `no corner from a gate (guessed (${mem.enemy.cellX},${mem.enemy.cellY}))`);
+  // A house there neither: it is as far from every corner.
+  w.addBuilding(0, BuildingType.House, 64, 33, 200, 1000);
+  g.fog.update(w);
+  mem.observe(buildView(g, 1));
+  assert.equal(mem.known, Known.None, "nor a house that far out");
+  // A house by the user's own corner does.
+  w.addBuilding(0, BuildingType.House, 100, 26, 200, 1000);
+  put(g, 1, UnitType.Spearman, 100, 29);
+  g.fog.update(w);
+  mem.observe(buildView(g, 1));
+  assert.equal(mem.known, Known.Corner);
+  assert.ok(Math.abs(mem.enemy.cellX - 112) <= 3 && Math.abs(mem.enemy.cellY - 17) <= 3, `the user's corner (${mem.enemy.cellX},${mem.enemy.cellY})`);
+});
+
+test("D-139: hard's army at a guessed corner with no main city there guesses again and goes on, not sent there again and again", () => {
+  const { g, w, know } = cornerGame();
+  w.tick = 15 * 1200;
+  // A house of the user's by the top-left corner: hard guesses the user's main city there, (17,16); it is at (112,17).
+  w.addBuilding(0, BuildingType.House, 24, 22, 200, 1000);
+  const army: number[] = [];
+  for (let k = 0; k < 60; k++) army.push(put(g, 1, UnitType.Spearman, 26 + (k % 10), 30 + Math.trunc(k / 10)));
+  g.fog.update(w);
+  const ai = createAi(1, 1, { ...know, hard: { dodge: false, peekFirst: 0 } }, 1);
+  const stats = () => (ai as unknown as { stats: () => Record<string, number> }).stats();
+  let toCorner = 0;
+  let onward = 0;
+  let seq = 0;
+  for (let t = 0; t < 4 * 1200; t++) {
+    if (w.tick % AI_THINK_EVERY === 0) {
+      for (const body of ai.think(buildView(g, 1))) {
+        const c = body as { c: string; u?: number[]; x?: number; y?: number };
+        if (c.c === "move" && (c.u?.length ?? 0) >= 30 && c.x !== undefined && c.y !== undefined) {
+          if (Math.abs(c.x - 17) <= 3 && Math.abs(c.y - 16) <= 3) toCorner++;
+          else if (c.x >= 60) onward++;
+        }
+        g.push({ ...body, t: w.tick, p: 1, seq: seq++ } as never);
+      }
+    }
+    g.step();
+  }
+  assert.ok(toCorner >= 1, "it went for the guess first");
+  assert.ok(toCorner <= 3, `then not again and again (${toCorner} times)`);
+  assert.ok(onward >= 1, "on to another corner");
+  assert.ok(stats().cornerRuledOut >= 1, `ruled the corner out (${stats().cornerRuledOut})`);
+});
+
+test("D-139: all three corners seen empty (it should not happen): it forgets them and guesses again, not left with no guess (the army would stay home)", () => {
+  const { g, w, mem } = cornerGame();
+  w.addBuilding(0, BuildingType.House, 100, 26, 200, 1000);
+  put(g, 1, UnitType.Spearman, 100, 29);
+  g.fog.update(w);
+  mem.observe(buildView(g, 1));
+  assert.equal(mem.known, Known.Corner);
+  // Hard's soldiers by each corner's guess (the user's main city out of the view: its owner changed for the test).
+  const city = w.mainCity(0);
+  w.buildings.col.owner[city] = 1;
+  for (const [x, y] of [[17, 16], [112, 17], [112, 112]]) put(g, 1, UnitType.Spearman, x + (x > 64 ? -2 : 2), y + 2);
+  g.fog.update(w);
+  mem.observe(buildView(g, 1));
+  assert.equal(mem.counts.resets, 1, "all three ruled out once: forgotten");
+  assert.equal(mem.known, Known.Corner, "still a guess");
+  assert.ok(Math.abs(mem.enemy.cellX - 112) <= 3 && Math.abs(mem.enemy.cellY - 17) <= 3, `the corner nearest what it saw (${mem.enemy.cellX},${mem.enemy.cellY})`);
 });
