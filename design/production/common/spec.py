@@ -75,7 +75,7 @@ UNITS = {
     "spear_e": dict(kind="spear_e", variant=1, frame=[6.4, 3.6, 0.5, 0.72], anims=_militia()),
     "xbow_e": dict(kind="xbow_e", frame=[3.4, 3.2, 0.5, 0.72], anims=_std()),
     "hcav_e": dict(kind="hcav_e", frame=[7.2, 4.4, 0.5, 0.75], anims=_std()),
-    "siege_e": dict(kind="siege_e", frame=[6.4, 7.2, 0.5, 0.74], anims=_std()),     # (R21: room for its two pullers)
+    "siege_e": dict(kind="siege_e", frame=[5.6, 6.4, 0.5, 0.8], anims=_std()),
     "mage_e": dict(kind="mage_e", style="TB", frame=[4.6, 3.6, 0.5, 0.74], anims=_mage()),
     "farmer_w": dict(kind="farmer_w", frame=[3.8, 3.4, 0.5, 0.8], anims=_farmer()),
     "pike_w": dict(kind="pike_w", frame=[8.0, 4.4, 0.5, 0.62], anims=_militia()),

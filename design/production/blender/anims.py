@@ -25,7 +25,7 @@ from mathutils import Euler, Matrix, Vector
 import humanoid2 as h2
 import lib
 import motion
-from humanoid import blend, ease, fall, fall_root_tilt, idle
+from humanoid import blend, ease, fall, fall_root_tilt, idle, walk
 from lib import box, cyl, fx_mat, ico, rod, slab
 
 CRYSTAL = (0.35, 0.95, 1.0)
@@ -486,34 +486,54 @@ def extend_siege(u, kind):
                 p0, p1 = Vector((x * 0.3, 0.57, 3.42)), Vector((x * 2.2, 1.45 + 0.08 * k, 0.05))
                 ropes.append((ob, x, (p1 - p0).length, ob.matrix_basis.copy()))
 
+    def at_rope(r, t):
+        """A puller at his rope, turned to the engine, the hands at pull_height(t)."""
+        r.root.rotation_euler = (0, 0, math.pi)
+        z = pull_height(t)
+        c = (PULL_UP - z) / PULL_STROKE              # 0 standing; 1 down on bent knees
+        hips = (0.0, -0.10 * c, -0.30 * c)
+        ang = {"hips": (0, 0, 0), "torso": (-22 * c, 0, 0), "neck": (16 * c - 6 * (1 - c), 0, 0)}
+        ang.update(motion.plant(r, hips, (0, 0, 0), {"L": (-0.16, 0.12, 0.05), "R": (0.16, -0.08, 0.05)}))
+        r.pose(ang, {"hips": hips})
+        bpy.context.view_layer.update()
+        W = r.root.matrix_world.copy()
+        motion.reach(r, "R", W @ Vector((0.05, PULL_REACH, z)))
+        motion.reach(r, "L", W @ Vector((-0.05, PULL_REACH - 0.02, z - 0.14)))
+
+    standing = {}
+    home = {r: r.root.location.copy() for r in pullers}
+
     def crew(anim, frame):
         """The pullers: at the ropes, turned to the engine, hauling them down through the throw; turned the way it
-        goes and walking, a rope over the right shoulder; falling where they stand (the infantry's fall)."""
+        goes and walking with short paces (a cycle the 0.99 m the wheels cover: spec.STRIDE_M), a rope over the right
+        shoulder; when it is wrecked thrown round a quarter turn and aside, down on their backs, each to his own side
+        of the cart's front (the infantry's fall, FALL_KEYS, from the pose at the rope; the second a moment later)."""
         n = u.frames.get(anim, 8)
-        for r in pullers:
+        for i, r in enumerate(pullers):
+            r.root.location = home[r].copy()
             if anim == "walk":
-                units2.pose_generic(u, r, "walk", frame, lambda t: ({}, {}))        # (the root turned to +y)
+                r.root.rotation_euler = (0, 0, 0)
+                a, o = walk((frame % n) / n, arms=False, stride=21)
+                r.pose(a, o)
                 bpy.context.view_layer.update()
                 motion.reach(r, "R", r.root.matrix_world @ Vector((0.16, 0.04, 1.40)))
             elif anim == "death":
-                r.root.rotation_euler = (0, 0, math.pi)
-                k = motion.sample([(0.0, dict({name: (0, 0, 0) for name in FALL_JOINTS}, hips=(0, 0, 0), hips_rot=(0, 0, 0)),
-                                    "lin")] + FALL_KEYS, min(1.0, frame / (n - 1.0)))
+                if r not in standing:
+                    at_rope(r, 0.0)
+                    bpy.context.view_layer.update()
+                    standing[r] = {name: tuple(a * motion.R2D for a in r.j[name].rotation_euler) for name in FALL_JOINTS}
+                t = motion.clamp(frame / (n - 1.0) * 1.07 - 0.07 * i)
+                side = 1.0 if home[r].x > 0 else -1.0
+                r.root.rotation_euler = (0, 0, math.pi - side * math.pi / 2 * ease(min(1.0, t / 0.3)))
+                # thrown 0.4 m aside and a little forward as he goes: clear of the front post that comes down along the
+                # cart's side onto where he stood, and of the wheel that rolls off
+                r.root.location = home[r] + Vector((side * 0.40, 0.15, 0)) * ease(min(1.0, t / 0.5))
+                k = motion.sample([(0.0, dict(standing[r], hips=(0, 0, 0), hips_rot=(0, 0, 0)), "lin")] + FALL_KEYS, t)
                 ang = {name: k[name] for name in FALL_JOINTS}
                 ang["hips"] = k["hips_rot"]
                 r.pose(ang, {"hips": k["hips"]})
             else:
-                r.root.rotation_euler = (0, 0, math.pi)
-                z = pull_height((frame % n) / n if anim == "attack" else 0.0)
-                c = (PULL_UP - z) / PULL_STROKE              # 0 standing; 1 down on bent knees
-                hips = (0.0, -0.10 * c, -0.30 * c)
-                ang = {"hips": (0, 0, 0), "torso": (-22 * c, 0, 0), "neck": (16 * c - 6 * (1 - c), 0, 0)}
-                ang.update(motion.plant(r, hips, (0, 0, 0), {"L": (-0.16, 0.12, 0.05), "R": (0.16, -0.08, 0.05)}))
-                r.pose(ang, {"hips": hips})
-                bpy.context.view_layer.update()
-                W = r.root.matrix_world.copy()
-                motion.reach(r, "R", W @ Vector((0.05, PULL_REACH, z)))
-                motion.reach(r, "L", W @ Vector((-0.05, PULL_REACH - 0.02, z - 0.14)))
+                at_rope(r, (frame % n) / n if anim == "attack" else 0.0)
             h2.update(r)
 
     def ropes_follow():
@@ -652,6 +672,11 @@ def extend_siege(u, kind):
             ropes_follow()
             return
         inner("idle", 0)
+        if ropes:                                 # the held ropes fall from the hands (not from where roster5 hung them)
+            crew("idle", 0)
+            ropes_follow()
+            for ob, x, h0, m0 in ropes:
+                wreck.rest[ob] = ob.matrix_basis.copy()
         n = u.frames.get("death", 10)
         (collapse_e if east else collapse_w)(min(1.0, frame / (n - 1.0)))
         crew(anim, frame)
