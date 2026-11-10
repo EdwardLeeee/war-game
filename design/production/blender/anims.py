@@ -823,10 +823,14 @@ if R20:        # the pick up over the right shoulder, the body turned a little t
 
 def _tools_r20(n, groups, c):
     """R20's axe, pick and mallet in the tool frame (butt at the origin, +Z up the haft to the head, +Y toward the
-    working edge): irons iron_<c> (look.MATCH "iron": rusty_metal_02), a worn bright strip on the axe's edge and the
-    pick's points (hoeedge_r16), hafts shaft5, the mallet's head timber_<c> (look.MATCH "timber": medieval_wood)."""
-    iron = lib.mat(f"iron_{c.lower()}", (0.17, 0.16, 0.15), 0.62, 0.85, pattern="worn_metal")
-    worn = lib.mat("hoeedge_r16", (0.46, 0.45, 0.43), 0.38, 1.0)
+    working edge): irons iron_<C> (look.MATCH "iron": rusty_metal_02), a worn bright strip on the axe's edge and the
+    pick's points (tooledge_r20), hafts shaft5, the mallet's head timber_<c> (look.MATCH "timber": medieval_wood)."""
+    # (its own iron, iron_E / iron_W: the hoe's iron_e / iron_w is metal 0.85, and an axe's flat cheek turned up to the
+    # sky in the swing came out near white; this one hardly mirrors)
+    # at 6 x 9 px the hoe's mirror-bright edge strip (hoeedge_r16) was a white bar across the axe, and its cheek in the
+    # sun a pale grey: both darker here
+    iron = lib.mat(f"iron_{c}", (0.10, 0.098, 0.095), 0.85, 0.2, pattern="worn_metal")
+    worn = lib.mat("tooledge_r20", (0.30, 0.295, 0.285), 0.55, 0.6)
     wood = lib.mat("shaft5", (0.47, 0.36, 0.24), 0.65, noise=0.2, noise_scale=10)
     beech = lib.mat(f"timber_{c.lower()}", (0.66, 0.54, 0.37), 0.7, noise=0.25, noise_scale=8)
     # the axe: the haft through the eye, a poll behind it, the blade widening to the edge
@@ -837,8 +841,8 @@ def _tools_r20(n, groups, c):
     slab(f"{n}_axe_head", [(-a["poll"], z - hh), (-a["poll"], z + hh), (0.03, z + hh), (y1 - 0.045, z + eh - 0.008),
                            (y1 - 0.006, z + eh), (y1, z), (y1 - 0.006, z - eh), (y1 - 0.045, z - eh + 0.012),
                            (0.03, z - hh)], a["thick"], iron, parent=g, plane="YZ")
-    slab(f"{n}_axe_edge", [(y1 - 0.022, z + eh - 0.002), (y1 - 0.006, z + eh + 0.001), (y1 + 0.001, z),
-                           (y1 - 0.006, z - eh - 0.001), (y1 - 0.022, z - eh + 0.003)], a["thick"] * 1.08, worn, parent=g,
+    slab(f"{n}_axe_edge", [(y1 - 0.016, z + eh - 0.002), (y1 - 0.006, z + eh + 0.001), (y1 + 0.001, z),
+                           (y1 - 0.006, z - eh - 0.001), (y1 - 0.016, z - eh + 0.002)], a["thick"] * 1.08, worn, parent=g,
          plane="YZ")
     # the pick: an eye block, a long point forward and a shorter one behind, both drooping a little
     p, g = PICK, groups["pick"]
