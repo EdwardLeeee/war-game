@@ -1,7 +1,7 @@
 """R19: a unit's every action moving, a GIF: at the phone's size on the pack's grass on the left, three times that
 on the grass's colour on the right (a flat ground keeps the file small; walking, ticks stay on it), each action at the frames a second the client plays it at (client/src/art/spec.ts: fpsOf, walkFps at a
-cell a second). Walking it crosses the ground to the right as the game moves it, so a sliding foot shows; an attack
-holds its first frame between swings as the client does; a fall holds its last frame.
+the unit's speed). Walking it crosses the ground to the right as the game moves it, so a sliding foot shows; an attack
+holds its last frame till the next swing as the client does (attackFrame); a fall holds its last frame.
 
 python3 design/r19/common/gif_r19.py ART_X3 OUT unit [unit ...]
 """
@@ -82,8 +82,7 @@ def gif(art, unit, out):
                 if anim in ("death", "fall", "dead", "shatter"):
                     times[-1] += hold                        # lies there
                 else:
-                    frames.append(shot(anim, B.MAIN, 0, l, name + "（兩次之間停在第 1 格）"))
-                    times.append(hold)
+                    times[-1] += hold                        # attackFrame: the last frame held till the next swing
     path = out / f"{label}-動作-phone.gif"
     pal = [f.quantize(colors=255, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE) for f in frames]
     pal[0].save(path, save_all=True, append_images=pal[1:], duration=times, loop=0, disposal=1)
