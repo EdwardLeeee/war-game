@@ -137,6 +137,9 @@ export interface PanelHost {
   /** 編隊自動補兵 (D-026): its switch, and flipping it. */
   groupRefill(i: number): boolean;
   toggleRefill(i: number): void;
+  /** 自動擴編 (D-141). */
+  groupGrow(i: number): boolean;
+  toggleGrow(i: number): void;
   /** 軍團畫面 (D-054): the group shown in place of the selection info, or null. */
   groupView(): number | null;
   /** 出城歸隊 (`all`: 全部帶走): group i's 留守 in towns and at outposts come back to it. */
@@ -558,6 +561,8 @@ export class SelectionInfo {
     const fromBefore = button(actions, "", this.formal ? " " : "", () => this.host.saveBeforeIntoGroup(i), this.formal ? "chip pri" : "chip secondary");
     const clear = button(actions, "清空", "", () => this.host.clearGroup(i), "chip secondary");
     const refill = button(actions, "", this.formal ? " " : "", () => this.host.toggleRefill(i), "chip refill-chip secondary");
+    // 自動擴編 (D-141): beside 自動補兵, off by default.
+    const grow = button(actions, "", this.formal ? " " : "", () => this.host.toggleGrow(i), "chip grow-chip secondary");
     const set = (e: HTMLElement, text: string) => {
       if (e.textContent !== text) e.textContent = text;
     };
@@ -593,6 +598,7 @@ export class SelectionInfo {
       const n = this.host.beforeGroupCount();
       fromBefore.hidden = n === 0;
       const on = this.host.groupRefill(i) ? "開" : "關";
+      const growOn = this.host.groupGrow(i) ? "開" : "關";
       if (this.formal) {
         set(fromBefore.querySelector(".label") as HTMLElement, "改成剛才選的");
         set(fromBefore.querySelector(".sub") as HTMLElement, `${n} 名`);
@@ -600,12 +606,17 @@ export class SelectionInfo {
         set(refill.querySelector(".label") as HTMLElement, "自動補兵");
         set(refill.querySelector(".sub") as HTMLElement, `目前：${on}`);
         refill.setAttribute("aria-label", `自動補兵：${on}`);
+        set(grow.querySelector(".label") as HTMLElement, "自動擴編");
+        set(grow.querySelector(".sub") as HTMLElement, `目前：${growOn}`);
+        grow.setAttribute("aria-label", `自動擴編：${growOn}`);
       } else {
         set(fromBefore.querySelector(".label") as HTMLElement, `改成剛才選的 ${n} 名`);
         set(refill.querySelector(".label") as HTMLElement, `自動補兵：${on}`);
+        set(grow.querySelector(".label") as HTMLElement, `自動擴編：${growOn}`);
       }
       if (this.formal) {
         refill.classList.toggle("active", this.host.groupRefill(i));
+        grow.classList.toggle("active", this.host.groupGrow(i));
         clear.disabled = has === 0 && want === 0;
       }
     });

@@ -283,6 +283,8 @@ export class Hud {
       cancelToHold: () => game.cancelToHold(),
       groupRefill: (i: number) => game.army.groups[i].refill,
       toggleRefill: (i: number) => this.toggleRefill(i),
+      groupGrow: (i: number) => game.army.groups[i].grow,
+      toggleGrow: (i: number) => this.toggleGrow(i),
       selectOnly: (units: number[]) => game.apply([{ kind: "select", units }]),
       // 正式介面 (R6-30): × is what 重設 was, back to nothing selected (選位置, the preview, the build menu too).
       clearSelection: () => (this.formal ? game.reset() : game.apply([{ kind: "clear" }])),
@@ -689,6 +691,19 @@ export class Hud {
     const g = this.game.army.groups[i];
     g.refill = !g.refill;
     this.game.toast(g.refill ? `編隊 ${i + 1} 自動補兵：開。缺人時，沒編隊和新訓練的兵會自己走去會合` : `編隊 ${i + 1} 自動補兵：關`);
+  }
+
+  /**
+   * 自動擴編 (D-141, off by default): on, the group full and the resources much more than the reserve, the buildings go on
+   * training in its mix and it wants more; on turns 自動補兵 on too (it trains what the group wants). Off keeps the
+   * numbers it grew to.
+   */
+  private toggleGrow(i: number): void {
+    const g = this.game.army.groups[i];
+    g.grow = !g.grow;
+    g.growBase = null;
+    if (g.grow) g.refill = true;
+    this.game.toast(g.grow ? `編隊 ${i + 1} 自動擴編：開，資源多時照比例多練` : `編隊 ${i + 1} 自動擴編：關，加的人數留著`);
   }
 
   /** 全軍: every own soldier on the map, except the ones stationed in a town (留守, D-026). */
