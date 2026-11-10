@@ -25,7 +25,7 @@
 //    fight as often as every 10 ticks, when an army moves less than a cell between sends).
 // Tags for what the AI does on purpose (war-game-ai 2026-11-10): staging out of an enemy main city's reach before a siege
 // (D-089), staging out of a fort's (D-081 fortStage), waiting at home after a broken-off march (D-081), keeping home
-// against enemies near it.
+// against enemies near it; and (4) gathering at its own home or town before it sets out.
 
 import { Action, BuildingType, CELL_SHIFT, type Command, Order, PLAYER_COUNT, UnitType } from "./protocol.ts";
 import type { Game } from "./core/game.ts";
@@ -78,7 +78,7 @@ export interface IdleSpell {
   most: number;
   x: number;
   y: number;
-  /** "" none, or why it may be on purpose: "staging", "fort", "retreat", "defend". */
+  /** "" none, or why it may be on purpose: "staging", "fort", "retreat", "defend", "home". */
   tag: string;
   /** While open (2b): looks, and looks with enemy soldiers near its main city. */
   looks?: number;
@@ -274,7 +274,11 @@ export class IdleWatch {
 
   private closeRun(p: number, x: number, y: number, r: SendRun): void {
     if (r.run < IDLE.sends || r.last - r.start < IDLE.stuckTicks) return;
-    const tag = this.stagingAt(this.game.w, p, r.cx, r.cy) && r.last - r.start <= IDLE.stagingTicks ? "staging" : "";
+    const w = this.game.w;
+    const own = this.ownCity(w, p);
+    // Gathering at home (or by its own town) before it sets out: on purpose (CI #468: hard's fortress groups at (74,20)).
+    const atHome = (own !== null && toRect(r.cx, r.cy, own[0], own[1], own[2]) <= IDLE.awayCells) || this.nearOwnTown(w, p, r.cx, r.cy);
+    const tag = atHome ? "home" : this.stagingAt(w, p, r.cx, r.cy) && r.last - r.start <= IDLE.stagingTicks ? "staging" : "";
     this.sides[p].stuck.push({ x, y, start: r.start, end: r.last, sends: r.run, units: r.units, tag });
   }
 

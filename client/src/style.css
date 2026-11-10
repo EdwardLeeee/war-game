@@ -1013,6 +1013,23 @@ button.order-retreat {
   margin-right: -46px;
 }
 
+/* 改成剛才選的、清空、自動補兵 and 自動擴編 (D-141) on one line: short of room a button's words take two lines in it, rather
+   than a row more that lifts the panel over 全軍撤退 (814 × 380). The formal interface pins its own row (r6.css). */
+:root:not([data-ui="r6"]) .group-actions {
+  flex-wrap: nowrap;
+}
+
+:root:not([data-ui="r6"]) .group-actions > button {
+  flex: 0 1 auto;
+  min-width: 44px;
+  padding-right: 7px;
+  padding-left: 7px;
+  white-space: normal;
+  /* Words whole: 「自動補兵：」「開」, 「改成剛才選的」「12 名」, not 「自動補」「兵：開」. */
+  word-break: keep-all;
+  line-height: 1.2;
+}
+
 /* 駐守中 (the user 2026-10-26): the group's soldiers in towns, 出城歸隊 and 全部帶走 beside them. */
 .group-station {
   align-items: center;

@@ -136,3 +136,20 @@ test("never at the enemy's main city: 3 once a game lasts IDLE.neverTicks, not b
   assert.deepEqual(idleFindings(rec(IDLE.neverTicks - 1, -1), 1), []);
   assert.deepEqual(idleFindings(rec(40 * MIN, 30000), 1), []);
 });
+
+test("sent again and again by its own main city (gathering before it sets out): 4 by design", () => {
+  const g = emptyGame();
+  const home = g.w.map.spawns[1];
+  const ids: number[] = [];
+  for (let k = 0; k < 25; k++) ids.push(put(g, 1, UnitType.Spearman, home.cellX - 6 + (k % 6), home.cellY + 8 + Math.trunc(k / 6)));
+  g.fog.update(g.w);
+  const watch = new IdleWatch(g);
+  const to = { x: home.cellX - 4, y: home.cellY + 10 };
+  play(g, watch, 4 * MIN, (t) => {
+    if (t % 100 === 0) cmd(g, 1, { c: "move", u: ids, x: to.x, y: to.y });
+  });
+  const rec = watch.result();
+  assert.equal(rec.sides[1].stuck.length, 1);
+  assert.equal(rec.sides[1].stuck[0].tag, "home");
+  assert.deepEqual(idleFindings(rec, 1).filter((f) => f.signal === "4").map((f) => f.kind), ["plan"]);
+});
