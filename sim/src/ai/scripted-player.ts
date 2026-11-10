@@ -394,6 +394,15 @@ const MARKET_SPARE_GOLD = 500;
 const MARKET_DEAR = 150;
 /** Random maps (D-074): the scout's next stop once within this many cells of one, or after SCOUT_STUCK ticks without getting nearer. */
 const SCOUT_NEAR = 6;
+/**
+ * Random maps: a guess at where the enemy lives is wrong once GUESS_ARMY or more of its soldiers have stood within
+ * GUESS_NEAR cells of it GUESS_TICKS with no main city seen; the building it was guessed from is no guess again
+ * (within GUESS_SAME cells: the same building).
+ */
+const GUESS_ARMY = 10;
+const GUESS_NEAR = 8;
+const GUESS_TICKS = 2 * 1200;
+const GUESS_SAME = 2;
 const SCOUT_STUCK = 600;
 
 interface Unit {
@@ -551,6 +560,12 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
   // On a random map the enemy's main city and the towns are known once seen (D-074).
   let enemyHome = know.map.spawns.find((s) => s.player !== player) ?? { cellX: -1, cellY: -1 };
   let found = random ? -1 : 0;
+  // Random maps: where it guessed the enemy lived from another of its buildings, and the guesses its soldiers went to
+  // and found no main city at (D-139: CI #468, push-corners-govern-random seed 3, 318 soldiers parked 60 minutes at a
+  // guess by the big city, the AI's main city never touched).
+  let guessed = false;
+  let guessNearSince = -1;
+  const wrongGuesses: { x: number; y: number }[] = [];
   const known: { id: number; size: TownSize; cellX: number; cellY: number }[] = [...know.map.towns];
   const townOf = (id: number) => known.find((t) => t.id === id)!;
   const rules = know.rules;
@@ -783,11 +798,17 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
           enemyCityHp = view.buildings[r + BuildingField.hp];
           if (random) enemyHome = { cellX: view.buildings[r + BuildingField.cellX] + 2, cellY: view.buildings[r + BuildingField.cellY] + 2 };
           if (found < 0) found = tick;
+          guessed = false;
         } else if (owner === 1 - player && found < 0 && type !== BuildingType.ArrowTower) {
           // Random maps: any of its buildings (not a tower, which may stand at a town) shows where the
-          // enemy lives; its main city's exact place comes once the army sees it.
-          enemyHome = { cellX: view.buildings[r + BuildingField.cellX] + 1, cellY: view.buildings[r + BuildingField.cellY] + 1 };
-          found = tick;
+          // enemy lives; its main city's exact place comes once the army sees it. Not one by a guess that was wrong.
+          const x = view.buildings[r + BuildingField.cellX] + 1;
+          const y = view.buildings[r + BuildingField.cellY] + 1;
+          if (!wrongGuesses.some((g) => dist2(g.x, g.y, x, y) <= GUESS_SAME * GUESS_SAME)) {
+            enemyHome = { cellX: x, cellY: y };
+            found = tick;
+            guessed = true;
+          }
         }
         if (owner !== player) continue;
         const b: Building = {
@@ -1508,6 +1529,19 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         const s = soldiers.find((u) => u.id === sentry);
         if (s !== undefined && dist2(s.x, s.y, sentryAt.x, sentryAt.y) > 4 && tick % 200 === 0) out.push({ c: "move", u: [s.id], x: sentryAt.x, y: sentryAt.y });
       }
+      // Random maps: an army that has stood by a guess a while with no main city in sight: the guess was wrong; scouting
+      // again, that building left out.
+      if (random && guessed && enemyCity < 0) {
+        const by = soldiers.filter((u) => dist2(u.x, u.y, enemyHome.cellX, enemyHome.cellY) <= GUESS_NEAR * GUESS_NEAR).length;
+        if (by < GUESS_ARMY) guessNearSince = -1;
+        else if (guessNearSince < 0) guessNearSince = tick;
+        else if (tick - guessNearSince >= GUESS_TICKS) {
+          wrongGuesses.push({ x: enemyHome.cellX, y: enemyHome.cellY });
+          guessed = false;
+          guessNearSince = -1;
+          found = -1;
+        }
+      }
       // Random maps: until the enemy's main city is seen, one spearman scouts the corners (D-074).
       if (found < 0) {
         if (!soldiers.some((u) => u.id === scout)) {
@@ -1820,6 +1854,14 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       }
 
       // --- the march on the enemy's main city (the AI's way: together, defenders first) -------------------
+      if (mode === "base" && found < 0) {
+        // The guess it marched on was wrong (random maps): home, until the scout finds the enemy.
+        out.push({ c: "retreat", u: armyIds, x: post.x, y: post.y });
+        lastMove = tick;
+        mode = "home";
+        target = { x: post.x, y: post.y };
+        return out;
+      }
       if (mode === "base") {
         // Those that set out and still march: not those since posted at the fortress or hiding in its towers (D-119: they do not die
         // in there, so they would count as standing for ever, and it would never break off while new soldiers trickle in one by one).
