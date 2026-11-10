@@ -1748,11 +1748,10 @@ export class Game implements GestureHost {
     const need = this.armyNeedSeen;
     if (need.reason === "none") return "還沒設軍團，不會自動訓練";
     if (need.reason === "off") return "軍團都關了自動補兵，不會自動訓練";
-    // 自動擴編 (D-141): why it trains, or why not.
-    const grewNow = this.autoArmyTick - this.grewAt <= 600;
+    // 自動擴編 (D-141): why it trains, or why not (money: a building free and too little; none: still training the last).
     if (need.reason === "full" && this.growOn) {
       if (this.growBlock === "population") return `軍團都滿，不擴編：${this.populationAtCeiling ? POPULATION_CEILING_TEXT : "人口滿了"}`;
-      if (this.growBlock === "money" && !grewNow) return `軍團都滿；資源沒多到預留以上各 ${GROW_MARGIN}，不擴編`;
+      if (this.growBlock === "money") return `軍團都滿；資源沒多到預留以上各 ${GROW_MARGIN}，不擴編`;
       return "資源多，自動擴編中";
     }
     if (need.reason === "full") return "軍團都滿，不訓練";
