@@ -28,7 +28,7 @@ test.afterEach(() => {
 
 const sent = (page: Page) => page.evaluate(() => (window.__proto?.game?.sent() ?? []) as Record<string, unknown>[]);
 const lastOrder = async (page: Page) => (await sent(page)).filter((c) => c.auto !== true).at(-1);
-const retreat = (page: Page, n: number) => page.getByRole("button", { name: `編隊 ${n} 撤回主城` });
+const retreat = (page: Page, n: number) => page.getByRole("button", { name: `編隊 ${n} 撤退` });
 
 async function ownIds(page: Page, type: number): Promise<number[]> {
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
@@ -68,7 +68,7 @@ async function clear(page: Page, what: string): Promise<void> {
   }
 }
 
-test("「退」：只有進攻中的軍團有，寫編號；只有 2 進攻、1 和 2 都進攻時都在畫面裡、不擋別的按鈕；按退1，軍團 1 撤回主城、選取不變（D-081）", async ({ page }, info) => {
+test("「退」：只有進攻中的軍團有，寫編號；只有 2 進攻、1 和 2 都進攻時都在畫面裡、不擋別的按鈕；按退1，軍團 1 退回我方最近的城（D-138 A：沒駐守過）、選取不變（D-081）", async ({ page }, info) => {
   const { g1, g2 } = await twoGroups(page);
   await expect(retreat(page, 1)).toBeHidden();
   await expect(retreat(page, 2)).toBeHidden();
@@ -92,10 +92,13 @@ test("「退」：只有進攻中的軍團有，寫編號；只有 2 進攻、1 
   expect(r2.x + r2.width).toBeLessThanOrEqual(r1.x);
   await clear(page, "1 and 2");
   await shot(page, info, "d081-retreat-1-and-2");
-  // A tap: group 1 back home (the cell in front of the main city), nothing selected still.
+  // A tap: group 1 back to our nearest town (D-138 A: it never left soldiers in one; the fake world's small town at 16, 62),
+  // nothing selected still.
   await retreat(page, 1).tap();
-  await expect.poll(() => lastOrder(page)).toMatchObject({ c: "retreat", u: g1, x: 12, y: 79 });
-  await expectSaid(page, "編隊 1 撤回主城");
+  await expect.poll(() => lastOrder(page)).toMatchObject({ c: "retreat", u: g1 });
+  const to = (await lastOrder(page)) as { x: number; y: number };
+  expect(Math.hypot(to.x - 16, to.y - 62), "a cell at our town").toBeLessThan(6);
+  await expectSaid(page, /^編隊 1 退回小鎮・/);
   expect((await page.evaluate(() => window.__proto?.game?.selection()))?.units).toEqual([]);
   await expect(retreat(page, 1)).toBeHidden(TICKS);
   await expect(retreat(page, 2)).toBeVisible();

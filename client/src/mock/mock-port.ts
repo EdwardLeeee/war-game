@@ -687,6 +687,14 @@ export class MockPort implements SimPort {
     return b.id;
   }
 
+  /** Tests (D-138 A): a town's state and owner from now (a town lost, or taken). */
+  setTown(id: number, state: TownState, owner: number): void {
+    const t = this.towns.find((v) => v.id === id);
+    if (t === undefined) return;
+    t.state = state;
+    t.owner = owner;
+  }
+
   /** 牆上換邊 (R14-07): the snapshot's wallShifts rows from now on (WALL_SHIFT_STRIDE each; none: the field left out). */
   private wallShiftRows: Int32Array | undefined;
   setWallShifts(rows: number[]): void {

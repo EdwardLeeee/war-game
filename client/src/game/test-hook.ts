@@ -112,6 +112,8 @@ export interface GameHook {
   damage(id: number, hp: number): void;
   /** Fake world only: a finished building of ours of this type at (cx, cy), 自動訓練 on (D-138 B: a range); its id. */
   addBuilding(type: number, cx: number, cy: number): number;
+  /** Fake world only: a town's state (TownState) and owner from now (D-138 A: a town lost on the way). */
+  setTown(id: number, state: number, owner: number): void;
   /** Fake world only: the game over, `winner` winning for `reason` (GameOverReason; the result screen); `timeline`: 局後統計's (a test's fixture). */
   endGame(winner: number, reason: number, timeline?: GameTimeline): void;
   /** Fake world only: the snapshot's 牆上換邊 rows from now on (R14-07; WALL_SHIFT_STRIDE numbers each, [] none). */
@@ -286,30 +288,7 @@ export function gameHook(game: Game): GameHook {
       return out;
     },
     nodes: () => [...(game.view?.nodes.values() ?? [])].map((r) => ({ id: r[N.id], kind: r[N.kind], cx: r[N.cellX], cy: r[N.cellY], amount: r[N.amount] })),
-    openCellNear: (cx, cy, explored = true) => {
-      const view = game.view;
-      if (view === null || view.fog === null) return null;
-      const size = view.map.size;
-      const taken = new Uint8Array(size * size);
-      const b = view.curr?.snap.buildings ?? new Int32Array(0);
-      for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
-        const s = view.rules.buildings[b[o + B.type]]?.size ?? 1;
-        for (let y = b[o + B.cellY] - 1; y <= b[o + B.cellY] + s; y++) {
-          for (let x = b[o + B.cellX] - 1; x <= b[o + B.cellX] + s; x++) if (x >= 0 && y >= 0 && x < size && y < size) taken[y * size + x] = 1;
-        }
-      }
-      for (let r = 0; r < size; r++) {
-        for (let y = cy - r; y <= cy + r; y++) {
-          for (let x = cx - r; x <= cx + r; x++) {
-            if (Math.max(Math.abs(x - cx), Math.abs(y - cy)) !== r || x < 1 || y < 1 || x >= size - 1 || y >= size - 1) continue;
-            const i = y * size + x;
-            if (view.ground[i] !== Terrain.Open || view.map.terrain[i] !== Terrain.Open || view.nodeAt[i] >= 0 || taken[i] === 1 || (explored && view.fog[i] === 0)) continue;
-            return { x, y };
-          }
-        }
-      }
-      return null;
-    },
+    openCellNear: (cx, cy, explored = true) => game.view?.openCellNear(cx, cy, explored) ?? null,
     buildSpotNear: (type, cx, cy) => {
       const view = game.view;
       const info = view?.rules.buildings[type];
@@ -382,6 +361,9 @@ export function gameHook(game: Game): GameHook {
       if (game.portForTest instanceof MockPort) game.portForTest.damage(id, hp);
     },
     addBuilding: (type, cx, cy) => (game.portForTest instanceof MockPort ? game.portForTest.addBuilding(type as Parameters<MockPort["addBuilding"]>[0], cx, cy) : -1),
+    setTown: (id, state, owner) => {
+      if (game.portForTest instanceof MockPort) game.portForTest.setTown(id, state as Parameters<MockPort["setTown"]>[1], owner);
+    },
     endGame: (winner, reason, timeline) => {
       if (game.portForTest instanceof MockPort) game.portForTest.endGame(winner, reason, timeline);
     },
