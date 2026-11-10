@@ -419,7 +419,7 @@ def _debris(u, kind, mat_, n=5):
 # wrecked (FALL_KEYS). Built and dressed by design/r8/blender/east_r8.py (_pullers), given their bodies by
 # design/r7/blender/r7_prod.py. Not the history, and the boards said so: 《武經總要》前集卷十二 has no rope-pulled
 # engine of fewer than forty (單梢砲「四十人拽，一人定放」); the game's engine is a soldier's size.
-# R21_E=0: art-v7.9's engine, for the before side of the boards.
+# R21_E=0: the engine without them, its four ropes hanging as art-v7.9's (its wheels still turn art-v7.10's 135 degrees).
 R21_E = os.environ.get("R21_E", "B")
 PULLERS_R21 = [(-0.38, 2.05), (0.38, 2.05)]       # where each stands, in the engine's space (x right, y forward)
 PULL_ROPES_R21 = (1, 2)                           # the ropes they hold, of roster5's four
