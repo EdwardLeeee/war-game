@@ -166,11 +166,40 @@ class Board:
             y += h + 20
         return img
 
+    def checked(self, W):
+        """What was looked at and is fine, a line each (the weapon's size beside a real one's)."""
+        f, fh = font(27, False), font(32)
+        lines = [ln for text in self.spec.get("checked", []) for ln in wrap(TMP, "・" + text, f, W - 2 * M - 30)]
+        if not lines:
+            return Image.new("RGB", (W, 1), BG)
+        img = Image.new("RGB", (W, 60 + len(lines) * 38 + 10), BG)
+        d = ImageDraw.Draw(img)
+        d.text((M, 8), "看過、沒問題的", font=fh, fill=WHITE)
+        y = 56
+        for ln in lines:
+            d.text((M + (0 if ln.startswith("・") else 27), y), ln, font=f, fill=(200, 200, 200))
+            y += 38
+        return img
+
     # ------------------------------------------------------------ an action
+
+    def shield(self, anim, k):
+        """The shield's frame the client draws over a mage's frame (unit-art-draw.ts drawShield), or None."""
+        if not self.spec.get("shield"):
+            return None
+        if anim in ("idle", "walk", "attack", "cast"):
+            return "on_00"
+        if anim == "hit":
+            return f"hit_{min(k, 5):02d}"
+        if anim == "shatter" and k < 2:
+            return f"break_{k:02d}"
+        return None
 
     def on_phone(self, anim, yard=False, frames=None):
         n = frames or self.u.anims[anim]["frames"]
         l, t, r, b = pad(self.u.box(anim, [MAIN]), 4)
+        if self.shield(anim, 0):                 # room for the shield's ball (about 100 x 115 px round the body)
+            l, t, r = max(l, 58), max(t, 122), max(r, 58)
         sl, stp, sr, sb = pad(self.spear.box("idle", [MAIN], [0]), 4)
         T, B = max(t, stp), max(b, sb)
         cw = l + r
@@ -179,7 +208,7 @@ class Board:
             y = row * (T + B) + T
             st.put(self.spear.sprite("idle", MAIN, 0, team), sl, y)
             for k in range(n):
-                st.put(self.u.sprite(anim, MAIN, k, team), sl + sr + k * cw + l, y)
+                st.put(self.u.sprite(anim, MAIN, k, team, shield=self.shield(anim, k)), sl + sr + k * cw + l, y)
         return A.phone(st.render())
 
     def strip(self, cells, labels, gap=6):
@@ -205,7 +234,8 @@ class Board:
         notes = []
         for f in self.spec["findings"]:
             if anim in f["anims"]:
-                same = f"（同 {f['same']}）" if f.get("same") else ""
+                o = F.others(self.unit, f)
+                same = f"（同 {o[0]}{' 等 ' + str(len(o)) + ' 個' if len(o) > 1 else ''}）" if o else ""
                 notes.append((f"{self.spec['tag']}-{f['id']}{same}　{f['problem']}　建議：{f['fix']}　估工：{f['cost']}", SEV_COL[f["sev"]]))
         if not notes:
             notes.append(("沒挑到問題。", GREY))
@@ -214,7 +244,7 @@ class Board:
         rows = []
         # the phone's size beside the enlarged frames
         box = pad(self.u.box(anim, [MAIN]), 6)
-        phone = self.strip([self.on_phone(anim)], ["手機上的大小：上藍下紅，最左邊是槍兵"])
+        phone = self.strip([self.on_phone(anim)], ["手機上的大小：上藍下紅，最左邊是槍兵" + ("；罩著護盾" if self.shield(anim, 0) else "")])
         if anim == "idle":                    # the player colours on packed earth too
             earth = self.strip([self.on_phone(anim, yard=True, frames=3)], ["在泥地上"])
             both = Image.new("RGB", (max(phone.width, earth.width), phone.height + 8 + earth.height), BG)
@@ -287,7 +317,7 @@ class Board:
             l, t, r, b = pad(self.u.box(anim, [MAIN]), 6)
             n = min(10, info["frames"])
             w = max(w, self.on_phone(anim).width + 30 + n * ((l + r) * self.n + 6))
-        return w + 2 * M
+        return int(w) + 2 * M + 2
 
     def build(self, out):
         fs = self.spec["findings"]
@@ -296,11 +326,11 @@ class Board:
         clean = [A.ANIM_NAME[a] for a in self.u.anims if not any(a in f["anims"] for f in fs)]
         cards = self.sheet(out, f"R19-{no:02d}-{name}-phone", 2 * M + 4 * 600 + 3 * 20, [
             (count + "，最怪的排最前面。" + (f"沒挑到問題的動作：{'、'.join(clean)}。" if clean else ""), font(32), PALE),
-            (f"圖是已發布的 {TAG}（client 換上去之後手機上的樣子；現在 main 還釘在 art-v7.6，差在 R16 的鋤頭、種田和西陸拿法）放大 {self.n} 倍，沒有改任何東西；黃圈和數字是問題的位置。格數從 1 算起。建議的改法和估的工在總表（R19-13），每個動作每一格的排列在「R19-{no:02d}-{name}-依據-phone」。", font(26, False), GREY),
-        ], lambda W: [self.top(W)])
+            (f"圖是已發布的 {TAG}（main 現在釘的版本，手機上現在的樣子）放大 {self.n:g} 倍，沒有改任何東西；黃圈和數字是問題的位置。格數從 1 算起。建議的改法和估的工在總表（R19-13），每個動作每一格的排列在「R19-{no:02d}-{name}-依據-phone」。", font(26, False), GREY),
+        ], lambda W: [self.top(W), self.checked(W)])
         grounds = self.sheet(out, f"R19-{no:02d}-{name}-依據-phone", max(self.width(), 2600), [
             (count + "。這張是依據：每個動作每一格都排出來，問題的位置圈起來、寫在那個動作的標題下面。", font(32), PALE),
-            (f"圖是已發布的 {TAG}，格數從 1 算起。放大圖是原圖放大 {self.n} 倍；「手機上的大小」是手機截圖的像素（3 倍圖畫進像素比 2 的畫布、再放大到螢幕）。每個動作第二排：打中那一格的另外四個方向、和待機怎麼接、被圈到的其他格。", font(26, False), GREY),
+            (f"圖是已發布的 {TAG}，格數從 1 算起。放大圖是原圖放大 {self.n:g} 倍；「手機上的大小」是手機截圖的像素（3 倍圖畫進像素比 2 的畫布、再放大到螢幕）。每個動作第二排：打中那一格的另外四個方向、和待機怎麼接、被圈到的其他格。", font(26, False), GREY),
         ], lambda W: [self.action(a, W) for a in self.u.anims])
         return cards, grounds
 

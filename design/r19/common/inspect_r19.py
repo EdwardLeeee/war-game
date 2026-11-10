@@ -3,7 +3,10 @@ the art's size on the grass's colour, ticks every 20 px of a cell along its top 
 in a cell's px from its top-left).
 
 python3 design/r19/common/inspect_r19.py ART_X3 OUT unit [anim ...]
+  R19_N=1.5 R19_FACES=7,0,6,2 R19_STACK=1: the size, the facings, and the actions named stacked into one picture
+  (<unit>_<first>+.png): a quicker first look.
 """
+import os
 import sys
 from pathlib import Path
 
@@ -13,7 +16,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import art_r19 as A   # noqa: E402
 
 REG = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
-N = 2
+N = float(os.environ.get("R19_N", 2))
+FACES = [int(v) for v in os.environ["R19_FACES"].split(",")] if os.environ.get("R19_FACES") else A.FACES
 
 
 def sheet(art, unit, anim, team="blue"):
@@ -24,20 +28,20 @@ def sheet(art, unit, anim, team="blue"):
     n = info["frames"]
     pad_l, pad_t = 150, 60
     bg = A.grass_colour(art)
-    img = Image.new("RGB", (pad_l + n * cw * N, pad_t + len(A.FACES) * ch * N), (24, 26, 30))
+    img = Image.new("RGB", (round(pad_l + n * cw * N), round(pad_t + len(FACES) * ch * N)), (24, 26, 30))
     d = ImageDraw.Draw(img)
     f = ImageFont.truetype(REG, 26, index=3)
     d.text((8, 8), f"{unit} {anim} {A.ANIM_NAME.get(anim, '')}  {n} 格 fps {info.get('fps')} hit {info.get('hit', info.get('impact', '-'))}  cell {cw}x{ch} anchor ({l + 4},{t + 4})", font=f, fill=(255, 255, 255))
-    for row, face in enumerate(A.FACES):
+    for row, face in enumerate(FACES):
         st = A.Stage(Image.new("RGB", (n * cw, ch), bg))
         for k in range(n):
             st.put(u.sprite(anim, face, k, team), k * cw + l + 4, t + 4)
         strip = A.enlarge(st.render(), N)
-        y = pad_t + row * ch * N
+        y = round(pad_t + row * ch * N)
         img.paste(strip, (pad_l, y))
         d.text((8, y + 8), f"f{face} {A.FACE_NAME[face]}", font=f, fill=(250, 220, 140))
         for k in range(n):
-            x = pad_l + k * cw * N
+            x = round(pad_l + k * cw * N)
             d.line([(x, y), (x, y + ch * N)], fill=(24, 26, 30), width=2)
             d.text((x + 6, y + 4), str(k), font=f, fill=(255, 255, 255))
             for q in range(0, cw, 20):
@@ -52,7 +56,19 @@ def main():
     art, out, unit = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
     out.mkdir(parents=True, exist_ok=True)
     u = A.Unit(art, unit)
-    for anim in (sys.argv[4:] or list(u.anims)):
+    anims = sys.argv[4:] or list(u.anims)
+    if os.environ.get("R19_STACK"):
+        ims = [sheet(art, unit, a) for a in anims]
+        img = Image.new("RGB", (max(i.width for i in ims), sum(i.height for i in ims)), (24, 26, 30))
+        y = 0
+        for i in ims:
+            img.paste(i, (0, y))
+            y += i.height
+        p = out / f"{unit}_{anims[0]}+.png"
+        img.save(p)
+        print(p.name, img.size)
+        return
+    for anim in anims:
         p = out / f"{unit}_{anim}.png"
         im = sheet(art, unit, anim)
         im.save(p)

@@ -49,16 +49,27 @@ def main():
                         if Y % 20 == 0:
                             g.text((2, y + 1), str(Y), font=gf, fill=(255, 255, 0))
             cells.append((f"{unit} {anim} f{face} {k}", im))
-    W = sum(c.width for _, c in cells) + 4 * (len(cells) + 1)
-    H = max(c.height for _, c in cells) + 40
+    rows, cur, x = [], [], 4                              # rows no wider than 1990 px: read without shrinking
+    for name, c in cells:
+        if cur and x + c.width + 4 > 1990:
+            rows.append(cur)
+            cur, x = [], 4
+        cur.append((name, c))
+        x += c.width + 4
+    rows.append(cur)
+    W = max(sum(c.width + 4 for _, c in row) + 4 for row in rows)
+    H = sum(max(c.height for _, c in row) + 40 for row in rows)
     img = Image.new("RGB", (W, H), (24, 26, 30))
     d = ImageDraw.Draw(img)
     f = ImageFont.truetype(REG, 22, index=3)
-    x = 4
-    for name, c in cells:
-        d.text((x, 6), name, font=f, fill=(255, 255, 255))
-        img.paste(c, (x, 36))
-        x += c.width + 4
+    y = 0
+    for row in rows:
+        x = 4
+        for name, c in row:
+            d.text((x, y + 6), name, font=f, fill=(255, 255, 255))
+            img.paste(c, (x, y + 36))
+            x += c.width + 4
+        y += max(c.height for _, c in row) + 40
     img.save(out)
     print(out.name, img.size)
 
