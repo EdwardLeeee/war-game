@@ -106,6 +106,11 @@ def _shards(u, n=18):
     """Shield fragments (effect layer only), hidden until the shield breaks. Solid, not edge-lit:
     a flat shard seen face-on is almost transparent with the shield's fresnel material."""
     m = fx_mat("fx_shard", CRYSTAL, strength=3.0, alpha=1.0, fresnel=False)
+    # R23 (D-142, R19's item 11: the shield a pale blue-green ball, its shards opaque white chips, like paper): options
+    # for the user. Strength 3 burns the shield's colour out to white. R23_SHARD=A: the shield's colour, see-through
+    # (not edge-lit: see above); B: the shield's colour, opaque. Unset: as they are.
+    if os.environ.get("R23_SHARD") in ("A", "B"):
+        m = fx_mat("fx_shard_r23", CRYSTAL, strength=1.2, alpha=0.6 if os.environ["R23_SHARD"] == "A" else 1.0, fresnel=False)
     out = []
     ga = math.pi * (3 - math.sqrt(5))
     for k in range(n):

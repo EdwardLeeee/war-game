@@ -240,7 +240,20 @@ def dress_farmer(u):
     _skirt(r, f"{kind}_r8tunicskirt", M["undyed"], bottom=0.55, slit=0.75)
     h2.skinned_lathe(f"{kind}_r8belt", [(0.198, 0.99), (0.202, 1.04)], M["belt"], r, tb, scale=(1, 0.88, 1))
     _hood(r, f"{kind}_r8hood", M["team"])
+    # R23 (D-142, R19's item 13: the player's colour only the cape on his shoulders, a collar from the front; the
+    # East farmer wears a whole apron of it): options for the user. R23_FARMER_W=A: the hood up over his head (as the
+    # bowman wears his), no coif; B: an apron of the player's colour from the belt to the knees, front and sides (the
+    # East's wrap; R5's bib apron went in R8). Unset: as he is.
+    opt = os.environ.get("R23_FARMER_W", "")
+    if opt == "B":
+        import mage4
+        lg = units2._bones_legs(r)
+        mage4.folded_lathe(f"{kind}_r23apron", [(0.204, 1.0), (0.215, 0.9), (0.236, 0.72), (0.244, 0.56)], M["team"], r,
+                           tb[:1] + lg, folds=(7, 0.045), scale=(1, 0.88, 1), cut=lambda c: c.y < -0.06)
     r.pose()
+    if opt == "A":
+        _hood_head(r, M["team"], f"{kind}_r8hoodhead")
+        return u
     head = _hair_cap(r, M, M["braies"], f"{kind}_r8coif")                 # the coif: white linen, tied under the chin
     for s in (-1, 1):
         rod(f"{kind}_r8coiftie{s}", (0.13 * s, 0.06, 0.08), (0.03 * s, 0.12, -0.08), 0.008, M["braies"], parent=head,
