@@ -248,8 +248,9 @@ def dress_farmer(u):
     if opt == "B":
         import mage4
         lg = units2._bones_legs(r)
-        mage4.folded_lathe(f"{kind}_r23apron", [(0.204, 1.0), (0.215, 0.9), (0.236, 0.72), (0.244, 0.56)], M["team"], r,
-                           tb[:1] + lg, folds=(7, 0.045), scale=(1, 0.88, 1), cut=lambda c: c.y < -0.06)
+        # over the tunic's skirt (_skirt: 0.185 at 1.0 m, 0.232 at 0.86, 0.25 at 0.62, folds 3.5 cm deep): 3 cm out
+        mage4.folded_lathe(f"{kind}_r23apron", [(0.2, 1.03), (0.228, 0.98), (0.27, 0.86), (0.287, 0.62), (0.29, 0.5)],
+                           M["team"], r, tb[:1] + lg, folds=(9, 0.02), scale=(1, 0.92, 1), cut=lambda c: c.y < -0.06)
     r.pose()
     if opt == "A":
         _hood_head(r, M["team"], f"{kind}_r8hoodhead")

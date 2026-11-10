@@ -113,7 +113,7 @@ def bow(S, out):
 
 
 def one_item(S, out, label, title, note, opts, phone, bigs, n=2.0, extra=None):
-    blocks = [R.block(title, note, options(S, opts, phone, bigs, n))]
+    blocks = [R.block(title, "", options(S, opts, phone, bigs, n))]
     if extra is not None:
         blocks.append(extra)
     R.sheet(out, label, [(note, B.font(30), B.PALE), (SRC, B.font(26, False), B.GREY)], blocks)
@@ -133,16 +133,26 @@ def farmer(S, out):
 
 
 def circle(S, opts, n=6.0):
-    """The circle before the hand, cast frame 19 facing right-down, n times: each option's."""
+    """The circle before the hand, cast frame 19 facing right-down, n times: each option's, the same window (as wide
+    as the effects layer above the circle at the feet, down to that circle's top)."""
+    import numpy as np
+    shots, box = [], None
+    for name, _, f, t in opts:
+        prefix = S.root / f / f"{t}_cast_f7_19"
+        (im, ax, ay), _ = S16.farmer(str(prefix), "blue")
+        fx = Image.open(f"{prefix}_x3_fx.png").convert("RGBA")
+        a = np.asarray(fx)[..., 3] > 40
+        a[int(ay) - 28:] = False                 # (the circle at the feet reaches 28 px up from the anchor)
+        ys, xs = np.nonzero(a)
+        b = (xs.min() - 6, ys.min() - 6, xs.max() + 7, int(ay) - 14)
+        box = b if box is None else (min(box[0], b[0]), min(box[1], b[1]), max(box[2], b[2]), max(box[3], b[3]))
+        im.alpha_composite(fx)
+        shots.append((name, im))
     cells = []
-    scenes = [S.one(f, t, "cast", 7, 19) for _, _, f, t in opts]
-    l, tp, r, b = S.box(scenes)
-    for (name, _, f, t), sc in zip(opts, scenes):
-        st = A.Stage(Image.new("RGB", (l + r, tp + b), S.bg))
-        for spr, dx, dy in sc:
-            st.put(spr, l, tp)
-        im = st.render().crop((l + 5, tp - 108, l + 5 + 96, tp - 108 + 78))      # the circle: right of the chest
-        cells.append(R.titled(A.enlarge(im, n), name, B.YEL if name != "現況" else RED, 30, True))
+    for name, im in shots:
+        bg = Image.new("RGBA", im.size, (*S.bg, 255))
+        bg.alpha_composite(im)
+        cells.append(R.titled(A.enlarge(bg.convert("RGB").crop(box), n), name, B.YEL if name != "現況" else RED, 30, True))
     return R.join(cells, 24)
 
 
