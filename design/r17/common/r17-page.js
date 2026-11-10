@@ -271,4 +271,77 @@
       return [...document.querySelectorAll(".r17-mark")].map((e) => { const b = e.getBoundingClientRect(); return [b.x, b.y, b.width, b.height]; });
     },
   };
+
+  // ---------------------------------------------------------------- R17-02 (the user 2026-11-10: 「感覺圖片有點複雜，
+  // 感覺只需要放在在時間軸上標事件 想知道自己點進去就好」): one row of small marks on the time axis, a mark an event at its
+  // start, nothing about its result (that only in the card); 甲 one kind of mark, 乙 an attack's and a battle's. Marks
+  // close together just overlap. A tap anywhere on the axis: the nearest event's card, short (a title line, a result
+  // line), with 上一件／下一件. The ①–④ rings and their key under the chart as they are.
+  const MUTED = "rgba(226,206,160,0.85)";
+
+  function flat(ev) {
+    const out = [...ev.attacks.map((a) => ({ kind: "attack", ...a })), ...ev.battles.map((b) => ({ kind: "battle", ...b }))];
+    out.sort((x, y) => x.t0 - y.t0 || (x.kind === "attack" ? -1 : 1));
+    return out;
+  }
+
+  function mark2(g, kind, variant, x, y, on) {
+    const fill = on ? GOLD : MUTED;
+    if (variant === "甲" || kind === "battle") {
+      if (variant === "甲") s("path", { d: `M${x} ${y} L${x + 3.2} ${y + 3.2} L${x} ${y + 6.4} L${x - 3.2} ${y + 3.2} Z`, fill, stroke: on ? "#fff3c0" : "none", "stroke-width": 1 }, g);
+      else s("circle", { cx: x, cy: y + 3.2, r: 3.1, fill, stroke: on ? "#fff3c0" : "none", "stroke-width": 1 }, g);
+    } else {
+      s("path", { d: `M${x} ${y} L${x + 3.6} ${y + 6.4} L${x - 3.6} ${y + 6.4} Z`, fill, stroke: on ? "#fff3c0" : "none", "stroke-width": 1 }, g);
+    }
+  }
+
+  function card2(e, n, of, anchor) {
+    const box = document.querySelector(".stats-card");
+    const br = box.getBoundingClientRect();
+    const c = document.createElement("div");
+    c.className = "r17-card r17-mark";
+    c.style.cssText = `position:absolute;z-index:9;background:#2a1c11;border:1.5px solid ${GOLD};border-radius:9px;padding:6px 10px 6px;` +
+      "color:#f6efe0;font-size:14px;line-height:1.4;box-shadow:0 4px 14px rgba(0,0,0,.6);width:280px";
+    const dur = (a, b) => { const d = b - a; return d >= 60 ? `${Math.floor(d / 60)} 分 ${d % 60 ? `${d % 60} 秒` : ""}`.trim() : `${d} 秒`; };
+    let t1, t2;
+    if (e.kind === "battle") {
+      t1 = `<b>團戰 ${clock(e.t0)}</b>　${e.place}　<span style="opacity:.8">打了 ${dur(e.t0, e.t1)}</span>`;
+      t2 = `<b>${RESULT_TEXT[e.result]}</b>　我死 ${e.me_dead}、敵死 ${e.foe_dead}`;
+    } else {
+      t1 = `<b>進攻 ${clock(e.t0)}</b>　${e.place}　<span style="opacity:.8">敵 ${e.foe} 名</span>`;
+      t2 = `<b>${RESULT_TEXT[e.result]}</b>　敵死 ${e.foe_dead}、我死 ${e.me_dead}`;
+    }
+    c.innerHTML = `<div>${t1}</div><div>${t2}</div>` +
+      `<div style="display:flex;gap:8px;align-items:center;margin-top:4px"><button class="b secondary" style="min-height:44px;padding:0 12px">‹ 上一件</button>` +
+      `<span style="flex:1;text-align:center;font-weight:700">${n} / ${of}</span><button class="b secondary" style="min-height:44px;padding:0 12px">下一件 ›</button>` +
+      `<button class="b secondary" aria-label="關閉" style="min-width:44px;min-height:44px">✕</button></div>`;
+    box.appendChild(c);
+    const w = 280, h = c.getBoundingClientRect().height;
+    let x = anchor.x - w / 2 - br.left;
+    x = Math.max(8, Math.min(br.width - w - 8, x));
+    c.style.left = `${x}px`;
+    c.style.top = `${Math.max(8, anchor.y - br.top - h - 10)}px`;
+  }
+
+  function axisRow(variant, ev, ticks, sel) {
+    const g0 = geom();
+    const { svg, x1, x2, y0 } = g0;
+    const X = (t) => x1 + (t * 20 / ticks) * (x2 - x1);
+    const list = flat(ev);
+    const g = s("g", { class: "r17-layer" }, svg);
+    list.forEach((e, i) => { if (i !== sel) mark2(g, e.kind, variant, X(e.t0), y0 + 1, false); });
+    if (sel !== null) mark2(g, list[sel].kind, variant, X(list[sel].t0), y0 + 1, true);
+    const m = document.createElement("div");
+    m.className = "r17-mark";
+    m.style.cssText = `position:fixed;pointer-events:none;left:${g0.rect.left + x1 - 6}px;top:${g0.rect.top + y0 - 1}px;width:${x2 - x1 + 12}px;height:12px`;
+    document.body.appendChild(m);
+    if (sel !== null) card2(list[sel], sel + 1, list.length, { x: g0.rect.left + X(list[sel].t0), y: g0.rect.top + y0 });
+  }
+
+  window.R17.draw2 = (variant, ev, ticks, pick) => {
+    // pick: [kind, start in seconds] of the event tapped, or null
+    const sel = pick === null ? null : flat(ev).findIndex((e) => e.kind === pick[0] && e.t0 === pick[1]);
+    if (variant !== "現況") axisRow(variant, ev, ticks, sel);
+    return [...document.querySelectorAll(".r17-mark")].map((e) => { const b = e.getBoundingClientRect(); return [b.x, b.y, b.width, b.height]; });
+  };
 })();
