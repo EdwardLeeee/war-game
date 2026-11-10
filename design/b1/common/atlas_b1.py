@@ -310,20 +310,25 @@ def terrain_prep(name, col, sh, anchor, s_anchor):
     return col, anchor, True, True
 
 
-def node_table():
-    return {
+def node_table(crystal=True):
+    """nodes.json's "nodes". crystal=False (art-v7.8 on, D-135/D-137: the sim has no crystal veins): without the
+    CrystalVein entry and its frames (the renders stay; run.py's targets still name them)."""
+    t = {
         "Tree": dict(kind=0, footprint=[1, 1], variants={c: [f"tree_{c}_v{v}" for v in range(3)] for c in CULTURES},
                      depleted={c: f"tree_{c}_stump" for c in CULTURES}),
         "GoldMine": dict(kind=1, footprint=[1, 1], variants=["gold_v0", "gold_v1"], stages=["full", "mined", "depleted"]),
         "Berries": dict(kind=2, footprint=[1, 1], variants=["berry_v0", "berry_v1"], stages=["full", "depleted"]),
         "CrystalVein": dict(kind=3, footprint=[1, 1], variants=["crystal_v0", "crystal_v1"], stages=["full", "depleted"]),
     }
+    if not crystal:
+        del t["CrystalVein"]
+    return t
 
 
-def node_frames():
-    t = node_table()
+def node_frames(crystal=True):
+    t = node_table(crystal)
     out = [n for c in CULTURES for n in t["Tree"]["variants"][c] + [t["Tree"]["depleted"][c]]]
-    for k in ("GoldMine", "Berries", "CrystalVein"):
+    for k in [k for k in ("GoldMine", "Berries", "CrystalVein") if k in t]:
         out += [f"{v}_{s}" for v in t[k]["variants"] for s in t[k]["stages"]]
     return out
 
@@ -564,12 +569,12 @@ def run(scale=3.0, page=2048):
     report["frames"].update(per)
     ndir = root / "nodes"
     ndir.mkdir()
-    nf = node_frames()
+    nf = node_frames(crystal=False)        # art-v7.8 (D-135/D-137): no crystal veins in the game
     view = view_of(nf)
     tables, pages, px, per = pack(nf, "nodes", ndir, page, f, with_team=False)
     man = {"format": "war-game nodes 1", "scale": scale, "px_per_m": PX_PER_M * f, "cell_m": 2,
            **({"view": view} if view else {}), "pages": pages,
-           "nodes": node_table(), "frames": tables["color"], "shadows": tables["shadow"]}
+           "nodes": node_table(crystal=False), "frames": tables["color"], "shadows": tables["shadow"]}
     (ndir / "nodes.json").write_text(json.dumps(man, separators=(",", ":")))
     mem_n = memory(px, tables)
     (ndir / "memory.json").write_text(json.dumps(mem_n, indent=1))

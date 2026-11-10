@@ -64,9 +64,21 @@ for (const [name, query] of [
     await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 0.75), [farmer.fx, farmer.fy] as const);
     await page.evaluate((id) => window.__proto?.game?.select([id]), farmer.id);
     await page.waitForTimeout(600);
-    const to = await page.evaluate(([x, y]) => window.__proto?.game?.openCellNear(Math.round(x + 5), Math.round(y - 5), false) ?? null, [farmer.fx, farmer.fy] as const);
-    if (to === null) throw new Error("no open cell");
-    const at = await page.evaluate(([x, y]) => window.__proto?.game?.cellToScreen(x, y) ?? { x: 0, y: 0 }, [to.x, to.y] as const);
+    // Open ground a few cells off, with nothing a tap would pick there: on a slow machine the others have walked further before
+    // the pause, and one standing there took the tap (CI 2026-11-10: it was selected instead, and no order went).
+    const spot = await page.evaluate(([fx, fy]) => {
+      const g = window.__proto?.game;
+      if (g === undefined) return null;
+      for (const [dx, dy] of [[5, -5], [5, 5], [-5, 5], [-5, -5], [6, 0], [0, 6], [-6, 0], [0, -6], [4, -7], [7, 4]]) {
+        const c = g.openCellNear(Math.round(fx + dx), Math.round(fy + dy), false);
+        if (c === null) continue;
+        const p = g.cellToScreen(c.x, c.y);
+        if (p.x > 60 && p.x < window.innerWidth - 60 && p.y > 40 && p.y < window.innerHeight - 40 && g.pickAt(p.x, p.y) === null) return { to: c, at: p };
+      }
+      return null;
+    }, [farmer.fx, farmer.fy] as const);
+    if (spot === null) throw new Error("no open ground to tap");
+    const { to, at } = spot;
     const before = (await page.evaluate(() => window.__proto?.game?.sent() ?? [])).length;
     // The page's clock held still: the ring stays as it is at the tap (a slow frame here would miss its 0.6 s).
     await page.evaluate(() => window.__proto?.game?.freezeClock(true));

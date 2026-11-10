@@ -364,7 +364,7 @@ def build(src, out_root, scales=(3, 2), clouds_cache=None):
                 "mouth": {"file": mouth["sw"][0], "anchor": mouth["sw"][1], "foam_m": 3.5,
                           "se": {"file": mouth["se"][0], "anchor": mouth["se"][1]}}},
             "puffs": pf,
-            "rim": {"fade_m": 3},
+            # art-v7.8: no "rim" (client #441: nothing on the map's two upper edges, design/r11/edge-format.md)
         }
         (d / "edge.json").write_text(json.dumps(ej, ensure_ascii=False, indent=1) + "\n")
         rgba = sum(w * h * 4 for w, h in files.values())
