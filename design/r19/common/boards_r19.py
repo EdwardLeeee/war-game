@@ -41,8 +41,9 @@ def wrap(d, text, f, width):
     lines, cur = [], ""
     for ch in text:
         if d.textlength(cur + ch, font=f) > width and ch not in "。，、；：）」":      # no line begins with these
-            lines.append(cur)
-            cur = ch
+            keep = cur[-1] if cur[-1] in "（「" else ""                              # nor ends with these
+            lines.append(cur[:len(cur) - len(keep)])
+            cur = keep + ch
         else:
             cur += ch
     return lines + [cur] if cur else lines
@@ -126,20 +127,6 @@ class Board:
         tag = f"{self.spec['tag']}-{f['id']}"
         ft, fb = font(34), font(27, False)
         lines = wrap(TMP, f["problem"], fb, w - 24 - fb.size)
-        if f.get("slide"):                    # two frames of the walk over the ground's ticks
-            (l, t, r, b), step = self.walk_box()
-            ks = f["slide"]
-            box = (l - 8, t, r - round(step * (self.u.anims["walk"]["frames"] - max(ks))) + 8, b)
-            cells = [self.cell("walk", 0, k, box, dx=round(step * k) - 8, ticks=10) for k in ks]
-            pic = Image.new("RGB", (sum(c.width for c in cells) + 8 * (len(cells) - 1), cells[0].height), PANEL)
-            x = 0
-            for c in cells:
-                pic.paste(c, (x, 0))
-                x += c.width + 8
-            k = min(1.0, (w - 24) / pic.width)
-            if k < 1:
-                pic = pic.resize((round(pic.width * k), round(pic.height * k)), Image.LANCZOS)
-            return tag, pic, lines, ft, fb
         a, fc, fr, _, _ = f["marks"][0]
         l, t, r, b = pad(self.u.box(a, [fc], [fr]), 8)
         ax, ay = self.anchor(a)
@@ -181,13 +168,13 @@ class Board:
 
     # ------------------------------------------------------------ an action
 
-    def on_phone(self, anim):
-        n = self.u.anims[anim]["frames"]
+    def on_phone(self, anim, yard=False, frames=None):
+        n = frames or self.u.anims[anim]["frames"]
         l, t, r, b = pad(self.u.box(anim, [MAIN]), 4)
         sl, stp, sr, sb = pad(self.spear.box("idle", [MAIN], [0]), 4)
         T, B = max(t, stp), max(b, sb)
         cw = l + r
-        st = A.Stage(A.grass(self.art, sl + sr + n * cw, 2 * (T + B)))
+        st = A.Stage(A.grass(self.art, sl + sr + n * cw, 2 * (T + B), yard))
         for row, team in enumerate(("blue", "red")):
             y = row * (T + B) + T
             st.put(self.spear.sprite("idle", MAIN, 0, team), sl, y)
@@ -220,10 +207,20 @@ class Board:
             if anim in f["anims"]:
                 same = f"（同 {f['same']}）" if f.get("same") else ""
                 notes.append((f"{self.spec['tag']}-{f['id']}{same}　{f['problem']}　建議：{f['fix']}　估工：{f['cost']}", SEV_COL[f["sev"]]))
+        if not notes:
+            notes.append(("沒挑到問題。", GREY))
+        if anim in self.spec.get("notes", {}):
+            notes.append((self.spec["notes"][anim], GREY))
         rows = []
         # the phone's size beside the enlarged frames
         box = pad(self.u.box(anim, [MAIN]), 6)
         phone = self.strip([self.on_phone(anim)], ["手機上的大小：上藍下紅，最左邊是槍兵"])
+        if anim == "idle":                    # the player colours on packed earth too
+            earth = self.strip([self.on_phone(anim, yard=True, frames=3)], ["在泥地上"])
+            both = Image.new("RGB", (max(phone.width, earth.width), phone.height + 8 + earth.height), BG)
+            both.paste(phone, (0, 0))
+            both.paste(earth, (0, phone.height + 8))
+            phone = both
         per = 10
         big = []
         for i in range(0, n, per):
@@ -256,7 +253,7 @@ class Board:
                                      [f"第 {k % n + 1} 格" for k in ks]))
         # lay the block out
         d = TMP
-        note_lines = [(ln, col) for text, col in notes for ln in wrap(d, text, fb, W - 2 * M - 20 - fb.size)] or [("沒挑到問題。", GREY)]
+        note_lines = [(ln, col) for text, col in notes for ln in wrap(d, text, fb, W - 2 * M - 20 - fb.size)]
         left_w = rows[0][0].width
         h = 50 + len(note_lines) * 38 + 14
         body_h = max(rows[0][0].height, sum(b.height + 8 for b in rows[0][1]))
@@ -299,11 +296,11 @@ class Board:
         clean = [A.ANIM_NAME[a] for a in self.u.anims if not any(a in f["anims"] for f in fs)]
         cards = self.sheet(out, f"R19-{no:02d}-{name}-phone", 2 * M + 4 * 600 + 3 * 20, [
             (count + "，最怪的排最前面。" + (f"沒挑到問題的動作：{'、'.join(clean)}。" if clean else ""), font(32), PALE),
-            (f"圖是已發布的 {TAG}（手機上現在的樣子）放大 {self.n} 倍，沒有改任何東西；黃圈和數字是問題的位置。建議的改法和估的工在總表（R19-13），每個動作每一格的排列在「R19-{no:02d}-{name}-依據-phone」。", font(26, False), GREY),
+            (f"圖是已發布的 {TAG}（client 換上去之後手機上的樣子；現在 main 還釘在 art-v7.6，差在 R16 的鋤頭、種田和西陸拿法）放大 {self.n} 倍，沒有改任何東西；黃圈和數字是問題的位置。格數從 1 算起。建議的改法和估的工在總表（R19-13），每個動作每一格的排列在「R19-{no:02d}-{name}-依據-phone」。", font(26, False), GREY),
         ], lambda W: [self.top(W)])
         grounds = self.sheet(out, f"R19-{no:02d}-{name}-依據-phone", max(self.width(), 2600), [
             (count + "。這張是依據：每個動作每一格都排出來，問題的位置圈起來、寫在那個動作的標題下面。", font(32), PALE),
-            (f"圖是已發布的 {TAG}。放大圖是原圖放大 {self.n} 倍；「手機上的大小」是手機截圖的像素（3 倍圖畫進像素比 2 的畫布、再放大到螢幕）。每個動作第二排：打中那一格的另外四個方向、和待機怎麼接、被圈到的其他格。", font(26, False), GREY),
+            (f"圖是已發布的 {TAG}，格數從 1 算起。放大圖是原圖放大 {self.n} 倍；「手機上的大小」是手機截圖的像素（3 倍圖畫進像素比 2 的畫布、再放大到螢幕）。每個動作第二排：打中那一格的另外四個方向、和待機怎麼接、被圈到的其他格。", font(26, False), GREY),
         ], lambda W: [self.action(a, W) for a in self.u.anims])
         return cards, grounds
 

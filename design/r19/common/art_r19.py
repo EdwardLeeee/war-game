@@ -82,12 +82,13 @@ class Stage:
 _GRASS = {}
 
 
-def grass(art, w, h):
-    """The pack's grass through the camera at its default scale, w x h px (3 px a pt)."""
-    key = (str(art), w, h)
+def grass(art, w, h, yard=False):
+    """The pack's grass through the camera at its default scale, w x h px (3 px a pt); yard: its packed earth."""
+    key = (str(art), w, h, yard)
     if key not in _GRASS:
         S14.W, S14.H = -(-w // S14.K), -(-h // S14.K)
-        _GRASS[key] = S14.ground(Path(art), S14.Cam(1.0, look=(40.0, 40.0)), {}).crop((0, 0, w, h))
+        cells = {(x, y): 1.0 for x in range(0, 81) for y in range(0, 81)} if yard else {}
+        _GRASS[key] = S14.ground(Path(art), S14.Cam(1.0, look=(40.0, 40.0)), cells).crop((0, 0, w, h))
     return _GRASS[key].copy()
 
 
