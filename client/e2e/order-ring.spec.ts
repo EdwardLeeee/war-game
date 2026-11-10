@@ -1,5 +1,6 @@
 // 點地板的圈（the user 2026-11-10: 「為啥第一次選軍團時要點地板兩次才會移動」, then 「沒注意，習慣點兩下」）: a tap on the
-// ground with someone selected flashes a ring where the order goes (0.6 s), on the ground, under what stands. With 寫實地面
+// ground with someone selected flashes a ring where the order goes (0.8 s, R18-01 乙), on the ground, under what stands, and
+// the ordered units' rings swell white and back (收到). With 寫實地面
 // (what players see) and without, the frame at the tap minus the one after the ring is gone, near the tap, has its pixels.
 // The page's clock is held for those frames (the ring is timed by it too): drawn in software here a frame of 寫實地面 can take
 // longer than the ring lasts, and the ring would be missed.
@@ -68,19 +69,21 @@ for (const [name, query] of [
     if (to === null) throw new Error("no open cell");
     const at = await page.evaluate(([x, y]) => window.__proto?.game?.cellToScreen(x, y) ?? { x: 0, y: 0 }, [to.x, to.y] as const);
     const before = (await page.evaluate(() => window.__proto?.game?.sent() ?? [])).length;
-    // The page's clock held still: the ring stays as it is at the tap (a slow frame here would miss its 0.6 s).
+    // The page's clock held still: the ring stays as it is at the tap (a slow frame here would miss its 0.8 s).
     await page.evaluate(() => window.__proto?.game?.freezeClock(true));
     await page.touchscreen.tap(at.x, at.y);
     await frames(page);
     await page.waitForTimeout(300);
     const ring = await page.screenshot();
-    // The clock on again: 0.6 s later the ring is gone; held again for the same frame without it.
+    expect(await page.evaluate(() => window.__proto?.game?.acked() ?? 0), "the farmer's ring flashes (收到)").toBe(1);
+    // The clock on again: 0.8 s later the ring is gone, the farmer's too; held again for the same frame without it.
     await page.evaluate(() => window.__proto?.game?.freezeClock(false));
     await page.waitForTimeout(1500);
     await page.evaluate(() => window.__proto?.game?.freezeClock(true));
     await frames(page);
     await page.waitForTimeout(300);
     const gone = await page.screenshot();
+    expect(await page.evaluate(() => window.__proto?.game?.acked() ?? 0)).toBe(0);
     expect((await page.evaluate(() => window.__proto?.game?.sent() ?? [])).slice(before)).toContainEqual(expect.objectContaining({ c: "move", x: to.x, y: to.y }));
     const n = await changedNear(page, ring, gone, at.x, at.y, 40);
     console.log(`ORDER-RING ${name}: ${n.toFixed(0)} points changed near the tap`);
