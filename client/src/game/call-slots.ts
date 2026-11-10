@@ -41,6 +41,16 @@ export class CallSlots {
     return n;
   }
 
+  /** What 繼續上一局 keeps (D-083): the places, oldest first. */
+  save(): { building: number; type: number }[] {
+    return this.slots.map((s) => ({ ...s }));
+  }
+
+  /** As saved; none in saves from before (D-138 B). */
+  restore(saved: readonly { building: number; type: number }[] | undefined): void {
+    this.slots = (saved ?? []).map((s) => ({ building: s.building, type: s.type }));
+  }
+
   /** The places of buildings no longer ours or standing, given up; the buildings. */
   prune(stands: (building: number) => boolean): number[] {
     const gone = [...new Set(this.slots.filter((s) => !stands(s.building)).map((s) => s.building))];

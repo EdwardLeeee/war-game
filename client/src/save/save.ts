@@ -36,6 +36,8 @@ export interface ScreenState {
   govern?: GovernWaitState;
   /** 自動訓練 by the screen (D-098): paused buildings and the villagers' target; saves from before have none. */
   autoArmy?: AutoArmyState;
+  /** ＋遠程／＋法師's places kept for new soldiers (D-138 B), oldest first; saves from before have none. */
+  callSlots?: { building: number; type: number }[];
 }
 
 /** What the game was started with (its init). */

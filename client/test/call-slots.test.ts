@@ -43,3 +43,24 @@ test("自動訓練的需求加上位子：軍團原本缺的照舊、排隊中�
   // No places: the need as it was.
   assert.equal(withCalls(short, { [R]: 3 }, {}, {}), short);
 });
+
+test("繼續上一局：留的位子存進存檔、讀回來照舊（最早留的先補）；舊存檔沒有位子", () => {
+  const s = new CallSlots();
+  s.add(10, R);
+  s.add(11, M);
+  s.add(10, R);
+  const saved = JSON.parse(JSON.stringify(s.save()));
+  const back = new CallSlots();
+  back.restore(saved);
+  assert.deepEqual(back.wanted(), { [R]: 2, [M]: 1 });
+  assert.equal(back.count(10, R), 2);
+  assert.equal(back.take(M), 11);
+  assert.equal(back.take(R), 10);
+  // The saved list is a copy: the book going on does not change it.
+  s.take(R);
+  assert.equal(saved.length, 3);
+  const old = new CallSlots();
+  old.add(5, R);
+  old.restore(undefined);
+  assert.deepEqual(old.wanted(), {});
+});

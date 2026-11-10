@@ -915,6 +915,7 @@ export class Game implements GestureHost {
       recruitMessageTick: Number.isFinite(this.recruitMessageTick) ? this.recruitMessageTick : null,
       govern: this.governWaits.save(),
       autoArmy: this.autoArmy.save(),
+      callSlots: this.callSlots.save(),
     };
   }
 
@@ -936,6 +937,7 @@ export class Game implements GestureHost {
     this.recruitMessageTick = s.recruitMessageTick ?? Number.NEGATIVE_INFINITY;
     this.governWaits.restore(s.govern);
     this.autoArmy.restore(s.autoArmy);
+    this.callSlots.restore(s.callSlots);
     this.seq = Math.max(this.seq, s.seq);
     this.speed = s.speed;
     this.controls.setSpeed(s.speed);
