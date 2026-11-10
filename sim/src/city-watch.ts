@@ -3,8 +3,8 @@
 // soldiers near the other's main city; a fight is CITY.armyNear or more of them within CITY.near cells of it, and ends
 // when fewer than CITY.gone stay CITY.endTicks or the city falls. For the CI tables and the steal group; changes nothing.
 
-import { BuildingType, CELL_SHIFT, PLAYER_COUNT, UnitType } from "./protocol.ts";
-import { BUILDINGS } from "./core/rules.ts";
+import { BuildingType, CELL, CELL_SHIFT, PLAYER_COUNT, UnitType } from "./protocol.ts";
+import { BUILDINGS, UNITS } from "./core/rules.ts";
 import type { World } from "./core/world.ts";
 
 export const CITY = {
@@ -31,6 +31,14 @@ export interface CityFight {
   attackers: number;
   defendersAtStart: number;
   defendersMost: number;
+  /**
+   * At the city's first hit (the warning): the defender's soldiers farther than CITY.holdNear from it, their median
+   * distance (cells, to its footprint) and how long a spearman takes to walk that, seconds (ceo 2026-11-11: can the army
+   * come back in time). -1 before the first hit.
+   */
+  away: number;
+  awayCells: number;
+  awaySecs: number;
 }
 
 /** fights[a]: side a's fights at side 1 - a's main city. */
@@ -84,13 +92,30 @@ export class CityWatch {
       const hp = Math.round((b.hp[cs] * 1000) / w.maxHp(cs));
       if (o === null) {
         if (attackers < CITY.armyNear) continue;
-        const fight: CityFight = { start: w.tick, firstHit: -1, end: w.tick, fell: false, heldSecs: -1, hpMin: hp, attackers, defendersAtStart: defenders, defendersMost: defenders };
+        const fight: CityFight = { start: w.tick, firstHit: -1, end: w.tick, fell: false, heldSecs: -1, hpMin: hp, attackers, defendersAtStart: defenders, defendersMost: defenders, away: -1, awayCells: -1, awaySecs: -1 };
         this.fights[a].push(fight);
         this.open[a] = { fight, lastSeen: w.tick, hp };
         continue;
       }
       const f = o.fight;
-      if (f.firstHit < 0 && hp < o.hp) f.firstHit = w.tick;
+      if (f.firstHit < 0 && hp < o.hp) {
+        f.firstHit = w.tick;
+        // Where the defender's army is then.
+        const far: number[] = [];
+        for (let s = 0; s < w.units.count; s++) {
+          if (u.owner[s] !== d || u.type[s] === UnitType.Farmer) continue;
+          const x = u.x[s] >> CELL_SHIFT;
+          const y = u.y[s] >> CELL_SHIFT;
+          const dist = Math.max(x0 - x, 0, x - (x0 + size - 1), y0 - y, 0, y - (y0 + size - 1));
+          if (dist > CITY.holdNear) far.push(dist);
+        }
+        far.sort((p, q) => p - q);
+        f.away = far.length;
+        f.awayCells = far.length === 0 ? 0 : far[far.length >> 1];
+        // A spearman's speed, cells a second.
+        const perSec = (UNITS[UnitType.Spearman].speed * 20) / CELL;
+        f.awaySecs = Math.round((f.awayCells / perSec) * 10) / 10;
+      }
       o.hp = hp;
       f.hpMin = Math.min(f.hpMin, hp);
       f.attackers = Math.max(f.attackers, attackers);
