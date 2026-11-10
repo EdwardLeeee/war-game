@@ -34,6 +34,14 @@ def apply(u, kind, version):
             human_r7.GRIP = True
         more, _ = human_r7.dress(u, kind, team_tunic=version == 8 and kind in TEAM_TUNIC)
         sks += more
+    if version == 8:                               # R21: the East engine's pullers (east_r8._pullers), dressed as a body is
+        import types
+        for name in sorted(u.rigs):
+            if name.startswith("puller"):
+                import human_r7
+                human_r7.GRIP = True
+                more, _ = human_r7.dress(types.SimpleNamespace(rigs={"body": u.rigs[name]}), kind, team_tunic=True)
+                sks += more
     if version == 8:
         import clip_r8
         import r8

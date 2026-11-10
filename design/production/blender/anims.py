@@ -31,7 +31,10 @@ from lib import box, cyl, fx_mat, ico, rod, slab
 CRYSTAL = (0.35, 0.95, 1.0)
 MAGE_NEW = ("attack", "hit", "shatter", "fall", "dead")
 STAFF_HEAD = {"WA": (0, 1.2, 0), "WB": (0, 1.25, 0), "WC": (0, 1.21, 0)}
-SPIN_PER_CYCLE = 90.0       # degrees the siege wheels turn in one 8-frame walk cycle
+# degrees the siege wheels turn in one 8-frame walk cycle (spec.STRIDE_M has the ground that covers). The East's 135
+# from art-v7.10 (90 before): its pullers take a pace of half a metre to it, not a third (8 spokes: every 45 degrees
+# the same picture); the West's solid wheels have two battens: every 90
+SPIN_PER_CYCLE = {"siege_e": 135.0, "siege_w": 90.0}
 
 # P2 mage fall: joints keyed over the 12 frames (time 0..1); the hips carry the body down and over
 # (offset from the standing hips, then Euler XYZ: tilt back, roll, turn)
@@ -408,24 +411,27 @@ def _debris(u, kind, mat_, n=5):
     return out
 
 
-# R21 (D-142, R19's item 6: the East's engine is pulled by men and has none; its four pull ropes hang from the place
-# the arm's short end has left while it throws): options for the user. R21_E=A: the ropes' tops follow the arm's short
-# end (their handles stay on the ground). R21_E=B, C: two or four ropes, their lower ends in the pullers' hands (a
-# hand's path: up at the rope's end, down to the knees as the arm comes over, up again); the pullers themselves are
-# drawn apart and laid over for the boards (design/r21). 《武經總要》前集卷十二: 單梢砲「四十人拽，一人定放」, 手砲
-# 「用二人放」, 炮車「大木為床，下施四輪」.
-R21_E = os.environ.get("R21_E", "")
-PULLERS_R21 = {"B": [(-0.38, 2.05), (0.38, 2.05)],                       # where each stands (the engine's space)
-               "C": [(-0.95, 2.25), (-0.33, 2.0), (0.33, 2.0), (0.95, 2.25)]}
-PULL_ROPES_R21 = {"B": (1, 2), "C": (0, 1, 2, 3)}
+# R21 (D-142, R19's item 6: the East's engine is pulled by men and had none; its four pull ropes hung from the place
+# the arm's short end had left while it threw). The user chose B, two pullers (2026-11-11, D-143; not A, the ropes
+# alone following the arm, nor C, four men): from art-v7.10. Two men of the East stand in front of the cart, each at
+# a rope (the other two ropes and the handles on the ground go): they haul the ropes down as the arm comes over and
+# stand again; they turn and draw the cart by its ropes when it moves; they fall as the infantry fall when it is
+# wrecked (FALL_KEYS). Built and dressed by design/r8/blender/east_r8.py (_pullers), given their bodies by
+# design/r7/blender/r7_prod.py. Not the history, and the boards said so: 《武經總要》前集卷十二 has no rope-pulled
+# engine of fewer than forty (單梢砲「四十人拽，一人定放」); the game's engine is a soldier's size.
+# R21_E=0: art-v7.9's engine, for the before side of the boards.
+R21_E = os.environ.get("R21_E", "B")
+PULLERS_R21 = [(-0.38, 2.05), (0.38, 2.05)]       # where each stands, in the engine's space (x right, y forward)
+PULL_ROPES_R21 = (1, 2)                           # the ropes they hold, of roster5's four
 PULL_REACH = 0.28                 # the hands this far in front of the puller, toward the engine
+PULL_UP, PULL_STROKE = 1.45, 0.70 # the hands on the rope standing (just over the shoulder), and how far they haul it down
 
 
 def pull_height(t):
-    """A puller's hands above the ground through the throw (t 0..1 as the East engine's attack): up at 1.72 m, down
-    to 0.9 as the arm's short end comes down (t 0.5), up again."""
+    """A puller's hands above the ground through the throw (t 0..1 as the East engine's attack): down by PULL_STROKE
+    as the arm's short end comes down (t 0.5), up again."""
     k = ease(min(1.0, t / 0.5)) if t < 0.5 else 1.0 - ease((t - 0.5) / 0.5)
-    return 1.72 - 0.82 * k
+    return PULL_UP - PULL_STROKE * k
 
 
 def extend_siege(u, kind):
@@ -463,37 +469,65 @@ def extend_siege(u, kind):
     wreck = motion.Wreck([])
     planks = _debris(u, kind, lib.MATS["wood5"]["mat"] if "wood5" in lib.MATS else None)
     loose_shot = [o for o in (O("stone"), O("sling")) if o is not None] if east else []
-    # R21_E: the pull ropes (rods from p0 to p1, as roster5 built them: the same numbers)
+    # R21: the pullers (east_r8._pullers) and the two ropes they hold (rods from p0 to p1, as roster5 built them: the
+    # same numbers); the other two ropes and the handles are gone
+    pullers = [u.rigs[k] for k in sorted(u.rigs) if k.startswith("puller")]
     ropes = []
-    if east and R21_E:
+    if pullers:
+        import units2
         for k in range(4):
             x = -0.21 + k * 0.14
-            ob = O(f"pull{k}")
-            p0, p1 = Vector((x * 0.3, 0.57, 3.42)), Vector((x * 2.2, 1.45 + 0.08 * k, 0.05))
-            ropes.append((k, ob, x, p1, (p1 - p0).length, ob.matrix_basis.copy()))
+            ob, grip = O(f"pull{k}"), O(f"pullgrip{k}")
+            for gone in ([grip] if k in PULL_ROPES_R21 else [ob, grip]):
+                gone.hide_render = True
+                if gone in lib.ALL_PARTS:             # lib.set_pass shows every listed part again
+                    lib.ALL_PARTS.remove(gone)
+            if k in PULL_ROPES_R21:
+                p0, p1 = Vector((x * 0.3, 0.57, 3.42)), Vector((x * 2.2, 1.45 + 0.08 * k, 0.05))
+                ropes.append((ob, x, (p1 - p0).length, ob.matrix_basis.copy()))
 
-    def ropes_follow(anim, frame):
-        """The ropes from the arm's short end (1 m up the beam from the axle, 2.6 m up) to their handles on the
-        ground (A) or to the pullers' hands (B, C; the ropes not held are put away)."""
+    def crew(anim, frame):
+        """The pullers: at the ropes, turned to the engine, hauling them down through the throw; turned the way it
+        goes and walking, a rope over the right shoulder; falling where they stand (the infantry's fall)."""
+        n = u.frames.get(anim, 8)
+        for r in pullers:
+            if anim == "walk":
+                units2.pose_generic(u, r, "walk", frame, lambda t: ({}, {}))        # (the root turned to +y)
+                bpy.context.view_layer.update()
+                motion.reach(r, "R", r.root.matrix_world @ Vector((0.16, 0.04, 1.40)))
+            elif anim == "death":
+                r.root.rotation_euler = (0, 0, math.pi)
+                k = motion.sample([(0.0, dict({name: (0, 0, 0) for name in FALL_JOINTS}, hips=(0, 0, 0), hips_rot=(0, 0, 0)),
+                                    "lin")] + FALL_KEYS, min(1.0, frame / (n - 1.0)))
+                ang = {name: k[name] for name in FALL_JOINTS}
+                ang["hips"] = k["hips_rot"]
+                r.pose(ang, {"hips": k["hips"]})
+            else:
+                r.root.rotation_euler = (0, 0, math.pi)
+                z = pull_height((frame % n) / n if anim == "attack" else 0.0)
+                c = (PULL_UP - z) / PULL_STROKE              # 0 standing; 1 down on bent knees
+                hips = (0.0, -0.10 * c, -0.30 * c)
+                ang = {"hips": (0, 0, 0), "torso": (-22 * c, 0, 0), "neck": (16 * c - 6 * (1 - c), 0, 0)}
+                ang.update(motion.plant(r, hips, (0, 0, 0), {"L": (-0.16, 0.12, 0.05), "R": (0.16, -0.08, 0.05)}))
+                r.pose(ang, {"hips": hips})
+                bpy.context.view_layer.update()
+                W = r.root.matrix_world.copy()
+                motion.reach(r, "R", W @ Vector((0.05, PULL_REACH, z)))
+                motion.reach(r, "L", W @ Vector((-0.05, PULL_REACH - 0.02, z - 0.14)))
+            h2.update(r)
+
+    def ropes_follow():
+        """The held ropes from the arm's short end (1 m up the beam from the axle, 2.6 m up) to the pullers' right
+        hands."""
+        if not ropes:
+            return
+        bpy.context.view_layer.update()
         a = arm.rotation_euler.x
         end = Vector((0, math.cos(a), 2.6 + math.sin(a)))
-        n = u.frames.get(anim, 8)
-        t = (frame % n) / n if anim == "attack" else 0.0
-        held = PULL_ROPES_R21.get(R21_E)
-        for k, ob, x, foot, h0, m0 in ropes:
-            grip = O(f"pullgrip{k}")
-            if held is not None:
-                if k not in held:
-                    ob.scale = (0.001,) * 3
-                    if grip is not None:
-                        grip.scale = (0.001,) * 3
-                    continue
-                px, py = PULLERS_R21[R21_E][held.index(k)]
-                foot = Vector((px, py - PULL_REACH, pull_height(t)))
-                if grip is not None:
-                    grip.scale = (0.001,) * 3
+        Bi = base.matrix_world.inverted()
+        for (ob, x, h0, m0), r in zip(ropes, pullers):
             top = end + Vector((x * 0.3, 0, 0))
-            d = foot - top
+            d = Bi @ r.j["wristR"].matrix_world.translation - top
             ob.location = top
             ob.rotation_euler = d.to_track_quat("Z", "Y").to_euler()
             ob.scale = (1, 1, d.length / h0)
@@ -502,10 +536,8 @@ def extend_siege(u, kind):
         for o in wheels + [base]:
             loc, rot = rest[o.name]
             o.location, o.rotation_euler = loc.copy(), rot.copy()
-        for k, ob, x, foot, h0, m0 in ropes:
+        for ob, x, h0, m0 in ropes:
             ob.matrix_basis = m0.copy()
-            if O(f"pullgrip{k}") is not None:
-                O(f"pullgrip{k}").scale = (1, 1, 1)
         wreck.reset()
         arm.location = arm_rest.copy()
         for ob, _, _ in planks:
@@ -610,16 +642,19 @@ def extend_siege(u, kind):
             inner("idle", 0)
             n = u.frames.get("walk", 8)
             for o in wheels:
-                spin(o, -SPIN_PER_CYCLE * (frame % n) / n)
-            ropes_follow(anim, frame)
+                spin(o, -SPIN_PER_CYCLE[kind] * (frame % n) / n)
+            crew(anim, frame)
+            ropes_follow()
             return
         if anim != "death":
             inner(anim, frame)
-            ropes_follow(anim, frame)
+            crew(anim, frame)
+            ropes_follow()
             return
         inner("idle", 0)
         n = u.frames.get("death", 10)
         (collapse_e if east else collapse_w)(min(1.0, frame / (n - 1.0)))
+        crew(anim, frame)
     u.pose = pose
     return u
 
@@ -1040,30 +1075,8 @@ def extend_farmer(u, kind):
         motion.aim_tool(u, grip, tool_root, hv, (0, 0, -1), AXE_GRIP)
         h2.update(r)
 
-    def pull(anim, frame):
-        """R21 (drafts only, R21_PULL=1): a puller at the East engine's rope, in place of the farmer's idle (the hands
-        up at the rope's end) and attack (10 frames as the engine's: the rope hauled down to the knees as the arm
-        comes over, then up again). No tool; both hands on the rope in front of him, the left under the right."""
-        show("")
-        n = u.frames.get("attack", 10)
-        t = (frame % n) / n if anim == "attack" else 0.0
-        z = pull_height(t)
-        c = (1.72 - z) / 0.82                        # 0 standing, the arms up; 1 down on bent knees
-        hips = (0.0, -0.10 * c, -0.30 * c)
-        ang = {"hips": (0, 0, 0), "torso": (-20 * c + 4 * (1 - c), 0, 0), "neck": (14 * c - 14 * (1 - c), 0, 0)}
-        ang.update(motion.plant(r, hips, (0, 0, 0), {"L": (-0.16, 0.12, 0.05), "R": (0.16, -0.08, 0.05)}))
-        r.pose(ang, {"hips": hips})
-        bpy.context.view_layer.update()
-        W = u.root.matrix_world.copy()
-        motion.reach(r, "R", W @ Vector((0.05, PULL_REACH, z)))
-        motion.reach(r, "L", W @ Vector((-0.05, PULL_REACH - 0.02, z - 0.14)))
-        h2.update(r)
-
     def pose(anim, frame):
         r.root.rotation_euler = (0, 0, 0)
-        if os.environ.get("R21_PULL") == "1" and anim in ("idle", "attack"):
-            pull(anim, frame)
-            return
         if anim not in WORKS and own == "hoe" and not R16_OLD and anim != "attack":
             show(own)
             tool_root.scale = (1, 1, 1)

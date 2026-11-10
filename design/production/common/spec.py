@@ -75,7 +75,7 @@ UNITS = {
     "spear_e": dict(kind="spear_e", variant=1, frame=[6.4, 3.6, 0.5, 0.72], anims=_militia()),
     "xbow_e": dict(kind="xbow_e", frame=[3.4, 3.2, 0.5, 0.72], anims=_std()),
     "hcav_e": dict(kind="hcav_e", frame=[7.2, 4.4, 0.5, 0.75], anims=_std()),
-    "siege_e": dict(kind="siege_e", frame=[5.6, 6.4, 0.5, 0.8], anims=_std()),
+    "siege_e": dict(kind="siege_e", frame=[6.4, 7.2, 0.5, 0.74], anims=_std()),     # (R21: room for its two pullers)
     "mage_e": dict(kind="mage_e", style="TB", frame=[4.6, 3.6, 0.5, 0.74], anims=_mage()),
     "farmer_w": dict(kind="farmer_w", frame=[3.8, 3.4, 0.5, 0.8], anims=_farmer()),
     "pike_w": dict(kind="pike_w", frame=[8.0, 4.4, 0.5, 0.62], anims=_militia()),
@@ -122,7 +122,8 @@ WORK_HIT = {"work_chop": 4, "work_mine": 4, "work_farm": 3, "work_build": 2}
 # a siege engine's walk cycle turns the wheels 90 degrees: it moves 2 pi r / 4 per cycle (client: stride_m). The
 # West's: the small solid wheels of art-v7.10 (R21, design/r8/blender/west_r8.py WHEEL_R21: r 0.24; 0.36 was R5's
 # spoked wheel, gone since R8's fixed frame, its 0.565 still in the atlas)
-STRIDE_M = {"siege_e": round(2 * 3.14159265 * 0.42 / 4, 3), "siege_w": round(2 * 3.14159265 * 0.24 / 4, 3)}
+# The East's: 135 degrees a cycle from art-v7.10 (anims.SPIN_PER_CYCLE: its pullers' pace), a quarter turn before.
+STRIDE_M = {"siege_e": round(2 * 3.14159265 * 0.42 * 135 / 360, 3), "siege_w": round(2 * 3.14159265 * 0.24 / 4, 3)}
 
 PX_PER_M = 60       # 3x source art (20 pt per metre x 3); scaling and compression are a later step
 SUPERSAMPLE = 2
