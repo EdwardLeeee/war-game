@@ -16,6 +16,7 @@ import { DIFFICULTY_LABEL } from "../../difficulty.ts";
 import { screenDirection } from "../../game/town-hint.ts";
 import { type GameTimeline, GameOverReason, NEUTRAL, TICKS_PER_SECOND, TownSize, TownState, UnitType } from "../../sim.ts";
 import { clock, GAME_OVER_REASON, UNIT_NAME } from "../hud/names.ts";
+import { type WarEvent, warEvents } from "./events.ts";
 
 /** A point of a line: [tick, value]. */
 export type Pt = readonly [tick: number, value: number];
@@ -175,6 +176,8 @@ export interface StatsModel {
   townCounts: Pair<[number, number, number]>;
   mages: Pair<MageSide> & { bestNote: string };
   moments: Moment[];
+  /** 進攻, 防守, 團戰 (R17-03): the marks under the time axis of 資源, 兵力, 城鎮, and their cards. */
+  events: WarEvent[];
   numbers: NumberRow[];
 }
 
@@ -253,7 +256,7 @@ function townNote(w: StatsWorld, id: number): string {
 }
 
 /** A town's state and holder at `tick`, from its rows (a town starts neutral, unlisted). */
-function townAt(rows: readonly (readonly number[])[], tick: number): { state: number; owner: number } {
+export function townAt(rows: readonly (readonly number[])[], tick: number): { state: number; owner: number } {
   let state: number = TownState.Neutral;
   let owner = NEUTRAL;
   for (const r of rows) {
@@ -265,7 +268,7 @@ function townAt(rows: readonly (readonly number[])[], tick: number): { state: nu
 }
 
 /** Per town, its rows in order. */
-function rowsByTown(t: GameTimeline): Map<number, (readonly number[])[]> {
+export function rowsByTown(t: GameTimeline): Map<number, (readonly number[])[]> {
   const m = new Map<number, (readonly number[])[]>();
   for (const r of t.towns) {
     const a = m.get(r[1]) ?? [];
@@ -360,14 +363,14 @@ export function townCounts(t: GameTimeline): [number, number, number][] {
   return out;
 }
 
-const isPlayer = (p: number) => p === 0 || p === 1;
+export const isPlayer = (p: number) => p === 0 || p === 1;
 
 /** Soldiers killed by players (not farmers, not militia: 大仗 is between the two sides). */
-function battleDeaths(t: GameTimeline): (readonly number[])[] {
+export function battleDeaths(t: GameTimeline): (readonly number[])[] {
   return t.deaths.filter((d) => isPlayer(d[1]) && isPlayer(d[5]) && d[5] !== d[1] && d[2] !== UnitType.Farmer);
 }
 
-interface Place extends Cell {
+export interface Place extends Cell {
   /** Town id, or -1 - player for a main city. */
   key: number;
   name: string;
@@ -375,7 +378,7 @@ interface Place extends Cell {
 }
 
 /** The places the screen can name: known towns and known main cities. */
-function places(w: StatsWorld, names: Map<number, { name: string }>): Place[] {
+export function places(w: StatsWorld, names: Map<number, { name: string }>): Place[] {
   const out: Place[] = [];
   for (const [id, c] of w.towns) out.push({ key: id, cellX: c.cellX, cellY: c.cellY, name: names.get(id)?.name ?? "城鎮", reach: TOWN_REACH });
   w.cities.forEach((c, p) => {
@@ -599,6 +602,7 @@ export function statsModel(winner: number, reason: number, ticks: number, t: Gam
     townCounts: { me: counts[me], foe: counts[foe] },
     mages: { me: mage(S0), foe: mage(S1), bestNote },
     moments: ms,
+    events: warEvents(t, w),
     numbers,
   };
 }

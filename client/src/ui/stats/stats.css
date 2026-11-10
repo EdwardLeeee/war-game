@@ -770,3 +770,112 @@ body:has(.dialog.stats-page:not([hidden])) #proto-label {
 .stats-page .tabs-tall .st-foot {
   margin-top: 4px;
 }
+
+/* ---- 戰事標記 (R17-03, ui's board): marks under the time axis of 資源, 兵力, 城鎮 (進攻 ▲ light blue, 防守 a light red
+   shield, 團戰 ● light gold; the one picked gold), a small legend at the end of the legend row, and the card a tap opens ---- */
+.dialog.stats-page {
+  --st-raid: #8cc0f5;
+  --st-defend: #f29a92;
+  --st-battle: #dccb98;
+  --st-pick: #f2c04a;
+}
+
+.stats-page .st-cardin {
+  position: relative;
+}
+
+.stats-page .st-chart.st-tap {
+  cursor: pointer;
+}
+
+.stats-page .st-wm {
+  stroke: var(--st-surface);
+  stroke-width: 0.8;
+}
+
+.stats-page .st-wm.raid {
+  fill: var(--st-raid);
+}
+
+.stats-page .st-wm.defend {
+  fill: var(--st-defend);
+}
+
+.stats-page .st-wm.battle {
+  fill: var(--st-battle);
+}
+
+.stats-page .st-wm.on {
+  fill: var(--st-pick);
+  stroke: var(--st-ink);
+  stroke-width: 1.2;
+}
+
+.stats-page .st-wkey {
+  display: inline-flex;
+  margin-left: auto;
+}
+
+.stats-page .st-wkey .st-lg {
+  margin: 0 0 0 10px;
+  font-size: 12px;
+}
+
+.stats-page .st-wk {
+  flex: none;
+}
+
+.stats-page .st-wcard {
+  position: absolute;
+  z-index: 2;
+  box-sizing: border-box;
+  width: 330px;
+  max-width: calc(100% - 8px);
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--st-surface);
+  box-shadow:
+    0 0 0 1px var(--st-won),
+    0 6px 18px rgba(0, 0, 0, 0.45);
+  color: var(--st-ink);
+}
+
+.stats-page .st-wc1,
+.stats-page .st-wc2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.stats-page .st-wc2 {
+  margin-top: 2px;
+}
+
+.stats-page .st-wc3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.dialog.stats-page .stats-card .st-wc3 button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 10px;
+  font-size: 14px;
+}
+
+.dialog.stats-page .stats-card .st-wc3 button.st-wx svg {
+  width: 18px;
+  height: 18px;
+}
+
+.stats-page .st-wn {
+  flex: 1;
+  text-align: center;
+  font-size: 13px;
+}
