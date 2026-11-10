@@ -675,6 +675,30 @@ HOE_LIFT = 0.10           # the hoe's head at least this high off the ground whe
 HOE = {"E": dict(haft=1.30, r=0.018, top=0.14, edge=0.15, length=0.17, eye=0.03, eye_h=0.09),
        "W": dict(haft=1.25, r=0.019, top=0.11, edge=0.19, length=0.19, eye=0.03, eye_h=0.06)}
 
+# R20 (the user 2026-11-11, D-142: all 15 of R19's findings; this batch the farmers, 1-5 and 12): the axe, the pick and
+# the mallet at their real sizes, in dark worn iron and plain wood, as R16's hoe. art-v7's were made large on purpose
+# (_tools: "so each reads at actual size"): the axe's head 41 cm long with an edge of 34, the pick 80 cm across and 9
+# thick at the eye, the mallet's head 17 x 34 cm, the irons in the weapons' bright steel. Sizes after finds and tools:
+#   axe      medieval finds 15.5-17.5 cm long, the edge 12-15 (Highland HER MHG9044, Dingwall: 15.5 x 12.3; Historic
+#            Environment Scotland, Caerlaverock: 17.5 x 15); an undated museum head 19.1 x 10.2 (Worcester Art Museum,
+#            once the Higgins Armory). No Tang axe's measures found.
+#   pick     Roman dolabrae 33-52.5 cm (National Museum of Transylvanian History); a 5 lb pick's head today 48-55 cm
+#   mallet   joiners' mallets' heads 6 x 12 to 8 x 14 cm, an old pattern 15-16.5 cm long (R. Underhill)
+# The East farmer carries his axe as one is carried (USDA Forest Service, An Ax to Grind and the volunteers' guide:
+# held near the head where it balances, the edge down, the arm hanging at the side; art-v7 held the butt and reached
+# the haft out in front, the head on the ground a pace ahead) and strikes with both hands on the haft, the axe swung
+# round his right side to behind the shoulder and down (art-v7: one hand at the butt, both arms straight up). The pick is raised over the right shoulder (the left
+# forearm crossed the face). R20=1 turns all of it on, until the user approves the boards (design/r20).
+R20 = os.environ.get("R20") == "1"
+# (haft length and radius; the head's middle up the haft; the poll behind the haft, the head's length poll to edge, its
+# height at the eye and at the edge, its thickness)
+AXE = dict(haft=0.80, r=0.017, at=0.715, poll=0.035, head=0.185, eye_h=0.07, edge=0.115, thick=0.034)
+# (the head's middle up the haft; the two points' reach each side; their radius at the eye; the eye's block)
+PICK = dict(haft=0.86, r=0.018, at=0.825, fore=0.27, back=0.23, r0=0.019, eye=(0.05, 0.075, 0.06))
+MALLET = dict(haft=0.40, r=0.015, at=0.355, head=(0.085, 0.165, 0.095))
+AXE_GRIP = 0.58                   # carried: the right hand up the haft, just under the head, where the axe balances
+AXE_HAND = (0.21, 0.06, -0.16)    # that hand hanging at his side, from the hips (unit space)
+
 
 def _hoe(n, g, c):
     """The R16 hoe in the tool frame (butt at the origin, +Z up the haft to the head, +Y toward the working edge):
@@ -768,6 +792,82 @@ HOE_ATTACK = dict(
 if not R16_OLD:
     WORKS["work_farm"]["keys"] = _farm_keys()
 
+# R20: the East farmer's attack with his axe (10 frames, the blow on frame 7 as art-v7's): both hands on the haft, the
+# left at the butt. From the ready stance (the axe across the chest, its head up in front of the right shoulder) the
+# head swings out and back round his right side at chest height, up behind the right shoulder, then down and forward to
+# a man's waist a metre ahead, the edge first. (Straight up past the face, the first draft: the head covered the face
+# for two frames from the front and the side.)
+def _axe_key(butt, h, g, body):
+    n = math.sqrt(sum(v * v for v in h))
+    h = tuple(v / n for v in h)
+    return dict(body, hand=tuple(b + g * hh for b, hh in zip(butt, h)), h=h, g=(g,), gl=(0.04,))
+
+
+AXE_ATTACK = dict(
+    tool="axe", two_hands=True,
+    feet={"L": (-0.12, 0.28, 0.05), "R": (0.16, -0.16, 0.05)},
+    edge=lambda h: (0, h[2], -h[1]),
+    keys=[
+        (0.0, _hoe_key((0.08, 0.10, 0.95), 35, 0.40, dict(hips=(0.02, 0.0, -0.05), hips_rot=(0, 0, -10), torso=(-6, 0, -6),
+                                                          neck=(6, 0, 6))), "smooth"),
+        (0.44, _axe_key((-0.02, 0.22, 1.20), (0.86, -0.35, 0.40), 0.38, dict(hips=(0.03, -0.04, -0.04), hips_rot=(0, 0, -20),
+                                                                             torso=(2, 0, -18), neck=(-2, 0, 18))), "out"),
+        (0.6, _axe_key((0.24, 0.16, 1.18), (0.20, -0.66, 0.72), 0.34, dict(hips=(0.03, -0.08, -0.02), hips_rot=(0, 0, -18),
+                                                                           torso=(10, 0, -16), neck=(-8, 0, 14))), "smooth"),
+        (0.78, _hoe_key((0.06, 0.30, 1.12), -10, 0.44, dict(hips=(0.0, 0.09, -0.09), hips_rot=(0, 0, -4), torso=(-20, 0, 8),
+                                                            neck=(14, 0, -4))), "in"),
+        (0.89, _hoe_key((0.06, 0.29, 1.11), -12, 0.44, dict(hips=(0.0, 0.08, -0.09), torso=(-19, 0, 7), neck=(13, 0, -3))), "lin"),
+        (1.0, _hoe_key((0.08, 0.10, 0.95), 35, 0.40, dict(hips=(0.02, 0.0, -0.05), hips_rot=(0, 0, -10), torso=(-6, 0, -6),
+                                                          neck=(6, 0, 6))), "smooth"),
+    ])
+
+if R20:        # the pick up over the right shoulder, the body turned a little to it (the hands were over the brow)
+    _mine = WORKS["work_mine"]["keys"]
+    _mine[1] = (0.25, dict(hips=(0.02, -0.05, 0.0), torso=(12, 0, -10), neck=(-4, 0, 8), hand=(0.26, -0.02, 1.78),
+                           h=_n(0.10, -0.50, 0.86), g=(0.40,)), "out")
+    _mine[2] = (0.375, dict(hips=(0.01, 0.03, -0.10), torso=(-14, 0, -4), neck=(10, 0, 4), hand=(0.18, 0.42, 1.58),
+                            h=_n(0.04, 0.72, 0.69), g=(0.34,)), "in")
+
+
+def _tools_r20(n, groups, c):
+    """R20's axe, pick and mallet in the tool frame (butt at the origin, +Z up the haft to the head, +Y toward the
+    working edge): irons iron_<C> (look.MATCH "iron": rusty_metal_02), a worn bright strip on the axe's edge and the
+    pick's points (tooledge_r20), hafts shaft5, the mallet's head timber_<c> (look.MATCH "timber": medieval_wood)."""
+    # (its own iron, iron_E / iron_W: the hoe's iron_e / iron_w is metal 0.85, and an axe's flat cheek turned up to the
+    # sky in the swing came out near white; this one hardly mirrors)
+    # at 6 x 9 px the hoe's mirror-bright edge strip (hoeedge_r16) was a white bar across the axe, and its cheek in the
+    # sun a pale grey: both darker here
+    iron = lib.mat(f"iron_{c}", (0.10, 0.098, 0.095), 0.85, 0.2, pattern="worn_metal")
+    worn = lib.mat("tooledge_r20", (0.30, 0.295, 0.285), 0.55, 0.6)
+    wood = lib.mat("shaft5", (0.47, 0.36, 0.24), 0.65, noise=0.2, noise_scale=10)
+    beech = lib.mat(f"timber_{c.lower()}", (0.66, 0.54, 0.37), 0.7, noise=0.25, noise_scale=8)
+    # the axe: the haft through the eye, a poll behind it, the blade widening to the edge
+    a, g = AXE, groups["axe"]
+    z, hh, eh = a["at"], a["eye_h"] / 2, a["edge"] / 2
+    y1 = a["head"] - a["poll"]
+    rod(f"{n}_axe_haft", (0, 0, 0), (0, 0, z + hh + 0.015), a["r"], wood, parent=g, r2=a["r"] * 1.15)
+    slab(f"{n}_axe_head", [(-a["poll"], z - hh), (-a["poll"], z + hh), (0.03, z + hh), (y1 - 0.045, z + eh - 0.008),
+                           (y1 - 0.006, z + eh), (y1, z), (y1 - 0.006, z - eh), (y1 - 0.045, z - eh + 0.012),
+                           (0.03, z - hh)], a["thick"], iron, parent=g, plane="YZ")
+    slab(f"{n}_axe_edge", [(y1 - 0.016, z + eh - 0.002), (y1 - 0.006, z + eh + 0.001), (y1 + 0.001, z),
+                           (y1 - 0.006, z - eh - 0.001), (y1 - 0.016, z - eh + 0.002)], a["thick"] * 1.08, worn, parent=g,
+         plane="YZ")
+    # the pick: an eye block, a long point forward and a shorter one behind, both drooping a little
+    p, g = PICK, groups["pick"]
+    z = p["at"]
+    rod(f"{n}_pick_haft", (0, 0, 0), (0, 0, z + 0.04), p["r"], wood, parent=g, r2=p["r"] * 1.2)
+    box(f"{n}_pick_eye", p["eye"], iron, g, at=(0, 0, z), bevel=0.008)
+    for tag, y, drop, r1 in (("a", p["fore"], 0.06, 0.006), ("b", -p["back"], 0.05, 0.008)):
+        a0, a1 = Vector((0, 0.03 if y > 0 else -0.03, z + 0.005)), Vector((0, y, z + 0.005 - drop))
+        rod(f"{n}_pick_{tag}", a0, a1, p["r0"], iron, parent=g, r2=r1)
+        t = 1 - 0.05 / (a1 - a0).length                      # its last 5 cm worn bright
+        rod(f"{n}_pick_tip{tag}", a0.lerp(a1, t), a0.lerp(a1, 1.01), (p["r0"] + (r1 - p["r0"]) * t) * 1.1, worn, parent=g,
+            r2=r1 * 1.1)
+    # the mallet: a joiner's, all wood
+    m, g = MALLET, groups["hammer"]
+    rod(f"{n}_hammer_haft", (0, 0, 0), (0, 0, m["at"] + m["head"][2] / 2 + 0.01), m["r"], wood, parent=g, r2=m["r"] * 1.25)
+    box(f"{n}_hammer_head", m["head"], beech, g, at=(0, 0, m["at"]), bevel=0.012)
+
 
 def _tools(kind, grip, P):
     """Four tools, larger than R5's so each reads at actual size (heads 0.3-0.4 m across, hafts
@@ -782,6 +882,11 @@ def _tools(kind, grip, P):
     root = lib.empty(f"{kind}_tool_root", parent=grip)
     groups = {name: lib.empty(f"{kind}_tool_{name}", parent=root) for name in ("axe", "pick", "hoe", "hammer")}
     n = f"{kind}_tool"
+    if R20:
+        c = "E" if kind == "farmer_e" else "W"
+        _tools_r20(n, groups, c)
+        _hoe(n, groups["hoe"], c)
+        return root, groups, ("axe" if kind == "farmer_e" else "hoe")
     g = groups["axe"]
     rod(f"{n}_axe_haft", (0, 0, 0), (0, 0, 0.84), 0.026, haft, parent=g, r2=0.022)
     slab(f"{n}_axe_head", [(-0.075, 0.67), (-0.075, 0.81), (0.06, 0.80), (0.20, 0.87), (0.30, 0.91), (0.33, 0.74),
@@ -845,6 +950,26 @@ def extend_farmer(u, kind):
         motion.aim_tool(u, grip, tool_root, hv, (0, 1, 0), HOE_GRIP)
         h2.update(r)
 
+    def carry_axe(anim, frame):
+        """R20: the East farmer's axe outside the work loops, as an axe is carried: in the right hand hanging at his
+        side, held just under the head where it balances (AXE_GRIP), the haft about level, the head a hand ahead of
+        the fist, its edge down, the butt trailing behind him. The left arm hangs too, swinging a little when he
+        walks."""
+        bpy.context.view_layer.update()
+        W = u.root.matrix_world
+        Wi = W.inverted()
+        hips = Wi @ r.j["hips"].matrix_world.translation
+        sw = 0.0
+        if anim == "walk":
+            sw = math.sin(2 * math.pi * frame / max(1, u.frames.get("walk", 8)))
+        motion.reach(r, "L", W @ (hips + Vector((-AXE_HAND[0], 0.04 + 0.10 * sw, AXE_HAND[2] + 0.02))))
+        motion.reach(r, "R", W @ (hips + Vector((AXE_HAND[0], AXE_HAND[1] - 0.05 * sw, AXE_HAND[2]))))
+        h2.update(r)
+        bpy.context.view_layer.update()
+        hv = Vector((0.03, 0.97, 0.18 + 0.06 * sw)).normalized()
+        motion.aim_tool(u, grip, tool_root, hv, (0, 0, -1), AXE_GRIP)
+        h2.update(r)
+
     def pose(anim, frame):
         r.root.rotation_euler = (0, 0, 0)
         if anim not in WORKS and own == "hoe" and not R16_OLD and anim != "attack":
@@ -853,7 +978,13 @@ def extend_farmer(u, kind):
             inner(anim, frame)
             carry_hoe(anim, frame)
             return
-        hoe_attack = anim == "attack" and own == "hoe" and not R16_OLD
+        if anim not in WORKS and own == "axe" and R20 and anim != "attack":
+            show(own)
+            tool_root.scale = (1, 1, 1)
+            inner(anim, frame)
+            carry_axe(anim, frame)
+            return
+        hoe_attack = anim == "attack" and ((own == "hoe" and not R16_OLD) or (own == "axe" and R20))
         if anim not in WORKS and not hoe_attack:
             show(own)
             tool_root.location = CARRY[own][0]
@@ -861,7 +992,7 @@ def extend_farmer(u, kind):
             tool_root.scale = (1, 1, 1)
             inner(anim, frame)
             return
-        w = HOE_ATTACK if hoe_attack else WORKS[anim]
+        w = (HOE_ATTACK if own == "hoe" else AXE_ATTACK) if hoe_attack else WORKS[anim]
         show(w["tool"])
         tool_root.scale = (1, 1, 1)
         n = u.frames.get(anim, 8)
