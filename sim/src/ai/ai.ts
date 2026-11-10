@@ -3164,6 +3164,18 @@ export interface HardPlan {
    */
   fortExit: number;
   /**
+   * P1 (ceo 2026-11-11; the user's 7 games won against hard: in 6 of the 6 where it knew the main city, its front turned
+   * back by small forts with the user's soldiers by them while 1.8-3.6 x those soldiers). By forts it weighed the forts
+   * (groupWorth) and the enemy soldiers it believes by them (WORTH: ranged 10, mages 25) x 1.3 both against its soldiers'
+   * worth against forts (vsForts: ranged 5, mages 9). fortArmyWorth: the enemy soldiers' share against its soldiers' WORTH
+   * instead, forts against forts and soldiers against soldiers (false: as before). fortArmyBy: those soldiers x this many
+   * tenths (13: as before; behind on towns no more than 10, as before). fortIntel: only those seen within this many
+   * minutes (4: all it remembers, as before).
+   */
+  fortArmyWorth: boolean;
+  fortArmyBy: number;
+  fortIntel: number;
+  /**
    * D-139 (the user's 64a27f8a): the enemy's main city guessed only from a building near a corner (no town's), a corner
    * found empty ruled out and the guess moved on, its scout past corners ruled out (false: as before, for measuring).
    */
@@ -3293,6 +3305,9 @@ export const HARD: HardPlan = {
   // six active groups 10 of 240 as before; push-crush 10/24 -> 10/26. routeFromArmy alone turned back no less (12.7).
   routeFromArmy: true,
   fortExit: 3,
+  fortArmyWorth: false,
+  fortArmyBy: 13,
+  fortIntel: 4,
   cornerGuess: true,
   mageHallFirst: 10,
   // D-131 (the user 2026-11-06; ceo 2026-11-07; docs/research/2026-11-ai-tactics.md): against hard without it, new seeds,
@@ -5170,10 +5185,19 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         const armyBy = (g: FortGroup) => {
           let w = 0;
           const r = g.radius + FORT_ARMY_NEAR;
-          for (const e of intel.values()) if (!e.post && dist2(e.x, e.y, g.x, g.y) <= r * r) w += WORTH[e.type];
+          for (const e of intel.values()) if (!e.post && tick - e.tick <= plan.fortIntel * TICKS_PER_MINUTE && dist2(e.x, e.y, g.x, g.y) <= r * r) w += WORTH[e.type];
           return w;
         };
         const vsForts = (list: { type: number }[]) => list.reduce((a, u) => a + (fv.vs[u.type] ?? 0), 0);
+        /** P1: enemy soldiers worth `enemy` (WORTH) by forts x `by` tenths, as what `list` must bring against forts (tenths). */
+        const soldiersAsk = (enemy: number, by: number, list: { type: number }[]) => {
+          if (!plan.fortArmyWorth) return enemy * by;
+          const w = worth(list);
+          return w > 0 ? Math.trunc((enemy * by * vsForts(list)) / w) : enemy * by;
+        };
+        /** P1 (plan.fortArmyBy): tenths of the enemy soldiers by forts to match; behind on towns (D-086 A6) no more than 10. */
+        const fortBy = plan.fortArmyBy;
+        const fortByBehind = Math.min(10, fortBy);
         /** D-086 A9 (plan.fortExit): a break-off's memory lifted for an army of worth `w`: `need` is what the forts and the enemy by them ask (tenths). */
         const memoryLifted = (w: number, need: number, failed: number, ids: readonly number[]) => {
           if (plan.fortExit <= 0) return false;
@@ -5189,7 +5213,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         // `by`: tenths of the enemy army by them it must match, `again`: percent of an army that broke off by them
         // (13 and FORT_FAILED; D-086 A6, behind on towns, 10 and 100: in 9170fab0 a group worth 90 barred 900 for 7
         // minutes, as 551 had broken off by it with the enemy's army there).
-        const beats = (g: FortGroup, list: { type: number }[], by = 13, again = fortFailed) => {
+        const beats = (g: FortGroup, list: { type: number }[], by = fortBy, again = fortFailed) => {
           const w = vsForts(list);
           let failed = 0;
           for (const id of g.ids) {
@@ -5198,13 +5222,13 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           }
           // At least as strong as the forts (scratch base runs: 30 or more soldiers in reach took the scripted
           // fortress 68 times of 69, fewer than 20 failed 12 times of 20) and clearly (1.3 x) stronger than the army by them.
-          const need = groupWorth(g, list, fv) * 10 + armyBy(g) * by;
+          const need = groupWorth(g, list, fv) * 10 + soldiersAsk(armyBy(g), by, list);
           return w * 10 >= need && (w * 100 >= failed * again || memoryLifted(w, need, failed, g.ids));
         };
         /** The groups too strong for `list` (not the siege's). */
-        const tooStrong = (list: { type: number }[], by = 13, again = fortFailed) => groups.filter((g) => !bySiege(g) && !beats(g, list, by, again));
+        const tooStrong = (list: { type: number }[], by = fortBy, again = fortFailed) => groups.filter((g) => !bySiege(g) && !beats(g, list, by, again));
         /** A march with `list` from `from` to `to`: clear of groups too strong for it (D-081: a way round was tried and dropped, sim/README.md). */
-        const routeFor = (from: { x: number; y: number }, to: { x: number; y: number }, list: { type: number }[], by = 13, again = fortFailed) => ({ go: groupsOnWay(tooStrong(list, by, again), from, to).length === 0 });
+        const routeFor = (from: { x: number; y: number }, to: { x: number; y: number }, list: { type: number }[], by = fortBy, again = fortFailed) => ({ go: groupsOnWay(tooStrong(list, by, again), from, to).length === 0 });
         /** Broke off by these groups: the next go at them takes more (FORT_FAILED). */
         const remember = (list: { type: number }[], near: FortGroup[]) => {
           // The army that set out, not what is left of it.
@@ -5244,12 +5268,12 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           const g = groupOf(f);
           const army = worth(foesNear(c.x, c.y, FORT_GUARDS).filter((e) => e.order !== Order.Post));
           const w = vsForts(list);
-          const need = (g === undefined ? 0 : groupWorth(g, list, fv)) * 10 + army * 13;
+          const need = (g === undefined ? 0 : groupWorth(g, list, fv)) * 10 + soldiersAsk(army, fortBy, list);
           const failed = failedBy(f);
           return w * 10 >= need && (w * 100 >= failed * fortFailed || memoryLifted(w, need, failed, [f.id]));
         };
         /** Fell back from town `id` because of forts, and they are still too strong for the army (with FORT_FAILED within FORT_FORGET). */
-        const fortsBar = (id: number, by = 13, again = fortFailed) => {
+        const fortsBar = (id: number, by = fortBy, again = fortFailed) => {
           const m = townForts.get(id);
           return m !== undefined && tooStrong(army, by, again).some((g) => g.ids.some((x) => m.ids.includes(x)));
         };
@@ -5330,7 +5354,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         if (mode === "town") {
           const t = towns.get(targetTown);
           // D-086 A6: as even as when it picked the town.
-          const tb = townEven ? 10 : 13;
+          const tb = townEven ? fortByBehind : fortBy;
           const ta = townEven ? 100 : fortFailed;
           // Forts by the army too strong for it (D-081): it breaks off as from a stronger enemy.
           const byArmy = groups.filter((g) => !bySiege(g) && dist2(g.x, g.y, ac.x, ac.y) <= (g.radius + FORT_WAY) * (g.radius + FORT_WAY) && !beats(g, army, tb, ta));
@@ -5685,7 +5709,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             townsBehind = theirs >= ours + TOWNS_BEHIND || (homeSince >= 0 && tick - homeSince >= IDLE_HOME && army.length >= townArmy);
             if (townsBehind) counted.townsBehind++;
           }
-          const even = townsBehind ? 10 : 13;
+          const even = townsBehind ? fortByBehind : fortBy;
           const evenAgain = townsBehind ? 100 : fortFailed;
           let pick = -1;
           let pickD = 0;
