@@ -215,7 +215,8 @@ export class Hud {
     // out, each with its number so that two side by side read at a glance.
     for (let i = 0; i < 4; i++) {
       const r = btn(grid, `退${i + 1}`, () => game.retreatGroup(i), `group-retreat ${this.formal ? "b blue " : ""}${ORDER_TONE.retreat} ${i % 2 === 0 ? "near" : "far"}`);
-      r.setAttribute("aria-label", `編隊 ${i + 1} 撤回主城`);
+      // D-138 A: back to the town it last held (or our nearest), else the main city.
+      r.setAttribute("aria-label", `編隊 ${i + 1} 撤退`);
       r.hidden = true;
       this.retreatBtns.push(r);
     }
@@ -277,6 +278,7 @@ export class Hud {
       depotTake: (building: number, resource: Resource) => game.depotTake(building, resource),
       hidingComing: (building: number) => game.hidingComing(building),
       callToHide: (building: number, type: number) => game.callToHide(building, type),
+      callWaiting: (building: number) => game.callWaiting(building),
       outpostState: (building: number) => game.outpostState(building),
       cancelToHold: () => game.cancelToHold(),
       groupRefill: (i: number) => game.army.groups[i].refill,

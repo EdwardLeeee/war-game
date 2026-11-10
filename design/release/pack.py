@@ -178,6 +178,20 @@ def with_points(fs, other):
     return out
 
 
+EDGE_DROPPED = ("rim",)
+
+
+def with_edge_json(fs, other):
+    """art-v7.8 (spec "edge_json_src"): the edge/ files `fs` with edge.json taken from `other` (edge_pack.py without
+    the "rim" client #441 stopped reading), the pictures kept (a CI run packs some pixels a last bit off another's).
+    The two edge.json must agree in everything but the keys EDGE_DROPPED, so the one taken names exactly the pictures."""
+    a, b = json.loads(fs["edge.json"]), json.loads(other["edge.json"])
+    strip = lambda m: {k: v for k, v in m.items() if k not in EDGE_DROPPED}
+    if strip(a) != strip(b):
+        die(f"edge_json_src: edge.json differs from the buildings run's in more than {EDGE_DROPPED}")
+    return dict(fs, **{"edge.json": other["edge.json"]})
+
+
 def ground_files(src, scale):
     """{name: bytes} of ground/ at one scale (design/r8/common/ground_r8.py export): ground.json, its layers, memory.json."""
     found = sorted(p.parent for p in src.rglob(f"atlas_{scale}/ground/ground.json"))
@@ -318,6 +332,10 @@ def main():
         sources["buildings_json"] = spec["buildings_json_src"]
     if "ground_src" in spec:              # art-v7.7: ground/ alone from another run (the sun turned to the client's axes)
         sources["ground"] = spec["ground_src"]
+    if "nodes_src" in spec:               # art-v7.8: nodes/ alone from another run (no crystal veins, D-135/D-137)
+        sources["nodes"] = spec["nodes_src"]
+    if "edge_json_src" in spec:           # art-v7.8: edge.json from another run (no "rim"), the pictures kept
+        sources["edge_json"] = spec["edge_json_src"]
     base = {"format": "war-game art release 1", "tag": a.tag, "commit": a.commit, "sources": sources,
             **({"view": spec["view"]} if spec.get("view") else {})}     # D-118: "diamond" from art-v7 on
     notes = [f"{a.tag}：{spec.get('note', '')}", "", f"commit {a.commit or '(local)'}", ""]
@@ -331,6 +349,9 @@ def main():
     bjs_src = (fetch(spec["buildings_json_src"]["run"], spec["buildings_json_src"]["artifact"], dl)
                if "buildings_json_src" in spec else None)
     gnd_src = fetch(spec["ground_src"]["run"], spec["ground_src"]["artifact"], dl) if "ground_src" in spec else bld_src
+    nod_src = fetch(spec["nodes_src"]["run"], spec["nodes_src"]["artifact"], dl) if "nodes_src" in spec else bld_src
+    ejs_src = (fetch(spec["edge_json_src"]["run"], spec["edge_json_src"]["artifact"], dl)
+               if "edge_json_src" in spec else None)
     for scale in SCALES:
         files, rgba, astc_b = {}, 0, 0
         for u, src in unit_src.items():
@@ -342,7 +363,7 @@ def main():
         extra = ""
         if bld_src:
             for folder in ("buildings", "nodes") + tuple(k for k in ("castle", "terrain") if spec.get(k)):
-                fs = atlas_files({"terrain": ter_src, "castle": cas_src}.get(folder, bld_src), folder, scale)
+                fs = atlas_files({"terrain": ter_src, "castle": cas_src, "nodes": nod_src}.get(folder, bld_src), folder, scale)
                 if folder == "buildings" and bjs_src:
                     fs = with_points(fs, atlas_files(bjs_src, folder, scale))
                 files.update({f"{folder}/{n}": b for n, b in fs.items()})
@@ -357,6 +378,8 @@ def main():
                 astc_b += m["total_astc_4x4_bytes"]
             if spec.get("edge"):                         # art-v7: the floating continent's edge (D-118)
                 fs = edge_files(bld_src, scale)
+                if ejs_src:
+                    fs = with_edge_json(fs, edge_files(ejs_src, scale))
                 files.update({f"edge/{n}": b for n, b in fs.items()})
                 m = json.loads(fs["memory.json"])
                 rgba += m["total_rgba8_bytes"]

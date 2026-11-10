@@ -43,10 +43,8 @@ import type { GameView } from "../../view/view.ts";
 import { formalUi } from "../formal.ts";
 import { dress, icon, type IconName } from "../icons.ts";
 import { ORDER_TONE } from "../overlays.ts";
-import { ACTION_NAME, BUILDABLE, BUILDING_NAME, buildingName, clock, costText, NODE_NAME, resourceLine, TOWN_STATE_NAME, UNIT_NAME } from "./names.ts";
+import { ACTION_NAME, BUILDABLE, BUILDING_NAME, buildingName, CALL_WORD, clock, costText, NODE_NAME, resourceLine, TOWN_STATE_NAME, UNIT_NAME } from "./names.ts";
 
-/** ＋遠程／＋法師 (D-080): the short word on a panel's call-in button. */
-const CALL_WORD: Record<number, string> = { [UnitType.Ranged]: "遠程", [UnitType.Mage]: "法師" };
 
 /** What the bottom panels ask of the game. */
 export interface PanelHost {
@@ -120,6 +118,8 @@ export interface PanelHost {
   /** ＋遠程／＋法師 (D-080): our soldiers on their way to hide in this building, and calling one more of a type in. */
   hidingComing(building: number): number;
   callToHide(building: number, type: number): void;
+  /** The places it keeps for new soldiers (D-138 B): 「等新兵：遠程 1」, or "". */
+  callWaiting(building: number): string;
   /** 進駐's squares (R13-01 B 7a, 7b): who is inside a building of ours by kind, on their way, by group. */
   buildingSeats(building: number): { kinds: number[]; coming: number; out: number; groups: { group: number | null; ids: number[] }[] };
   /** 召回 on a building's panel: these come out and walk back to their group. */
@@ -802,6 +802,14 @@ export class SelectionInfo {
         calls.push(call);
       }
       out = button(row, "全部離開", "", () => this.host.command({ c: "leave", building: id }), "chip secondary");
+      // D-138 B: the places kept for new soldiers, under the buttons, in the panel's small words.
+      const waiting = el("div", this.el, "sel-garrison call-waiting small");
+      waiting.hidden = true;
+      this.updaters.push(() => {
+        const text = this.host.callWaiting(id);
+        if (waiting.textContent !== text) waiting.textContent = text;
+        waiting.hidden = text === "";
+      });
     }
     // 哨所 (D-080): how many spearmen stand guard, ＋槍兵, 全部離開; then 攻擊／堅守 and what the one on means.
     const outpost = own && type === BuildingType.Outpost && outpostSlots(view.rules) > 0 ? this.outpostRows(id) : null;

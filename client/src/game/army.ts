@@ -86,6 +86,8 @@ export interface ArmyState {
    * always empty now, ignored when read; kept so that the saved format stays the same.
    */
   keptOut: number[];
+  /** Each group's town it last left soldiers in (D-138 A; absent in saves from before: none). */
+  lastTown?: (number | null)[];
 }
 
 /** A 前進 order for recruits, to a cell. */
@@ -180,6 +182,11 @@ export class ArmyBook {
   /** Town id → the soldiers stationed together with a 搶 or 治理 (command `seq`) that the simulation has not answered yet. */
   private readonly pending = new Map<number, { seq: number; ids: number[] }>();
   readonly groups: Group[] = [emptyGroup(), emptyGroup(), emptyGroup(), emptyGroup()];
+  /**
+   * Each group's town it last left soldiers in (D-138 A, the user 2026-11-10: 「軍團按退守應該要會退到上一座它駐守的城市」):
+   * 進駐, 駐軍 or 留守 after taking it; 「退」 and 全軍撤退 go back there while it is ours.
+   */
+  readonly lastTown: (number | null)[] = [null, null, null, null];
   /**
    * The groups' members away from them as of the last snapshot: spearmen posted at an outpost
    * (哨所, D-080) and soldiers hiding in a building (躲進建築, D-083), on their way too. Still
@@ -340,6 +347,7 @@ export class ArmyBook {
     if (chosen.length === 0) return [];
     this.garrisons.set(town.id, [...(this.garrisons.get(town.id) ?? []), ...chosen]);
     this.stay(chosen);
+    this.noteHeld(town.id, chosen);
     return chosen;
   }
 
@@ -352,7 +360,15 @@ export class ArmyBook {
     this.drop([...ids]);
     this.garrisons.set(town, [...(this.garrisons.get(town) ?? []), ...ids]);
     this.stay(ids);
+    this.noteHeld(town, ids);
     return this.perGroup(fresh);
+  }
+
+  /** These soldiers were left in the town: it is now the last town of each group they are in (D-138 A). */
+  private noteHeld(town: number, ids: readonly number[]): void {
+    this.perGroup(ids).forEach((k, i) => {
+      if (k > 0) this.lastTown[i] = town;
+    });
   }
 
   /** Stationed: no longer a recruit walking to its group. */
@@ -433,6 +449,7 @@ export class ArmyBook {
       })),
       garrisons: [...this.garrisons].map(([town, ids]) => [town, [...ids]]),
       keptOut: [],
+      lastTown: [...this.lastTown],
     };
   }
 
@@ -451,6 +468,9 @@ export class ArmyBook {
     });
     this.garrisons.clear();
     for (const [town, ids] of s.garrisons) this.garrisons.set(town, [...ids]);
+    this.lastTown.forEach((_, i) => {
+      this.lastTown[i] = s.lastTown?.[i] ?? null;
+    });
     this.pending.clear();
     this.away.clear();
     this.awaySeen = false;

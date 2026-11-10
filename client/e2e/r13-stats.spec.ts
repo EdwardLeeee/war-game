@@ -140,6 +140,16 @@ const overWords = (page: Page) =>
   });
 
 /** The tabs' place: "top" the header across the card and the tabs under it (R14-09), "tall" down the card's whole height beside the header, "row" in a row under the header. */
+/**
+ * The layout, the page told the screen's size changed each time it is looked at. CI's WebKit, busy, can stop drawing frames
+ * and then holds the resize event back (2026-11-10, recorded under load: no frame and no resize event for 430 or 336 within
+ * 5 s, the tabs left as laid out at 329), and its size can come after setViewportSize returns; a phone sends the event.
+ */
+async function layoutOnResize(page: Page): Promise<string> {
+  await page.evaluate(() => window.dispatchEvent(new Event("resize")));
+  return (await fits(page)).layout;
+}
+
 async function everyTab(page: Page, label: string, layout: "top" | "tall" | "row"): Promise<void> {
   for (const t of TABS) {
     await page.getByRole("tab", { name: t }).tap();
@@ -270,12 +280,12 @@ test("局後統計：iPhone 安全區下，畫面高 330 以上分頁在左欄�
   await expect.poll(async () => (await fits(page)).layout).toBe("tall");
   await everyTab(page, "932×330", "tall");
   await page.setViewportSize({ width: 932, height: 329 });
-  await expect.poll(async () => (await fits(page)).layout).toBe("row");
+  await expect.poll(() => layoutOnResize(page)).toBe("row");
   await everyTab(page, "932×329", "row");
   await page.setViewportSize({ width: 932, height: 430 });
-  await expect.poll(async () => (await fits(page)).layout).toBe("top");
+  await expect.poll(() => layoutOnResize(page)).toBe("top");
   await page.setViewportSize({ width: 932, height: 336 });
-  await expect.poll(async () => (await fits(page)).layout).toBe("tall");
+  await expect.poll(() => layoutOnResize(page)).toBe("tall");
 });
 
 test("局後統計（932×320，分頁橫排，安全區）：要捲的頁下面淡出加 ⌄（在右邊留的空白裡，不壓字），點 ⌄ 往下捲，捲到底收起；矮的圖縱軸頂端剛好高過資料", async ({ page }) => {

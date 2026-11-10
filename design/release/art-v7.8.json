@@ -1,0 +1,88 @@
+{
+ "tag": "art-v7.8",
+ "view": "diamond",
+ "note": "art-v7.7 改種田農民的鋤頭和動作（使用者 2026-11-10：「種田的農民圖看起來好像有點怪」，選 R16 的 A 真實大小）：暗色舊鐵的鋤頭（東陸照《農書》的钁鋤、西陸照中古的鐵鋤）、兩手握柄的種田動作、西陸平常拿鋤頭的樣子和攻擊；資源點拿掉晶脈（D-135、D-137）；edge.json 拿掉 rim（client #441）。只有 units/farmer_e、units/farmer_w、nodes/、edge/edge.json 變，其他和 art-v7.7 一樣。",
+ "units": {
+  "farmer_e": {
+   "run": 42766895647,
+   "artifact": "r7-v8u-farmer_e"
+  },
+  "spear_e": {
+   "run": 41680879858,
+   "artifact": "r7-v8u-spear_e"
+  },
+  "bow_e": {
+   "run": 41680879858,
+   "artifact": "r7-v8u-bow_e"
+  },
+  "hcav_e": {
+   "run": 42172271527,
+   "artifact": "r7-v8u-hcav_e"
+  },
+  "siege_e": {
+   "run": 42087171293,
+   "artifact": "r7-v8u-siege_e"
+  },
+  "mage_e": {
+   "run": 42087171293,
+   "artifact": "r7-v8u-mage_e"
+  },
+  "farmer_w": {
+   "run": 42766895647,
+   "artifact": "r7-v8u-farmer_w"
+  },
+  "pike_w": {
+   "run": 41680879858,
+   "artifact": "r7-v8u-pike_w"
+  },
+  "bow_w": {
+   "run": 41680879858,
+   "artifact": "r7-v8u-bow_w"
+  },
+  "knight_w": {
+   "run": 42172271527,
+   "artifact": "r7-v8u-knight_w"
+  },
+  "siege_w": {
+   "run": 42087171293,
+   "artifact": "r7-v8u-siege_w"
+  },
+  "mage_w": {
+   "run": 41680879858,
+   "artifact": "r7-v8u-mage_w"
+  }
+ },
+ "effects": {
+  "run": 42057471775,
+  "artifact": "production-effects-atlas"
+ },
+ "buildings": {
+  "run": 42088643559,
+  "artifact": "production-buildings"
+ },
+ "castle_src": {
+  "run": 42226591262,
+  "artifact": "production-buildings"
+ },
+ "buildings_json_src": {
+  "run": 42226591262,
+  "artifact": "production-buildings"
+ },
+ "ground_src": {
+  "run": 42392868785,
+  "artifact": "production-buildings"
+ },
+ "nodes_src": {
+  "run": 42766967447,
+  "artifact": "production-buildings"
+ },
+ "edge_json_src": {
+  "run": 42766967447,
+  "artifact": "production-buildings"
+ },
+ "castle": true,
+ "terrain": true,
+ "ground": true,
+ "edge": true,
+ "astc": true
+}

@@ -262,7 +262,8 @@ test("＋遠程／＋法師（D-080）：選自己的主城就能叫兵躲進來
   // No mage within 30 cells: told so, no order.
   const mark = (await sent(page)).length;
   await callMage.tap();
-  await expectSaid(page, "30 格內沒有可以叫來的法師");
+  // D-138 B: nobody within 30 cells, a place is kept where mages are trained; the fake world has no mage hall.
+  await expectSaid(page, "沒有法術營，練不出法師");
   expect((await sent(page)).slice(mark).filter((c) => c.c === "garrison")).toEqual([]);
   // Then the walking one: not the one hiding already, not those far off.
   await callRanged.tap();
@@ -343,8 +344,11 @@ test("躲著的兵（D-083，使用者 2026-10-26 推翻 D083-1-A）：躲進去
   // 全軍 and 全軍撤退 count them again.
   const all = [...spear, ...ranged, ...mages].sort((a, b) => a - b);
   await expect(armyButton(page)).toHaveAccessibleName(`全軍 ${all.length}`);
+  // D-138 A: group 1 back to our town (it never left soldiers in one: our nearest), the others home; all of them.
+  const before = (await sent(page)).length;
   await page.getByRole("button", { name: "全軍撤退" }).tap();
-  await expect.poll(() => lastOrder(page)).toMatchObject({ c: "retreat", u: all });
+  const went = async () => (await sent(page)).slice(before).filter((c) => c.auto !== true && c.c === "retreat").flatMap((c) => c.u as number[]).sort((a, b) => a - b);
+  await expect.poll(went).toEqual(all);
 });
 
 test("召回（使用者 2026-11-04，D-119）：兩個編隊躲在同一座主城，編隊 1 的軍團畫面按召回，只有它的兵出來、走回編隊，編隊 2 的照舊躲著；編隊 2 全部躲著也按得到召回", async ({ page }, info) => {

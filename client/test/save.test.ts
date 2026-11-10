@@ -12,6 +12,7 @@ import { nextSeq } from "../src/game/game.ts";
 import { canGoOn, continueLabel, failureText, MemorySaveBackend, minuteOf, progressText, SAVE_EVERY_TICKS, type SavedGame, SaveStore, SCREEN_VERSION, screenUsable, UPDATED_TEXT } from "../src/save/save.ts";
 import { CELL, UnitType } from "../src/sim.ts";
 import { simBuild } from "../scripts/sim-build.ts";
+import { CallSlots } from "../src/game/call-slots.ts";
 
 const SPEAR = UnitType.Spearman;
 const RANGED = UnitType.Ranged;
@@ -160,4 +161,21 @@ test("等錢治理存進畫面狀態（等待中的城鎮、花費、玩家自�
   assert.deepEqual(back?.screen.govern, govern);
   assert.equal(screenUsable(saved()), true, "a save from before, without it");
   assert.equal(saved().screen.govern, undefined);
+});
+
+test("留給新兵的位子（＋遠程／＋法師）存進畫面狀態，「繼續上一局」讀回來照舊；沒有這一項的舊存檔就是沒有位子", async () => {
+  const slots = new CallSlots();
+  slots.add(21, 4);
+  slots.add(22, 5);
+  const withCalls = saved();
+  withCalls.screen.callSlots = slots.save();
+  const store = new SaveStore(Promise.resolve(new MemorySaveBackend()));
+  assert.equal(await store.save(withCalls), true);
+  const back = new CallSlots();
+  back.restore((await store.load())?.screen.callSlots);
+  assert.deepEqual(back.save(), [{ building: 21, type: 4 }, { building: 22, type: 5 }]);
+  assert.equal(saved().screen.callSlots, undefined);
+  const old = new CallSlots();
+  old.restore(saved().screen.callSlots);
+  assert.deepEqual(old.wanted(), {});
 });

@@ -61,8 +61,7 @@ x3、x2 各一套，加一份 `edge/edge.json`。PNG 照其他圖的規則：帶
     "spray": {"file": "fall_spray.png", "anchor": [x, y]},
     "mouth": {"file": "fall_mouth.png", "anchor": [x, y], "foam_m": 3.5, "se": {"file": "fall_mouth_se.png", "anchor": [x, y]}}
   },
-  "puffs": [{"file": "puff_0.png", "drift_px_s": [8, -2], "alpha_max": 0.6}],
-  "rim": {"fade_m": 3}                            // client #441 起沒有程式在讀，下次發美術包時拿掉
+  "puffs": [{"file": "puff_0.png", "drift_px_s": [8, -2], "alpha_max": 0.6}]
 }
 ```
 
