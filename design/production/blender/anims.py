@@ -758,8 +758,9 @@ HOE = {"E": dict(haft=1.30, r=0.018, top=0.14, edge=0.15, length=0.17, eye=0.03,
 # held near the head where it balances, the edge down, the arm hanging at the side; art-v7 held the butt and reached
 # the haft out in front, the head on the ground a pace ahead) and strikes with both hands on the haft, the axe swung
 # round his right side to behind the shoulder and down (art-v7: one hand at the butt, both arms straight up). The pick is raised over the right shoulder (the left
-# forearm crossed the face). R20=1 turns all of it on, until the user approves the boards (design/r20).
-R20 = os.environ.get("R20") == "1"
+# forearm crossed the face). The user approved the boards 2026-11-11 (「可以，照改後的做」, all six items; not 「工具放大
+# 一點」): on from art-v7.9. R20=0 gives art-v7.8's tools, carry and attack, for the before side of the boards.
+R20 = os.environ.get("R20", "1") != "0"
 # (haft length and radius; the head's middle up the haft; the poll behind the haft, the head's length poll to edge, its
 # height at the eye and at the edge, its thickness)
 AXE = dict(haft=0.80, r=0.017, at=0.715, poll=0.035, head=0.185, eye_h=0.07, edge=0.115, thick=0.034)
