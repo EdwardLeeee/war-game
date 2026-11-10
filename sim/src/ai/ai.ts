@@ -115,6 +115,20 @@ const STOP_NEAR = 6;
 const STOP_STUCK = 600;
 /** The scout is told again where to go this often (ticks). */
 const SCOUT_EVERY = 200;
+/**
+ * D-139 (the user's 64a27f8a: hard guessed the user's main city in the corner nearest the gate of a town the user governed,
+ * marched there, found nothing and stood there 12 minutes): a building guesses a corner only if it is no town's and its
+ * nearest corner is within the map's size / GUESS_FAR (a house by the main city, not an outpost or a town on the way); a
+ * corner whose guessed main city is in sight (GUESS_SEEN cells round it) with none there is ruled out, and the guess moves
+ * to the nearest of those left. Buildings this near a town are the town's.
+ */
+const GUESS_FAR = 3;
+const GUESS_SEEN = 1;
+const GUESS_TOWN = 12;
+/** D-139: all three ruled out (it should not happen: one is the enemy's), they are forgotten and none is ruled out again this long (ticks). */
+const GUESS_RESET = 2 * 1200;
+/** D-139: the guess moved to the nearest cell it knows to be open, this far at most (cells). */
+const GUESS_OPEN = 6;
 
 export interface MapMemory {
   readonly random: boolean;
@@ -135,9 +149,17 @@ export interface MapMemory {
   readonly stops: readonly (readonly { x: number; y: number }[])[];
   /** Learns from what it sees now. */
   observe(view: PlayerView): void;
+  /** D-139: whether corner `i` (0..2, the order of stops[0]) is ruled out: its guessed main city seen, none there. */
+  ruledOut(i: number): boolean;
+  /** D-139: changes each time `enemy` moves (a new guess, or the city found), so a march can tell. */
+  readonly version: number;
+  /** D-139: corners guessed (each new Known.Corner target), ruled out, the times all three were and were forgotten, and the tick the city was found (-1: not yet). */
+  readonly counts: { guesses: number; ruledOut: number; resets: number; foundAt: number };
+  /** D-139 on (HardPlan.cornerGuess; false: as before, for measuring). */
+  readonly revise: boolean;
 }
 
-export function mapMemory(map: Pick<MapInfo, "size" | "spawns" | "towns" | "mode">, frame: Frame, player: number): MapMemory {
+export function mapMemory(map: Pick<MapInfo, "size" | "spawns" | "towns" | "mode">, frame: Frame, player: number, revise = true): MapMemory {
   const random = map.mode === "random";
   const n = map.size;
   const mine = map.spawns.find((s) => s.player === player)!;
@@ -153,6 +175,10 @@ export function mapMemory(map: Pick<MapInfo, "size" | "spawns" | "towns" | "mode
       unexplored: map.towns,
       stops: [[], []],
       observe: () => {},
+      ruledOut: () => false,
+      version: 0,
+      counts: { guesses: 0, ruledOut: 0, resets: 0, foundAt: 0 },
+      revise,
     };
   }
   const real = (u: number, v: number) => fromCanon(frame, u, v);
@@ -190,6 +216,50 @@ export function mapMemory(map: Pick<MapInfo, "size" | "spawns" | "towns" | "mode
     return { cellX: g.x, cellY: g.y };
   })();
   let known: Known = Known.None;
+  // D-139: each candidate's guessed main city (real cells); those ruled out; the first building that guessed; which one is the target.
+  const spots = guesses.map((g) => real(g.u, g.v));
+  const ruled = [false, false, false];
+  let evidence: { x: number; y: number } | null = null;
+  let aim = 1;
+  let version = 0;
+  let quietUntil = -1;
+  const counts = { guesses: 0, ruledOut: 0, resets: 0, foundAt: -1 };
+  /** The candidate nearest (x, y) among `among`, ties to the first; and its distance squared. */
+  const nearest = (x: number, y: number, among: number[]) => {
+    let best = among[0];
+    let bestD = -1;
+    for (const i of among) {
+      const d = (spots[i].x - x) * (spots[i].x - x) + (spots[i].y - y) * (spots[i].y - y);
+      if (bestD < 0 || d < bestD) {
+        best = i;
+        bestD = d;
+      }
+    }
+    return { i: best, d2: bestD };
+  };
+  /** Points `enemy` at candidate `i`: its spot, or the nearest cell it knows to be open by it (the spot itself may be rock or water). */
+  const point = (view: PlayerView, i: number) => {
+    const c = spots[i];
+    let at = c;
+    const open = (x: number, y: number) => x >= 0 && y >= 0 && x < n && y < n && (view.placement[y * n + x] & (PlaceBit.Blocked | PlaceBit.Unexplored)) === 0;
+    const blocked = (view.placement[c.y * n + c.x] & PlaceBit.Blocked) !== 0;
+    if (blocked) {
+      let bestD = -1;
+      for (let dy = -GUESS_OPEN; dy <= GUESS_OPEN; dy++) {
+        for (let dx = -GUESS_OPEN; dx <= GUESS_OPEN; dx++) {
+          const d = dx * dx + dy * dy;
+          if (!open(c.x + dx, c.y + dy) || (bestD >= 0 && d >= bestD)) continue;
+          bestD = d;
+          at = { x: c.x + dx, y: c.y + dy };
+        }
+      }
+    }
+    if (enemy.cellX !== at.x || enemy.cellY !== at.y) {
+      enemy.cellX = at.x;
+      enemy.cellY = at.y;
+      version++;
+    }
+  };
   return {
     random,
     home,
@@ -200,43 +270,100 @@ export function mapMemory(map: Pick<MapInfo, "size" | "spawns" | "towns" | "mode
     site: (id) => towns.get(id),
     unexplored: [],
     stops,
+    ruledOut: (i) => ruled[i],
+    get version() {
+      return version;
+    },
+    counts,
+    revise,
     observe(view: PlayerView) {
       for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) {
         const id = view.towns[r + TownField.id];
         if (!towns.has(id)) towns.set(id, { id, size: view.towns[r + TownField.size], cellX: view.towns[r + TownField.cellX], cellY: view.towns[r + TownField.cellY] });
       }
       if (known === Known.City) return;
+      if (!revise) {
+        // As before D-139: the first enemy building seen guesses its nearest corner, for good (the main city seen: found).
+        let first: { x: number; y: number } | null = null;
+        for (let r = 0; r < view.buildings.length; r += BUILDING_STRIDE) {
+          if (view.buildings[r + BuildingField.owner] !== 1 - player) continue;
+          const x = view.buildings[r + BuildingField.cellX];
+          const y = view.buildings[r + BuildingField.cellY];
+          if (view.buildings[r + BuildingField.type] === BuildingType.MainCity) {
+            const c = footprintCentre(frame, x, y, 4);
+            enemy.cellX = c.x;
+            enemy.cellY = c.y;
+            known = Known.City;
+            counts.foundAt = view.tick;
+            return;
+          }
+          if (first === null) first = { x, y };
+        }
+        if (first !== null && known === Known.None) {
+          const i = nearest(first.x, first.y, [0, 1, 2]).i;
+          enemy.cellX = spots[i].x;
+          enemy.cellY = spots[i].y;
+          known = Known.Corner;
+          counts.guesses++;
+        }
+        return;
+      }
       let seen: { x: number; y: number } | null = null;
       for (let r = 0; r < view.buildings.length; r += BUILDING_STRIDE) {
         if (view.buildings[r + BuildingField.owner] !== 1 - player) continue;
         const x = view.buildings[r + BuildingField.cellX];
         const y = view.buildings[r + BuildingField.cellY];
-        if (view.buildings[r + BuildingField.type] === BuildingType.MainCity) {
+        const type = view.buildings[r + BuildingField.type];
+        if (type === BuildingType.MainCity) {
           const c = footprintCentre(frame, x, y, 4);
           enemy.cellX = c.x;
           enemy.cellY = c.y;
           known = Known.City;
+          version++;
+          counts.foundAt = view.tick;
           return;
         }
-        if (seen === null) seen = { x, y };
+        // D-139: not a town's (its keep and gates, anything by a town), nor one far from every corner.
+        if (seen !== null || type === BuildingType.Keep || type === BuildingType.Gate) continue;
+        let byTown = false;
+        for (const t of towns.values()) if ((t.cellX - x) * (t.cellX - x) + (t.cellY - y) * (t.cellY - y) <= GUESS_TOWN * GUESS_TOWN) byTown = true;
+        if (byTown) continue;
+        const far = Math.trunc(n / GUESS_FAR);
+        if (nearest(x, y, [0, 1, 2]).d2 > far * far) continue;
+        seen = { x, y };
       }
-      if (seen !== null && known === Known.None) {
-        // The corner nearest the building (in its own frame; ties to the first).
-        const s = toCanon(frame, seen.x, seen.y);
-        let best = 0;
-        let bestD = -1;
-        guesses.forEach((g, i) => {
-          const d = (g.u - s.u) * (g.u - s.u) + (g.v - s.v) * (g.v - s.v);
-          if (bestD < 0 || d < bestD) {
-            best = i;
-            bestD = d;
+      if (evidence === null && seen !== null) evidence = seen;
+      // D-139: a corner whose guessed main city is in sight with none there is not it.
+      if (view.tick >= quietUntil) {
+        spots.forEach((c, i) => {
+          if (ruled[i]) return;
+          for (let y = Math.max(0, c.y - GUESS_SEEN); y <= Math.min(n - 1, c.y + GUESS_SEEN); y++) {
+            for (let x = Math.max(0, c.x - GUESS_SEEN); x <= Math.min(n - 1, c.x + GUESS_SEEN); x++) if (view.fog[y * n + x] !== Fog.Visible) return;
           }
+          ruled[i] = true;
+          counts.ruledOut++;
         });
-        const g = real(guesses[best].u, guesses[best].v);
-        enemy.cellX = g.x;
-        enemy.cellY = g.y;
-        known = Known.Corner;
       }
+      let left = [0, 1, 2].filter((i) => !ruled[i]);
+      if (left.length === 0) {
+        // It should not happen (one of the three is the enemy's): forget them, and rule none out again for a while.
+        ruled.fill(false);
+        left = [0, 1, 2];
+        counts.resets++;
+        quietUntil = view.tick + GUESS_RESET;
+      }
+      if (evidence !== null || left.length === 1) {
+        // A corner: the one left nearest the building that guessed (or the only one left).
+        const i = evidence !== null ? nearest(evidence.x, evidence.y, left).i : left[0];
+        if (known !== Known.Corner || i !== aim) counts.guesses++;
+        known = Known.Corner;
+        aim = i;
+        point(view, i);
+      } else if (ruled[aim]) {
+        // No guess yet: the placeholder, the one left nearest the corner across the map.
+        aim = nearest(spots[1].x, spots[1].y, left).i;
+        point(view, aim);
+      } else if (known === Known.Corner) point(view, aim);
     },
   };
 }
@@ -269,6 +396,8 @@ export function createScout(mem: MapMemory): Scout {
   let best = Number.MAX_SAFE_INTEGER;
   let lastMove = -100000;
   let done = !mem.random;
+  /** D-139: the corner (as MapMemory.ruledOut counts them) of stop `k` going round `way`. */
+  const cornerOf = (w: number, k: number) => (w === 0 ? k : mem.stops[w].length - 1 - k);
   return {
     get id() {
       return id;
@@ -283,13 +412,33 @@ export function createScout(mem: MapMemory): Scout {
         id = -1;
       }
       if (s === undefined) {
-        const pick = soldiers.filter((u) => u.type !== UnitType.Mage && free(u)).sort((a, b) => a.id - b.id)[0];
+        // D-139: the one nearest home (in 64a27f8a they were taken from the army standing in the corner across the map
+        // and fell crossing the enemy's land, 17 in 31 minutes).
+        const h = mem.home;
+        const pick = soldiers
+          .filter((u) => u.type !== UnitType.Mage && free(u))
+          .sort((a, b) => (mem.revise ? (a.x - h.cellX) * (a.x - h.cellX) + (a.y - h.cellY) * (a.y - h.cellY) - (b.x - h.cellX) * (b.x - h.cellX) - (b.y - h.cellY) * (b.y - h.cellY) : 0) || a.id - b.id)[0];
         if (pick === undefined) return;
         s = pick;
         id = pick.id;
         since = tick;
         best = Number.MAX_SAFE_INTEGER;
         lastMove = -100000;
+      }
+      // D-139: on past corners already ruled out (a scout that fell there, or the army, saw them empty).
+      while (mem.revise && stop < mem.stops[way].length && mem.ruledOut(cornerOf(way, stop))) {
+        stop++;
+        since = tick;
+        best = Number.MAX_SAFE_INTEGER;
+        lastMove = -100000;
+      }
+      if (mem.revise && stop >= mem.stops[way].length) {
+        if (mem.known === Known.City) {
+          done = true;
+          id = -1;
+          return;
+        }
+        stop = 0;
       }
       let target = mem.stops[way][stop];
       const d2 = (s.x - target.x) * (s.x - target.x) + (s.y - target.y) * (s.y - target.y);
@@ -1665,6 +1814,8 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
   let setOut = 0;
   let stageFirst = -1;
   let staged = true;
+  /** D-139: the guess the march set out for (MapMemory.version); a new one: no gathering point by the old guess. */
+  let marchGuess = 0;
   /** D-089 (SIEGE.failed): how many set out on the last attack on the enemy main city that was ground down. */
   let cityFailed = 0;
   /** Soldier ids kept as the garrison of a governed or repairing town, per town. */
@@ -2543,6 +2694,12 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           // afar, the soldiers streamed in one by one, ignored the defenders and were picked off
           // (normal against easy, 2026-10-01).
           // D-089: those that set out gather outside first; those trained since wait there and go on STAGE_JOIN or more together.
+          // D-139: the guess moved (it was not there): on to the new one, no gathering point by the old.
+          if (mem.version !== marchGuess) {
+            marchGuess = mem.version;
+            stage = null;
+            staged = true;
+          }
           const at = stage;
           if (at !== null) {
             const near = (u: { x: number; y: number }) => dist2(u.x, u.y, at.x, at.y) <= STAGE_NEAR * STAGE_NEAR;
@@ -2642,6 +2799,7 @@ export function createAi(player: number, seed: number, know: AiKnowledge, slot =
           setOut = tick;
           stageFirst = -1;
           staged = stage === null;
+          marchGuess = mem.version;
           send(stage?.x ?? enemyHome.cellX, stage?.y ?? enemyHome.cellY, "base");
         } else if (!assault && townTime && army.length >= townArmy && open.length > 0 && strongEnough) {
           // 24 or more: the nearest of the biggest.
@@ -3006,6 +3164,11 @@ export interface HardPlan {
    */
   fortExit: number;
   /**
+   * D-139 (the user's 64a27f8a): the enemy's main city guessed only from a building near a corner (no town's), a corner
+   * found empty ruled out and the guess moved on, its scout past corners ruled out (false: as before, for measuring).
+   */
+  cornerGuess: boolean;
+  /**
    * D-135 (no crystal): its mage hall comes first from this minute, as it did once a plunder brought the crystal for a mage
    * (with crystal: hard's first hall at minute 11.4, first mage 12.1, medians, local; the user's last 10 games 12.1-14.2).
    */
@@ -3130,6 +3293,7 @@ export const HARD: HardPlan = {
   // six active groups 10 of 240 as before; push-crush 10/24 -> 10/26. routeFromArmy alone turned back no less (12.7).
   routeFromArmy: true,
   fortExit: 3,
+  cornerGuess: true,
   mageHallFirst: 10,
   // D-131 (the user 2026-11-06; ceo 2026-11-07; docs/research/2026-11-ai-tactics.md): against hard without it, new seeds,
   // 215-2-183 of 400 where the same AI against itself went 191-2-207; the six active groups 14 of 240 as before; the midway
@@ -3309,7 +3473,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   const rng = new Rng((seed ^ Math.imul(slot + 1, 0x9e3779b1)) >>> 0 || 1);
   const n = know.map.size;
   // The map as it knows it (scout.ts, D-074): on the fixed map the MapInfo's own objects.
-  const mem = mapMemory(know.map, know.frame, player);
+  const mem = mapMemory(know.map, know.frame, player, plan.cornerGuess);
   const scout = createScout(mem);
   const home = mem.home;
   const enemyHome = mem.enemy;
@@ -3352,6 +3516,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   let setOut = 0;
   let stageFirst = -1;
   let staged = true;
+  /** D-139: the guess the march set out for (MapMemory.version); a new one: no gathering point by the old guess. */
+  let marchGuess = 0;
   /** D-089 (plan.cityAgain): how many set out on the last march that broke off from the enemy main city. */
   let cityFailed = 0;
   /** D-086 A5: when the last march on the enemy's main city broke off (plan.cityForget); the town it saves up to govern (plan.townSave), -1 none. */
@@ -3519,7 +3685,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   return {
     // It always plunders (a town plundered again every 5 minutes pays more than governing it).
     style: "plunder",
-    stats: () => ({ ...counted }),
+    stats: () => ({ ...counted, cornerGuesses: mem.counts.guesses, cornerRuledOut: mem.counts.ruledOut, cornerResets: mem.counts.resets, cityFoundAt: mem.counts.foundAt }),
     peek: () => ({ knownWorth: known.worth, known: known.n, believedWorth: Math.max(known.worth, foeMemo), believed: Math.max(known.n, foeMemoN) }),
     think(view: PlayerView): CommandBody[] {
       const out: CommandBody[] = [];
@@ -5261,6 +5427,13 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           }
         }
         if (mode === "base") {
+          // D-139: the guess moved (it was not there): on to the new one, no gathering point by the old; the strength
+          // checks and break-offs below go on as for any march.
+          if (mem.version !== marchGuess) {
+            marchGuess = mem.version;
+            stage = null;
+            staged = true;
+          }
           // Those that set out are the front; soldiers trained since wait at home and follow six at
           // a time (one by one they would be picked off on the way).
           // Round 7 (garrison): a main city with soldiers hiding in it picks off what comes in small
@@ -5494,6 +5667,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           setOut = tick;
           stageFirst = -1;
           staged = stage === null;
+          marchGuess = mem.version;
           send(stage?.x ?? enemyHome.cellX, stage?.y ?? enemyHome.cellY, "base");
           return;
         }
