@@ -705,6 +705,11 @@ export class Game implements GestureHost {
     this.frozenNow = on ? performance.now() : null;
   }
 
+  /** Units whose ring flashed last frame, just ordered (R18-01 乙), for the test page. */
+  get ackedForTest(): number {
+    return this.renderer?.ackedCount ?? 0;
+  }
+
   /** Units with their owner's colour under their feet last frame (寫實地面), for the test page. */
   get feetForTest(): number {
     return this.renderer?.footCount ?? 0;
@@ -3450,6 +3455,8 @@ export class Game implements GestureHost {
     if (view === null || r === null) return;
     // The frames' clock (held still on the test page: the ring then stays, to be compared).
     const now = this.frozenNow ?? performance.now();
+    // R18-01 乙: those ordered flash their rings.
+    if ("u" in cmd && Array.isArray(cmd.u)) r.ack(cmd.u, now);
     const cell = (x: number, y: number) => ({ x: (x + 0.5) * TILE_PX, y: (y + 0.5) * TILE_PX });
     let at: { x: number; y: number } | null = null;
     let color = 0xffffff;

@@ -158,6 +158,8 @@ export interface GameHook {
   setGroundCache(on: boolean): void;
   /** The page's clock as the battlefield draws it held still (true) or running (false): the same frame twice, to compare pictures. */
   freezeClock(on: boolean): void;
+  /** Units whose ring flashed last frame, just ordered (R18-01 乙: 收到). */
+  acked(): number;
   /** Units drawn with their owner's colour under their feet last frame (寫實地面, ceo 2026-10-25). */
   feet(): number;
   /** 電影色調 (R9-05 B): the film grade over the battlefield now. */
@@ -392,6 +394,7 @@ export function gameHook(game: Game): GameHook {
     groundCache: () => game.groundCacheForTest,
     setGroundCache: (on) => game.setGroundCacheForTest(on),
     freezeClock: (on) => game.freezeClockForTest(on),
+    acked: () => game.ackedForTest,
     feet: () => game.feetForTest,
     filmGrade: () => game.filmGradeForTest,
     edge: () => game.edgeForTest,
