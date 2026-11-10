@@ -93,6 +93,8 @@ export class GameView implements IntentWorld {
   projection: Projection = TOP;
   /** The building whose picture (taller than its footprint, D-085) is under a point of the plane, from the renderer; null: none drawn. */
   pictureAt: ((px: number, py: number) => number | null) | null = null;
+  /** A gate's picture under a point of the plane, in front (D-096: it stands tall over its opening): its opening's map cells, or null. */
+  gatePictureAt: ((px: number, py: number) => number[] | null) | null = null;
   /** The town whose wall's picture is under a point of the plane (D-089: a stone wall stands tall over the cells behind it), or null. */
   wallPictureAt: ((px: number, py: number) => number | null) | null = null;
   /** The building whose picture, under a point of the plane, stands in front of a unit at (ux, uy) (it hides the unit there). */
@@ -458,6 +460,10 @@ export class GameView implements IntentWorld {
     // A building's picture stands above its footprint: a tap on its roof is on it too.
     const pictured = this.buildingById(this.pictureAt?.(t.x, t.y) ?? null);
     if (pictured !== null) return pictured;
+    // A gate's too (D-096; the user 2026-11-10: 「我點門的上半部會無反應」): its picture stands over its opening, and a tap
+    // on its upper half was on the town behind it.
+    const gate = this.gateOn(this.gatePictureAt?.(t.x, t.y) ?? null);
+    if (gate !== null) return gate;
 
     // A town (D-089): within its walls, on them, or on their pictures (a stone wall stands tall
     // over the cells behind it): only once no unit, building or node is there.
@@ -474,6 +480,19 @@ export class GameView implements IntentWorld {
         const owner = row < 0 ? NO_OWNER : snap.towns[row + T.owner];
         return { kind: "town", id: town.id, owner, type: town.size };
       }
+    }
+    return null;
+  }
+
+  /** The gate standing in one of these map cells (its opening), or null: none stands there now (broken, or not seen). */
+  private gateOn(cells: number[] | null): Pick | null {
+    const b = this.curr?.snap.buildings;
+    if (cells === null || b === undefined) return null;
+    const size = this.map.size;
+    for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
+      if (b[o + B.type] !== BuildingType.Gate) continue;
+      const f = this.footprint(b, o);
+      if (cells.some((c) => c % size >= f.x && c % size < f.x + f.w && Math.floor(c / size) >= f.y && Math.floor(c / size) < f.y + f.h)) return this.buildingById(b[o + B.id]);
     }
     return null;
   }
