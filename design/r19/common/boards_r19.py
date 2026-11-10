@@ -230,7 +230,10 @@ class Board:
         n, key = info["frames"], key_frame(info, anim)
         fh, fb = font(36), font(27, False)
         what = "打中" if "hit" in info else "落地" if "impact" in info else ""
-        head = f"{A.ANIM_NAME[anim]}　{n} 格、每秒 {info['fps']} 格" + ("、循環" if info.get("loop") else "、播一次") + (f"、第 {key + 1} 格{what}" if what else "")
+        fps = f"每秒 {info['fps']} 格"
+        if anim == "walk":                    # the client plays a walk by the unit's speed (walkFps)
+            fps = f"遊戲裡照這個兵種的速度播，每秒約 {A.walk_fps(info, self.unit):.0f} 格"
+        head = f"{A.ANIM_NAME[anim]}　{n} 格、{fps}" + ("、循環" if info.get("loop") else "、播一次") + (f"、第 {key + 1} 格{what}" if what else "")
         notes = []
         for f in self.spec["findings"]:
             if anim in f["anims"]:
