@@ -663,8 +663,8 @@ CARRY = {"axe": ((0, 0, 0.12), (0, 180, 0)), "hoe": ((0, 0, 0.30), (180, 0, 0))}
 # of the rice country (王禎《農書》卷十三, 1313, the earliest drawing found: 「江淮間…但用直項鋤頭…其用如劚，是名钁鋤」;
 # the 钁 「銎柄為身首半圭，非鋒非刃截然齊」: a squared head the haft goes through, its end showing above, a straight
 # edge); West: the eye hoe of the Roman and medieval finds (Enns, Römermuseum: an eye loop, the blade widening below
-# it to a broad edge). R16_HOE_SCALE: 1.0 the real size (option A), more the readable one (option B); R16_OLD=1 the
-# art-v7 hoe and farm keys, for the before boards.
+# it to a broad edge). The user chose A, the real size (2026-11-10, not B 1.5 times): R16_HOE_SCALE stays 1.0 (another
+# value only for the R16 boards); R16_OLD=1 the art-v7 hoe and farm keys, for the before boards.
 R16_OLD = os.environ.get("R16_OLD") == "1"
 HOE_SCALE = float(os.environ.get("R16_HOE_SCALE", "1.0"))
 HOE_ANGLE = 70.0          # degrees between the blade and the haft, the edge toward the hands
