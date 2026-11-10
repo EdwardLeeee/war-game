@@ -113,36 +113,37 @@ class Shots:
         return (l + r) * (t + b)
 
 
-def column(title, line, parts, w=None):
-    """An option: its name, a sentence, its pictures under each other."""
+def column(title, line, parts, w=None, rows=0):
+    """An option: its name, a sentence (room for `rows` lines: the columns' pictures level), its pictures under
+    each other."""
     f, ft = B.font(26, False), B.font(34)
     body = R.join(parts, 12, vertical=True)
     w = max(body.width, w or 0)
     lines = B.wrap(B.TMP, line, f, w - f.size)
-    img = Image.new("RGB", (w, 50 + len(lines) * 36 + 10 + body.height), B.BG)
+    img = Image.new("RGB", (w, 50 + max(rows, len(lines)) * 36 + 10 + body.height), B.BG)
     d = ImageDraw.Draw(img)
     d.text((0, 2), title, font=ft, fill=B.YEL if title != "現況" else (255, 150, 130))
     y = 50
     for ln in lines:
         d.text((2, y), ln, font=f, fill=B.WHITE)
         y += 36
-    img.paste(body, (0, y + 10))
+    img.paste(body, (0, 50 + max(rows, len(lines)) * 36 + 10))
     return img
 
 
 def columns(cols, gap=40):
-    w = max(c[2][0].width for c in cols)
-    done = [column(t, line, parts) for t, line, parts in cols]
-    w = max(d.width for d in done)
-    return R.join([column(t, line, parts, w) for t, line, parts in cols], gap)
+    w = max(column(t, line, parts).width for t, line, parts in cols)
+    f = B.font(26, False)
+    rows = max(len(B.wrap(B.TMP, line, f, w - f.size)) for _, line, _ in cols)
+    return R.join([column(t, line, parts, w, rows) for t, line, parts in cols], gap)
 
 
-def east_cols(S, n, frames=(0, 2, 3, 4, 6), bigs=(0, 3)):
+def east_cols(S, n, frames=(0, 3), bigs=(0, 3)):
     all_scenes = [S.east(o, "attack", k, 7) for o, _, _ in EAST for k in range(10)]
     box, pbox = S.box(all_scenes), S.box(all_scenes, pad=3)
     cols = []
     for o, name, line in EAST:
-        cols.append((name, line, [R.titled(S.phone([S.east(o, "attack", k, 7) for k in frames], pbox), "手機：發射的第 1、3、4、5、7 格"),
+        cols.append((name, line, [R.titled(S.phone([S.east(o, "attack", k, 7) for k in frames], pbox), "手機：發射的第 1、4 格"),
                                   S.big([S.east(o, "attack", k, 7) for k in bigs], n, box)]))
     return cols
 
@@ -153,7 +154,7 @@ def west_cols(S, n):
     b7, p7, b0 = S.box(all7), S.box(all7, pad=3), S.box(all0)
     cols = []
     for o, name, line in WEST:
-        cols.append((name, line, [R.titled(S.phone([S.west(o, "walk", k, 7) for k in (0, 2, 4, 6)], p7), "手機：走路的第 1、3、5、7 格"),
+        cols.append((name, line, [R.titled(S.phone([S.west(o, "walk", k, 7) for k in (0, 4)], p7), "手機：走路的第 1、5 格"),
                                   R.join([S.big([S.west(o, "idle", 0, 7)], n, b7), S.big([S.west(o, "walk", 2, 0)], n, b0)], 6)]))
     return cols
 
