@@ -3,6 +3,7 @@
 // line with round markers, theirs dashed with square ones, labelled at the line's end, so colour is never alone.
 
 import { TICKS_PER_SECOND } from "../../sim.ts";
+import type { WarEvent, WarKind } from "./events.ts";
 import type { FightRow, Pt, TownBar } from "./model.ts";
 
 const MIN = 60 * TICKS_PER_SECOND;
@@ -49,6 +50,35 @@ export function valueAxis(top: number, height: number): { step: number; ymax: nu
   return { step, ymax };
 }
 
+const WAR_CLASS: Record<WarKind, string> = { 進攻: "raid", 防守: "defend", 團戰: "battle" };
+
+/** 戰事標記 (R17-03): a mark at (x, y), 進攻 ▲, 防守 a shield, 團戰 ●; `on`: the one picked (gold). */
+export function warMark(kind: WarKind, x: number, y: number, on = false): string {
+  const c = `st-wm ${WAR_CLASS[kind]}${on ? " on" : ""}`;
+  const f = (n: number) => n.toFixed(1);
+  if (kind === "進攻") return `<path class="${c}" d="M${f(x)} ${f(y - 5)}L${f(x + 5)} ${f(y + 4)}L${f(x - 5)} ${f(y + 4)}Z"/>`;
+  if (kind === "防守") return `<path class="${c}" d="M${f(x - 4.5)} ${f(y - 4.5)}H${f(x + 4.5)}V${f(y)}Q${f(x + 4.5)} ${f(y + 3.5)} ${f(x)} ${f(y + 5.5)}Q${f(x - 4.5)} ${f(y + 3.5)} ${f(x - 4.5)} ${f(y)}Z"/>`;
+  return `<circle class="${c}" cx="${f(x)}" cy="${f(y)}" r="4.2"/>`;
+}
+
+/** The marks in a row at `y`, where each began; crowded they lie over each other, the picked one on top. */
+function warMarks(X: (t: number) => number, y: number, events: readonly WarEvent[], picked: number | null): string {
+  const g = events.map((e, i) => (i === picked ? "" : warMark(e.kind, X(e.from), y)));
+  if (picked !== null && events[picked] !== undefined) g.push(warMark(events[picked].kind, X(events[picked].from), y, true));
+  return `<g class="st-wmarks">${g.join("")}</g>`;
+}
+
+/** The small legend at the end of a chart's legend row (R17-03): 進攻 ▲, 防守, 團戰 ●. */
+export function warKey(): string {
+  return (["進攻", "防守", "團戰"] as const).map((k) => `<span class="st-lg"><svg class="st-wk" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">${warMark(k, 6, 6)}</svg>${k}</span>`).join("");
+}
+
+/** Where a chart's time axis runs: from `left` to its width less `right` (a tap's time, page.ts). */
+export const LINE_SPAN = { left: 46, right: 96 } as const;
+export const TOWNS_SPAN = { left: 84, right: 12 } as const;
+/** Room under the time axis for the marks' row. */
+const WAR_ROW = 14;
+
 /** The numbered rings over a chart where the moments were (1, 2, …), and their thin lines down. */
 function momentMarks(X: (t: number) => number, top: number, bottom: number, moments: readonly number[]): string {
   return moments
@@ -80,12 +110,13 @@ export interface Series {
  * Two lines over the game's time (累計採集, 士兵數): the value axis on the left, the time under, the moments' rings on
  * top, each line's last value written at its end (pushed apart when close); `peak`: each side's most, marked.
  */
-export function lineChart(o: { w: number; h: number; ticks: number; axisMinutes: number; series: readonly Series[]; moments: readonly number[]; unit?: string; peak?: boolean; label: string }): string {
+export function lineChart(o: { w: number; h: number; ticks: number; axisMinutes: number; series: readonly Series[]; moments: readonly number[]; unit?: string; peak?: boolean; label: string; events?: readonly WarEvent[]; picked?: number | null }): string {
   const { w, h, ticks } = o;
-  const L = 46;
-  const R = 96;
+  const war = (o.events?.length ?? 0) > 0;
+  const L = LINE_SPAN.left;
+  const R = LINE_SPAN.right;
   const T = 24;
-  const B = 24;
+  const B = 24 + (war ? WAR_ROW : 0);
   const pw = Math.max(40, w - L - R);
   const ph = Math.max(30, h - T - B);
   const top = Math.max(0, ...o.series.flatMap((s) => s.pts.map((p) => p[1])));
@@ -100,6 +131,7 @@ export function lineChart(o: { w: number; h: number; ticks: number; axisMinutes:
   g.push(timeLabels(X, h - 6, ticks, o.axisMinutes));
   g.push(`<line class="st-axis" x1="${L}" x2="${L + pw}" y1="${Y(0)}" y2="${Y(0)}"/>`);
   g.push(momentMarks(X, T, Y(0), o.moments));
+  if (war) g.push(warMarks(X, Y(0) + 9, o.events ?? [], o.picked ?? null));
   const ends: { y: number; y0: number; text: string }[] = [];
   for (const s of o.series) {
     if (s.pts.length === 0) continue;
@@ -162,12 +194,13 @@ export function butterfly(o: { w: number; h: number; rows: readonly FightRow[]; 
 }
 
 /** 城鎮易手: a bar a town over the game's time, its segments (whose, plundered, ruins, neutral) and 治／搶／叛 rings. */
-export function townsChart(o: { w: number; h: number; ticks: number; axisMinutes: number; bars: readonly TownBar[]; moments: readonly number[]; label: string }): string {
+export function townsChart(o: { w: number; h: number; ticks: number; axisMinutes: number; bars: readonly TownBar[]; moments: readonly number[]; label: string; events?: readonly WarEvent[]; picked?: number | null }): string {
   const { w, h, ticks, bars } = o;
-  const L = 84;
-  const R = 12;
+  const war = (o.events?.length ?? 0) > 0;
+  const L = TOWNS_SPAN.left;
+  const R = TOWNS_SPAN.right;
   const T = 26;
-  const B = 22;
+  const B = 22 + (war ? WAR_ROW : 0);
   const pw = Math.max(40, w - L - R);
   const rowH = (h - T - B) / Math.max(1, bars.length);
   const bh = Math.max(10, Math.min(22, rowH - 14));
@@ -192,5 +225,6 @@ export function townsChart(o: { w: number; h: number; ticks: number; axisMinutes
       g.push(`<g transform="translate(${X(e.tick).toFixed(1)} ${(y - 1).toFixed(1)})"><circle class="st-evr ${e.who}" r="10"/><text class="st-t st-bold" y="4.5" text-anchor="middle" font-size="12">${e.mark}</text></g>`);
     }
   });
+  if (war) g.push(warMarks(X, h - B + 8, o.events ?? [], o.picked ?? null));
   return svg(w, h, o.label, g.join(""));
 }
