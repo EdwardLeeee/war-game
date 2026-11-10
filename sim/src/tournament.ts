@@ -10,6 +10,7 @@
 // Exits 1 if any replay differs.
 
 import { GoldWatch, type GoldRecord } from "./gold-watch.ts";
+import { IdleWatch, type IdleRecord } from "./idle-watch.ts";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { hex8 } from "./core/fixed.ts";
@@ -48,6 +49,8 @@ export interface GameResult {
   replayMatches: boolean;
   checkpoints: number;
   finalHash: string;
+  /** D-139: an idle army, each side (idle-watch.ts). */
+  idle?: IdleRecord;
   wallMs: number;
   tickMicros: { median: number; p95: number; max: number; mean: number };
   /** Every TIMELINE_EVERY ticks: what each side had and where its army was (for finding why games run long). */
@@ -237,9 +240,11 @@ function run(): void {
     const micros: number[] = [];
     const timeline: Sample[] = [];
     const gold = new GoldWatch(g.w);
+    const idle = new IdleWatch(g);
     const rejected = [new Array<number>(REJECT_CODES).fill(0), new Array<number>(REJECT_CODES).fill(0)];
     while (!r.over && g.tick < maxTicks) {
       micros.push(r.tick(() => performance.now()));
+      idle.tick();
       for (const e of g.events) if (e.ev.k === "rejected" && e.to < 2) rejected[e.to][e.ev.reason]++;
       if (g.tick % TIMELINE_EVERY === 0) timeline.push(sample(r));
       if (g.tick % 1200 === 0) gold.minute(g.w);
@@ -269,6 +274,7 @@ function run(): void {
       replayMatches: same,
       checkpoints: r.hashes.length,
       finalHash: hex8(g.hash()),
+      idle: idle.result(),
       wallMs,
       tickMicros: { median: pick(0.5), p95: pick(0.95), max: sorted.at(-1) ?? 0, mean: sorted.length ? Math.round(sorted.reduce((a, b) => a + b, 0) / sorted.length) : 0 },
       timeline,

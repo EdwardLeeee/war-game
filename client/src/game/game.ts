@@ -77,7 +77,7 @@ import {
   UnitType,
 } from "../sim.ts";
 import { HIT_RADIUS_PT, START_ZOOM, TILE_PX, UNIT_CORE_HIT_PT } from "../tuning.ts";
-import { BUILDING_NAME, buildingName, NODE_NAME, UNIT_NAME } from "../ui/hud/names.ts";
+import { BUILDING_NAME, buildingName, CALL_WORD, NODE_NAME, UNIT_NAME } from "../ui/hud/names.ts";
 import { arrivedLine, cellStretch, type ShiftRow, shiftLine, shiftRows, shiftTowns, type WallView } from "../ui/hud/wall-shift.ts";
 import { KEEP_HINT_KEY, KEEP_HINT_TEXT, loadHintSeen, saveHintSeen } from "../hint-pref.ts";
 import { loadGradeOn, saveGradeOn } from "../grade-pref.ts";
@@ -105,6 +105,7 @@ import { allIn, orderState } from "./orders.ts";
 import { heldTown, leaveWalls } from "./walls.ts";
 import { SHORT_GARRISON_TEXT, SHORT_PLUNDER_TEXT } from "./station.ts";
 import { affords, costText, GovernWaits, shortfall } from "./govern-wait.ts";
+import { CallSlots, withCalls } from "./call-slots.ts";
 import { AutoArmyBook, type ArmyNeed, armyNeed, affordsAbove, type Block, type GroupNeed, missingText, pickTrains, POPULATION_CEILING_TEXT, type SentTrain, type Site, stillSent, villagersMissing } from "./auto-army.ts";
 import { ASSAULT_JOIN_CELLS, type Attacker, type AssaultScene, Assaults, assaultOrders, GATE_FOCUS_TEXT, type Target, type WallTarget } from "./assault.ts";
 import { AUTO_HOUSE_TEXT, type Footprint, type Gatherer, HOME_CELLS, HOUSE_SENT_TICKS, type HouseBlock, houseBlock, houseSpot, nearFootprint, pickBuilder, type TownGround } from "./auto-house.ts";
@@ -258,6 +259,14 @@ const PROJECTION_DEFAULT = PROJECTIONS[VIEW_DEFAULT];
 /** 浮空大陸: metres the realistic ground fades out over at the two lower edges, onto the cliff's lip (ui paints its grass a metre in). */
 const EDGE_FADE_M = 0.75;
 /** Orders that end a soldier's attack on a town (攻城打到底, assault.ts); 攻擊 starts one again. */
+/** ＋遠程／＋法師 with nobody near (D-138 B): where each type is trained, and what is said. */
+const CALL_MAKER: Partial<Record<number, number>> = { [UnitType.Ranged]: BuildingType.Range, [UnitType.Mage]: BuildingType.MageHall };
+export const CALL_WAIT_TEXT = {
+  kept: (maker: string, unit: string) => `附近沒有${unit}：${maker}會多練一名，練好走進來`,
+  none: (maker: string, unit: string) => `沒有${maker}，練不出${unit}`,
+  gone: "等新兵取消",
+};
+
 const ASSAULT_ENDS: ReadonlySet<string> = new Set(["move", "retreat", "attack", "stop", "garrison", "guard", "post", "gather", "build", "repair", "release"]);
 
 /** How long 到了 stays after a walk to fight is over (R14-07 2). */
@@ -571,6 +580,8 @@ export class Game implements GestureHost {
   private autoSent: SentTrain[] = [];
   /** Buildings of ours that trained someone since the last decision (`unit_trained`): a train sent there is taken. */
   private readonly trainedAt = new Set<number>();
+  /** ＋遠程／＋法師's places kept for new soldiers (D-138 B). */
+  private readonly callSlots = new CallSlots();
   private readonly autoOff = new Map<number, number>();
   /**
    * The simulation's own 自動訓練 still on for the person in this game, so turned off building by
@@ -692,6 +703,11 @@ export class Game implements GestureHost {
   /** The battlefield's clock held still or running again (the test page: the same frame twice). */
   freezeClockForTest(on: boolean): void {
     this.frozenNow = on ? performance.now() : null;
+  }
+
+  /** Units whose ring flashed last frame, just ordered (R18-01 乙), for the test page. */
+  get ackedForTest(): number {
+    return this.renderer?.ackedCount ?? 0;
   }
 
   /** Units with their owner's colour under their feet last frame (寫實地面), for the test page. */
@@ -910,6 +926,7 @@ export class Game implements GestureHost {
       recruitMessageTick: Number.isFinite(this.recruitMessageTick) ? this.recruitMessageTick : null,
       govern: this.governWaits.save(),
       autoArmy: this.autoArmy.save(),
+      callSlots: this.callSlots.save(),
     };
   }
 
@@ -931,6 +948,7 @@ export class Game implements GestureHost {
     this.recruitMessageTick = s.recruitMessageTick ?? Number.NEGATIVE_INFINITY;
     this.governWaits.restore(s.govern);
     this.autoArmy.restore(s.autoArmy);
+    this.callSlots.restore(s.callSlots);
     this.seq = Math.max(this.seq, s.seq);
     this.speed = s.speed;
     this.controls.setSpeed(s.speed);
@@ -1013,6 +1031,8 @@ export class Game implements GestureHost {
     this.controls.setWaiting(this.pending.waiting);
     // 堅守 or 取消 (stop and hold): what the next order goes by until the snapshot shows it (D-081).
     if (cmd.c === "stance") this.stances.note(cmd.u, cmd.stance, this.view?.header?.[H.tick] ?? 0);
+    // 全部離開 gives up the places it kept too (D-138 B).
+    if (cmd.c === "leave" && this.callSlots.drop(cmd.building) > 0) this.toast(CALL_WAIT_TEXT.gone);
     if (cmd.c === "move" || cmd.c === "attack" || cmd.c === "retreat") {
       // The player's own 前進, 攻擊 or 撤退 ends a soldier's stay in a garrison (GDD §5); it stays
       // in its group and goes where he sent it. Below the least a town needs, he is told.
@@ -1418,10 +1438,17 @@ export class Game implements GestureHost {
       }
       return { refill: g.refill, want: g.want, have };
     });
-    const need = armyNeed(groups, queued);
+    const groupNeed = armyNeed(groups, queued);
+    // ＋遠程／＋法師 with nobody near (D-138 B): one more of that type for each place a building keeps.
+    const lost = this.callSlots.prune((id) => {
+      const o = view.buildingRow(id);
+      return o >= 0 && b[o + BuildingField.owner] === view.me && b[o + BuildingField.hp] > 0;
+    });
+    if (lost.length > 0) this.toast(CALL_WAIT_TEXT.gone);
+    const need = withCalls(groupNeed, armyNeed(groups, {}).missing, this.callSlots.wanted(), queued);
     const picked = pickTrains(need, paused ? [] : sites, cost, budget);
     for (const t of picked.trains) send(t.building, t.type);
-    this.armyNeedSeen = need;
+    this.armyNeedSeen = groupNeed;
     this.armyBlocked = picked.blocked;
     this.autoPopulationFull = villagerBlock === "population" || [...picked.blocked.values()].includes("population");
     this.populationAtCeiling = h[H.populationCap] >= h[H.populationCeiling];
@@ -1906,7 +1933,7 @@ export class Game implements GestureHost {
     const outpost = kind === BuildingType.Outpost;
     const room = outpost ? outpostSlots(view.rules) : holds;
     const taken = outpost ? b[o + BuildingField.posted] : b[o + BuildingField.soldiers] + this.hidingComing(building);
-    if (taken >= room) {
+    if (taken + (outpost ? 0 : this.callSlots.count(building)) >= room) {
       this.depotSay(building, callFullText(name, room));
       return;
     }
@@ -1921,7 +1948,24 @@ export class Game implements GestureHost {
     const size = view.rules.buildings[kind]?.size ?? 1;
     const id = pickToHide(units, type, { cx: b[o + BuildingField.cellX], cy: b[o + BuildingField.cellY], size });
     if (id === null) {
-      this.depotSay(building, callNoneText(UNIT_NAME[type] ?? "兵"));
+      if (outpost) {
+        this.depotSay(building, callNoneText(UNIT_NAME[type] ?? "兵"));
+        return;
+      }
+      // D-138 B: nobody near, a place kept; 自動訓練 trains one more where that type is trained, and it walks in.
+      const unit = CALL_WORD[type] ?? UNIT_NAME[type] ?? "兵";
+      let where: number | null = null;
+      for (let k = 0; k < b.length; k += BUILDING_STRIDE) {
+        const t = b[k + BuildingField.type];
+        if (b[k + BuildingField.owner] === view.me && b[k + BuildingField.progress] >= 1000 && b[k + BuildingField.hp] > 0 && view.rules.buildings[t]?.trains.includes(type as UnitType) === true) where = t;
+      }
+      const maker = BUILDING_NAME[CALL_MAKER[type] ?? -1] ?? "訓練的建築";
+      if (where === null) {
+        this.depotSay(building, CALL_WAIT_TEXT.none(maker, unit));
+        return;
+      }
+      this.callSlots.add(building, type);
+      this.depotSay(building, CALL_WAIT_TEXT.kept(maker, unit));
       return;
     }
     if (kind === BuildingType.Outpost) {
@@ -1931,6 +1975,12 @@ export class Game implements GestureHost {
     }
     this.command({ c: "garrison", u: [id], building });
     this.depotSay(building, `叫 1 名${UNIT_NAME[type] ?? "兵"}躲進${name}`);
+  }
+
+  /** The places this building keeps for new soldiers (D-138 B): 「等新兵：遠程 1」, or "" with none. */
+  callWaiting(building: number): string {
+    const parts = garrisonTypes(this.view?.rules).map((t) => [t, this.callSlots.count(building, t)] as const).filter(([, n]) => n > 0);
+    return parts.length === 0 ? "" : `等新兵：${parts.map(([t, n]) => `${CALL_WORD[t] ?? UNIT_NAME[t] ?? "兵"} ${n}`).join("、")}`;
   }
 
   /** 哨所 (D-080): how many it takes, how many are posted there (on their way or on guard), and whether it holds. */
@@ -2875,7 +2925,10 @@ export class Game implements GestureHost {
             if (cmd?.auto !== true) this.overlays.toast(rejectText(ev.reason, cmd));
           } else {
             if (ev.k === "unit_trained") {
-              this.enlist(ev.id, ev.type);
+              // A place kept for its type (D-138 B): it walks into that building, not to a group.
+              const kept = this.callSlots.take(ev.type);
+              if (kept !== null) this.autoCommand({ c: "garrison", u: [ev.id], building: kept });
+              else this.enlist(ev.id, ev.type);
               this.trainedAt.add(ev.building);
             }
             if (ev.k === "shot") this.drawShot(ev.building, ev.target, now, ev.n ?? 1);
@@ -3402,6 +3455,8 @@ export class Game implements GestureHost {
     if (view === null || r === null) return;
     // The frames' clock (held still on the test page: the ring then stays, to be compared).
     const now = this.frozenNow ?? performance.now();
+    // R18-01 乙: those ordered flash their rings.
+    if ("u" in cmd && Array.isArray(cmd.u)) r.ack(cmd.u, now);
     const cell = (x: number, y: number) => ({ x: (x + 0.5) * TILE_PX, y: (y + 0.5) * TILE_PX });
     let at: { x: number; y: number } | null = null;
     let color = 0xffffff;

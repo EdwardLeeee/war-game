@@ -116,7 +116,8 @@ interface Marker {
   at: number;
 }
 
-const MARKER_MS = 600;
+/** Where an order goes, its ring stays this long, and the ordered units' rings flash this long (R18-01 乙, the user 2026-11-10). */
+const MARKER_MS = 800;
 
 interface UnitSprites {
   body: Sprite;
@@ -375,6 +376,10 @@ export class WorldRenderer {
    */
   private readonly overGround = new Graphics();
   ghostStyle: "fill" | "outline" = "fill";
+  /** Units just ordered, and when (R18-01 乙: their rings flash, 收到). */
+  private readonly acked = new Map<number, number>();
+  /** Units whose ring flashed last frame (the test page). */
+  ackedCount = 0;
   /** Units drawn behind a wall this frame (test page). */
   ghostCount = 0;
   /** Which (the test page). */
@@ -519,6 +524,12 @@ export class WorldRenderer {
     this.root.destroy({ children: true });
     this.terrainTexture.destroy(true);
     this.fogTexture.destroy(true);
+  }
+
+  /** These units were just ordered (R18-01 乙): their rings flash. */
+  ack(ids: readonly number[], now: number): void {
+    for (const id of ids) this.acked.set(id, now);
+    if (this.acked.size > 200) for (const [id, at] of this.acked) if (now - at > MARKER_MS) this.acked.delete(id);
   }
 
   /** Flash a ring at a world point (px). */
@@ -961,8 +972,9 @@ export class WorldRenderer {
   private drawMarkers(now: number): void {
     this.markers = this.markers.filter((m) => now - m.at < MARKER_MS);
     for (const m of this.markers) {
-      const k = (now - m.at) / MARKER_MS;
-      this.fx.circle(m.x, m.y, TILE_PX * (0.3 + 0.5 * k)).stroke({ width: 3, color: m.color, alpha: 1 - k });
+      const k = Math.max(0, (now - m.at) / MARKER_MS);
+      // R18-01 (the user 2026-11-10: 「沒注意，習慣點兩下」): half as big again as before, thicker, bright longer before it fades.
+      this.fx.circle(m.x, m.y, TILE_PX * (0.45 + 0.75 * k)).stroke({ width: 5, color: m.color, alpha: 1 - k * k });
     }
   }
 
@@ -1517,6 +1529,7 @@ export class WorldRenderer {
     const sel = view.selection.units;
     this.ghostRings.clear();
     this.ghostCount = 0;
+    this.ackedCount = 0;
     this.ghostIds.clear();
     this.footCount = 0;
     this.wallLifted = 0;
@@ -1619,6 +1632,16 @@ export class WorldRenderer {
         p.ring.position.set(px, py);
         p.ring.scale.set(1.05);
         p.ring.tint = 0xfff3b0;
+      }
+      // R18-01 乙: just ordered, its ring swells white and back (收到).
+      const acked = this.acked.get(id);
+      if (acked !== undefined && now - acked < MARKER_MS && owner === view.me) {
+        const k = Math.max(0, (now - acked) / MARKER_MS);
+        this.ackedCount++;
+        p.ring.visible = true;
+        p.ring.position.set(px, py);
+        p.ring.scale.set(1.05 + 0.7 * Math.sin(Math.PI * k));
+        p.ring.tint = 0xffffff;
       }
       // Behind a castle's wall (D-089): drawn again over it, its ring too when selected. Not one
       // standing on the wall (D-096): it is drawn in front of it.

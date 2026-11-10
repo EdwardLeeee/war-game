@@ -110,6 +110,8 @@ export interface GameHook {
   remove(ids: number[]): void;
   /** Fake world only: a building's hit points (a gate damaged, D-096). */
   damage(id: number, hp: number): void;
+  /** Fake world only: a finished building of ours of this type at (cx, cy), 自動訓練 on (D-138 B: a range); its id. */
+  addBuilding(type: number, cx: number, cy: number): number;
   /** Fake world only: a town's state (TownState) and owner from now (D-138 A: a town lost on the way). */
   setTown(id: number, state: number, owner: number): void;
   /** Fake world only: the game over, `winner` winning for `reason` (GameOverReason; the result screen); `timeline`: 局後統計's (a test's fixture). */
@@ -156,6 +158,8 @@ export interface GameHook {
   setGroundCache(on: boolean): void;
   /** The page's clock as the battlefield draws it held still (true) or running (false): the same frame twice, to compare pictures. */
   freezeClock(on: boolean): void;
+  /** Units whose ring flashed last frame, just ordered (R18-01 乙: 收到). */
+  acked(): number;
   /** Units drawn with their owner's colour under their feet last frame (寫實地面, ceo 2026-10-25). */
   feet(): number;
   /** 電影色調 (R9-05 B): the film grade over the battlefield now. */
@@ -358,6 +362,7 @@ export function gameHook(game: Game): GameHook {
     damage: (id, hp) => {
       if (game.portForTest instanceof MockPort) game.portForTest.damage(id, hp);
     },
+    addBuilding: (type, cx, cy) => (game.portForTest instanceof MockPort ? game.portForTest.addBuilding(type as Parameters<MockPort["addBuilding"]>[0], cx, cy) : -1),
     setTown: (id, state, owner) => {
       if (game.portForTest instanceof MockPort) game.portForTest.setTown(id, state as Parameters<MockPort["setTown"]>[1], owner);
     },
@@ -389,6 +394,7 @@ export function gameHook(game: Game): GameHook {
     groundCache: () => game.groundCacheForTest,
     setGroundCache: (on) => game.setGroundCacheForTest(on),
     freezeClock: (on) => game.freezeClockForTest(on),
+    acked: () => game.ackedForTest,
     feet: () => game.feetForTest,
     filmGrade: () => game.filmGradeForTest,
     edge: () => game.edgeForTest,

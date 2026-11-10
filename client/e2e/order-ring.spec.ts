@@ -1,5 +1,6 @@
 // 點地板的圈（the user 2026-11-10: 「為啥第一次選軍團時要點地板兩次才會移動」, then 「沒注意，習慣點兩下」）: a tap on the
-// ground with someone selected flashes a ring where the order goes (0.6 s), on the ground, under what stands. With 寫實地面
+// ground with someone selected flashes a ring where the order goes (0.8 s, R18-01 乙), on the ground, under what stands, and
+// the ordered units' rings swell white and back (收到). With 寫實地面
 // (what players see) and without, the frame at the tap minus the one after the ring is gone, near the tap, has its pixels.
 // The page's clock is held for those frames (the ring is timed by it too): drawn in software here a frame of 寫實地面 can take
 // longer than the ring lasts, and the ring would be missed.
@@ -65,13 +66,16 @@ for (const [name, query] of [
     await page.evaluate((id) => window.__proto?.game?.select([id]), farmer.id);
     await page.waitForTimeout(600);
     // Open ground a few cells off, with nothing a tap would pick there: on a slow machine the others have walked further before
-    // the pause, and one standing there took the tap (CI 2026-11-10: it was selected instead, and no order went).
+    // the pause, and one standing there took the tap (CI 2026-11-10: it was selected instead, and no order went). No tree, mine
+    // or berries within 4 cells either: with a farmer selected a tap near one is sent to gather there (input/intent.ts pickNode,
+    // CI 6d1993b: 「gather」 to a tree).
     const spot = await page.evaluate(([fx, fy]) => {
       const g = window.__proto?.game;
       if (g === undefined) return null;
-      for (const [dx, dy] of [[5, -5], [5, 5], [-5, 5], [-5, -5], [6, 0], [0, 6], [-6, 0], [0, -6], [4, -7], [7, 4]]) {
+      const nodes = g.nodes();
+      for (const [dx, dy] of [[5, -5], [5, 5], [-5, 5], [-5, -5], [6, 0], [0, 6], [-6, 0], [0, -6], [4, -7], [7, 4], [-7, 4], [4, 7]]) {
         const c = g.openCellNear(Math.round(fx + dx), Math.round(fy + dy), false);
-        if (c === null) continue;
+        if (c === null || nodes.some((n) => Math.abs(n.cx - c.x) <= 4 && Math.abs(n.cy - c.y) <= 4)) continue;
         const p = g.cellToScreen(c.x, c.y);
         if (p.x > 60 && p.x < window.innerWidth - 60 && p.y > 40 && p.y < window.innerHeight - 40 && g.pickAt(p.x, p.y) === null) return { to: c, at: p };
       }
@@ -80,19 +84,21 @@ for (const [name, query] of [
     if (spot === null) throw new Error("no open ground to tap");
     const { to, at } = spot;
     const before = (await page.evaluate(() => window.__proto?.game?.sent() ?? [])).length;
-    // The page's clock held still: the ring stays as it is at the tap (a slow frame here would miss its 0.6 s).
+    // The page's clock held still: the ring stays as it is at the tap (a slow frame here would miss its 0.8 s).
     await page.evaluate(() => window.__proto?.game?.freezeClock(true));
     await page.touchscreen.tap(at.x, at.y);
     await frames(page);
     await page.waitForTimeout(300);
     const ring = await page.screenshot();
-    // The clock on again: 0.6 s later the ring is gone; held again for the same frame without it.
+    expect(await page.evaluate(() => window.__proto?.game?.acked() ?? 0), "the farmer's ring flashes (收到)").toBe(1);
+    // The clock on again: 0.8 s later the ring is gone, the farmer's too; held again for the same frame without it.
     await page.evaluate(() => window.__proto?.game?.freezeClock(false));
     await page.waitForTimeout(1500);
     await page.evaluate(() => window.__proto?.game?.freezeClock(true));
     await frames(page);
     await page.waitForTimeout(300);
     const gone = await page.screenshot();
+    expect(await page.evaluate(() => window.__proto?.game?.acked() ?? 0)).toBe(0);
     expect((await page.evaluate(() => window.__proto?.game?.sent() ?? [])).slice(before)).toContainEqual(expect.objectContaining({ c: "move", x: to.x, y: to.y }));
     const n = await changedNear(page, ring, gone, at.x, at.y, 40);
     console.log(`ORDER-RING ${name}: ${n.toFixed(0)} points changed near the tap`);
