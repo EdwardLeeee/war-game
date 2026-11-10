@@ -761,6 +761,11 @@ export class Game implements GestureHost {
   }
 
   /** The castles as drawn (D-089), and the units drawn behind their walls, for the test hook. */
+  /** The pictures a tap may land on, on the plane (the test hook converts them to the screen). */
+  get picturesForTest(): { buildings: { id: number; box: { x0: number; y0: number; x1: number; y1: number } }[]; gates: { cells: number[]; box: { x0: number; y0: number; x1: number; y1: number } }[] } | null {
+    return this.renderer?.picturesForTest ?? null;
+  }
+
   get castleForTest(): { pieces: number; tiles: number; blockTowns: number; misfit: number; ghosts: number; ghostIds: number[]; walkable: boolean; gates: Record<string, number>; decor: number; decorLeftOut: number } | null {
     const r = this.renderer;
     return r === null ? null : { ...r.castleCounts, ghosts: r.ghostCount, ghostIds: [...r.ghostIds] };
@@ -3334,7 +3339,8 @@ export class Game implements GestureHost {
     const view = this.view;
     const r = this.renderer;
     if (view === null || r === null) return;
-    const now = performance.now();
+    // The frames' clock (held still on the test page: the ring then stays, to be compared).
+    const now = this.frozenNow ?? performance.now();
     const cell = (x: number, y: number) => ({ x: (x + 0.5) * TILE_PX, y: (y + 0.5) * TILE_PX });
     let at: { x: number; y: number } | null = null;
     let color = 0xffffff;

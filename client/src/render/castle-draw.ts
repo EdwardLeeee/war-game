@@ -443,6 +443,29 @@ export class CastleDraw {
     return best?.town ?? null;
   }
 
+  /**
+   * The gate (D-096) whose piece is the front one under a point of the plane: its opening's map cells; null when the front
+   * piece there is a wall, or none is. Its picture stands well above the opening a tap on the ground would find (the user
+   * 2026-11-10: 「我點門的上半部會無反應」).
+   */
+  gatePictureAt(px: number, py: number): number[] | null {
+    let best: { cells: number[] | null; z: number } | null = null;
+    for (const d of this.towns.values()) {
+      for (const p of d.pieces) {
+        if (!p.color.visible || px < p.box.x0 || px > p.box.x1 || py < p.box.y0 || py > p.box.y1) continue;
+        if (best === null || p.z > best.z) best = { cells: p.gate?.cells ?? null, z: p.z };
+      }
+    }
+    return best?.cells ?? null;
+  }
+
+  /** The gate pieces shown, their opening's map cells and picture on the plane (the test page). */
+  get gatePictures(): { cells: number[]; box: { x0: number; y0: number; x1: number; y1: number } }[] {
+    const out: { cells: number[]; box: { x0: number; y0: number; x1: number; y1: number } }[] = [];
+    for (const d of this.towns.values()) for (const p of d.pieces) if (p.gate !== null && p.color.visible) out.push({ cells: [...p.gate.cells], box: { ...p.box } });
+    return out;
+  }
+
   /** Whether a wall piece drawn after depth `z` (in front) covers part of this box on the plane: the unit there is behind it. */
   covers(box: { x0: number; y0: number; x1: number; y1: number }, z: number): boolean {
     for (const d of this.towns.values()) {
