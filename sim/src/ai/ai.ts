@@ -3249,7 +3249,7 @@ export const HARD: HardPlan = {
   cavalryCounter: 20,
   cavalryWhen: 0,
   charge: true,
-  siegeUse: false,
+  siegeUse: true,
   cavalryHunt: false,
   chargeRest: 2,
   towers: 0,
