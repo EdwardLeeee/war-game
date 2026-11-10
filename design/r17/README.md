@@ -20,3 +20,24 @@ python3 design/r17/common/boards_r17.py SHOTS design/r17/build/out
   - 團戰：淡色實心＝我方贏、斜線＝敵方贏、虛線框＝平手。
   - 說明卡上寫字。差不到 14 pt 的記號合成一個，寫上數字。
   - 點記號跳出最近那件的說明卡，卡上有「上一件／下一件」。
+
+## R17-02、R17-03：只在時間軸多一排小記號
+
+使用者看了 R17-01：「感覺圖片有點複雜，感覺只需要放在在時間軸上標事件 想知道自己點進去就好」；看了 R17-02：「感覺可以有進攻 防守 跟團戰」（D-138）。
+
+```bash
+python3 -I design/r17/common/events_r17c.py ../review/r17 33cdaaa5 2fd2e236 62ae4218 > EVENTS3.json
+R17_TIMELINES=../review/r17/timelines node design/r17/common/r17c.mjs SHOTS EVENTS3.json
+python3 design/r17/common/boards_r17c.py SHOTS EVENTS3.json design/r17/build/out
+```
+
+- R17-02（`r17b.mjs`、`boards_r17b.py`）：甲 一種記號、乙 進攻和團戰兩種。
+- R17-03（`events_r17c.py`、`r17c.mjs`、`boards_r17c.py`，畫法是 `r17-page.js` 的 `draw3`）：三種記號，各算各的、不合併。
+  - 進攻 ▲ 淡藍：我方去打不是我方的城（電腦主城、電腦的城、中立城鎮）。
+  - 防守 盾形 淡紅：電腦來打我方主城或我方的城（R17-01、R17-02 叫「進攻」的那一種）。
+  - 團戰 ● 淡金。
+  - 記號標在開始的時間，不表示結果；擠在一起就疊著。小圖例在圖例那一列的右端。
+  - 點時間軸跳出最近那件的說明卡：一行標題、一行結果和死傷，「上一件／下一件」、第幾件／共幾件。
+- 怎麼算照 client 的 `結果.md`、`我方進攻.md`；另外兩件事是 ui 這邊定的，稿上有寫：
+  - 防守也拿掉「只出現一次取樣、又沒人死」的（client 的建議）。
+  - 我方的城剛被打下 1 分鐘內我方還在旁邊打（`我方進攻-全部候選.txt` 的「剛丟」）：不另外標進攻，死傷加進那次防守（城鎮的民兵不算），搶回來了就寫「失守後搶回」。
