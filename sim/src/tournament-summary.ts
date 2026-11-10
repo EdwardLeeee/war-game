@@ -12,6 +12,7 @@
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Reject } from "./protocol.ts";
+import { idleTable } from "./idle-summary.ts";
 import type { GameResult } from "./tournament.ts";
 
 /**
@@ -254,5 +255,10 @@ const lines = [
   failures.length === 0 ? "門檻全部通過。" : `**沒通過：** ${failures.join("；")}`,
   ...(reference.length === 0 ? [] : [`參考（隨機地圖不擋，D-076）：${reference.join("；")}`]),
 ];
+// D-139: an idle army, both sides (each an AI); reports only.
+const idleGames = games.filter((g) => g.idle !== undefined);
+if (idleGames.length > 0) {
+  lines.push("", "**電腦發呆（D-139，兩邊都是電腦）**", "", idleTable([["全部", idleGames.map((g) => ({ name: `第 ${g.game} 局（種子 ${g.seed}）`, idle: g.idle, sides: [0, 1] }))]]));
+}
 console.log(lines.join("\n"));
 if (failures.length > 0) process.exit(1);

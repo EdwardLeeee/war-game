@@ -10,6 +10,7 @@
 // Prints Markdown; with --json also writes every game's details. Reports only, no threshold.
 
 import { CrushWatch, type CrushRecord } from "./crush-watch.ts";
+import { IdleWatch, type IdleRecord } from "./idle-watch.ts";
 import { DeathWatch, type DeathRecord } from "./death-watch.ts";
 import { GoldWatch, type GoldRecord } from "./gold-watch.ts";
 import { SiegeWatch, type SiegeRecord } from "./siege-watch.ts";
@@ -347,6 +348,8 @@ interface GameRecord {
   governedEnd: [number, number];
   /** push-crush, every game (read only): the first battle the AI lost big and the 15 minutes after it (null: none). */
   crush: CrushRecord | null;
+  /** D-139: an idle army, each side (idle-watch.ts); the AI is side 1. */
+  idle: IdleRecord;
   /** push-late-siege: the player's engines (siege-watch.ts), and what each side had at minutes 30, 45, 60, 90. */
   siege?: SiegeRecord;
   lateAt?: Record<string, [LateSide, LateSide]>;
@@ -525,6 +528,7 @@ function play(seed: number): GameRecord {
   const pace: GameRecord["pace"] = {};
   const goldWatch = new GoldWatch(w);
   const crushWatch = new CrushWatch();
+  const idleWatch = new IdleWatch(g);
   const siegeWatch = new SiegeWatch(0);
   const lateAt: Record<string, [LateSide, LateSide]> = {};
   const lateSide = (p: number): LateSide => ({
@@ -566,6 +570,7 @@ function play(seed: number): GameRecord {
     bonus.tick(w);
     deaths.tick(w);
     crushWatch.tick(w);
+    idleWatch.tick();
     if (plan.lateSiege) {
       siegeWatch.tick(w, g.events, player.state().mode === "base");
       if (w.tick % (15 * 1200) === 0 && w.tick >= 30 * 1200 && w.tick <= 90 * 1200) lateAt[`m${w.tick / 1200}`] = [lateSide(0), lateSide(1)];
@@ -879,6 +884,7 @@ function play(seed: number): GameRecord {
     gold: goldWatch.result(),
     governedEnd: [0, 1].map((p) => w.townOwner.filter((o, t) => o === p && w.townState[t] === TownState.Governed).length) as [number, number],
     crush: crushWatch.result(),
+    idle: idleWatch.result(),
     ...(plan.lateSiege ? { siege: siegeWatch.result(), lateAt } : {}),
     aiFarmers,
     aiRescue,

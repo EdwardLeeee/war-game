@@ -175,6 +175,10 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v5
+        with:
+          # 30 minutes, not the default 10: the site is about 317 MB and GitHub Pages has stayed in syncing_files past
+          # 10 minutes (3c26ebf, a7793ec, 507a9a6 on 2026-11-10, each cancelled; a rerun then went through).
+          timeout: 1800000
 
   # The published site, the way the user opens it: every page loads and proto/ is this commit.
   live:

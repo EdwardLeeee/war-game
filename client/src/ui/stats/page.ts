@@ -7,7 +7,8 @@
 // tabs are on the left). Only on a screen shorter still (card inner under 6 × 44 + 5 × 2: at the iPhone's safe area 21,
 // under 330) they go in a row under the header.
 
-import { butterfly, keyLine, lineChart, townsChart } from "./charts.ts";
+import { butterfly, keyLine, LINE_SPAN, lineChart, TOWNS_SPAN, townsChart, warKey, warMark } from "./charts.ts";
+import { eventCard } from "./events.ts";
 import { RESOURCE_NAME, type ResourceKey, type StatsModel } from "./model.ts";
 import { clock } from "../hud/names.ts";
 import { icon } from "../icons.ts";
@@ -37,6 +38,8 @@ export class StatsPage {
   private readonly tabButtons = new Map<StatsTab, HTMLButtonElement>();
   private tab: StatsTab = "總覽";
   private res: ResourceKey = "food";
+  /** The 戰事 whose card is open (R17-03), by its place in the model's events; it stays from chart to chart. */
+  private picked: number | null = null;
   private readonly onResize = () => this.fit();
   private readonly m: StatsModel;
   private readonly formal: boolean;
@@ -154,15 +157,77 @@ export class StatsPage {
     if (more !== null) more.hidden = p.scrollHeight - p.clientHeight - p.scrollTop <= 2;
   }
 
+  /**
+   * 戰事標記 (R17-03): a tap anywhere on the chart opens the card of the 戰事 that began nearest that time; the card (two
+   * lines, 上一件／下一件, which of how many, 關閉) stands over the chart near its mark, inside the card.
+   */
+  private warCard(cd: HTMLElement, host: HTMLElement, w: number, span: { left: number; right: number }): void {
+    const events = this.m.events;
+    if (events.length === 0) return;
+    const ticks = this.m.ticks;
+    const x0 = span.left;
+    const pw = Math.max(40, w - span.left - span.right);
+    const X = (t: number) => x0 + (ticks > 0 ? t / ticks : 0) * pw;
+    host.classList.add("st-tap");
+    host.addEventListener("click", (ev) => {
+      const at = ((ev.clientX - host.getBoundingClientRect().left - x0) / pw) * ticks;
+      let best = 0;
+      events.forEach((e, i) => {
+        if (Math.abs(e.from - at) < Math.abs(events[best].from - at)) best = i;
+      });
+      this.picked = best;
+      this.draw();
+    });
+    const i = this.picked;
+    if (i === null || events[i] === undefined) return;
+    const e = events[i];
+    const c = eventCard(e);
+    const box = el("div", cd, "st-wcard");
+    box.setAttribute("role", "group");
+    box.setAttribute("aria-label", `戰事 ${i + 1}／${events.length}`);
+    const one = el("p", box, "st-wc1");
+    one.innerHTML = `<svg class="st-wk" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">${warMark(e.kind, 6, 6, true)}</svg>`;
+    el("b", one, "", c.title);
+    el("span", one, "", c.place);
+    el("span", one, "", c.detail);
+    const two = el("p", box, "st-wc2");
+    el("b", two, "", c.result);
+    el("span", two, "", c.dead);
+    const row = el("div", box, "st-wc3");
+    const go = (j: number) => {
+      this.picked = j;
+      this.draw();
+    };
+    const prev = this.button(row, "‹ 上一件", false, () => go(i - 1));
+    prev.disabled = i === 0;
+    el("span", row, "st-wn st-num", `${i + 1} / ${events.length}`);
+    const next = this.button(row, "下一件 ›", false, () => go(i + 1));
+    next.disabled = i === events.length - 1;
+    const close = this.button(row, "", false, () => {
+      this.picked = null;
+      this.draw();
+    });
+    close.classList.add("st-wx");
+    close.setAttribute("aria-label", "關閉");
+    close.appendChild(icon("close"));
+    // Near its mark, inside the chart's card; over the chart's top.
+    const room = cd.clientWidth;
+    const bw = box.offsetWidth;
+    const mx = host.offsetLeft + X(e.from);
+    box.style.left = `${Math.round(Math.max(4, Math.min(room - bw - 4, mx - bw / 2)))}px`;
+    box.style.top = `${Math.round(host.offsetTop + 6)}px`;
+  }
+
   private drawPage(): void {
     const m = this.m;
     const p = this.page;
     p.replaceChildren();
     p.scrollTop = 0;
     const moments = m.moments.map((x) => x.tick);
+    const war = m.events.length > 0;
     const legend = (host: HTMLElement) => {
       const lg = el("div", host, "st-legend");
-      lg.innerHTML = `<span class="st-lg">${keyLine("me")}我方</span><span class="st-lg">${keyLine("foe")}敵方</span>`;
+      lg.innerHTML = `<span class="st-lg">${keyLine("me")}我方</span><span class="st-lg">${keyLine("foe")}敵方</span>${war ? `<span class="st-wkey">${warKey()}</span>` : ""}`;
     };
     const momentKey = () => {
       if (m.moments.length === 0) return;
@@ -241,8 +306,11 @@ export class StatsPage {
         momentKey();
         const r = m.resources[this.res];
         const name = RESOURCE_NAME[this.res];
+        const box = boxOf(host);
         host.innerHTML = lineChart({
-            ...boxOf(host),
+            ...box,
+            events: m.events,
+            picked: this.picked,
             ticks: m.ticks,
             axisMinutes: m.axisMinutes,
             moments,
@@ -252,6 +320,7 @@ export class StatsPage {
             ],
             label: `累計採集${name}：我方 ${fmt(r.me.at(-1)?.[1] ?? 0)}、敵方 ${fmt(r.foe.at(-1)?.[1] ?? 0)}`,
           });
+        this.warCard(cd, host, box.w, LINE_SPAN);
         return;
       }
       case "兵力": {
@@ -261,8 +330,11 @@ export class StatsPage {
         const host = chartHost(cd);
         momentKey();
         const a = m.army;
+        const box = boxOf(host);
         host.innerHTML = lineChart({
-            ...boxOf(host),
+            ...box,
+            events: m.events,
+            picked: this.picked,
             ticks: m.ticks,
             axisMinutes: m.axisMinutes,
             moments,
@@ -274,6 +346,7 @@ export class StatsPage {
             ],
             label: `士兵數：我方最多 ${a.peak.me[1]} 名（${clock(a.peak.me[0])}）、敵方最多 ${a.peak.foe[1]} 名（${clock(a.peak.foe[0])}）；最後我方 ${a.me.at(-1)?.[1] ?? 0} 名、敵方 ${a.foe.at(-1)?.[1] ?? 0} 名`,
           });
+        this.warCard(cd, host, box.w, LINE_SPAN);
         return;
       }
       case "戰鬥": {
@@ -286,7 +359,9 @@ export class StatsPage {
         return;
       }
       case "城鎮": {
-        ctl("城鎮易手");
+        // Its legend row is full (932 × 336): the small legend at the end of the title's row instead.
+        const head = ctl("城鎮易手");
+        if (war && m.towns.length > 0) el("span", head, "st-wkey").innerHTML = warKey();
         if (m.towns.length === 0) {
           el("p", p, "st-none", "這局沒有城鎮易手");
           return;
@@ -301,7 +376,9 @@ export class StatsPage {
           '<span class="st-lg"><i class="st-evk">治</i>治理</span><span class="st-lg"><i class="st-evk">搶</i>搶</span><span class="st-lg"><i class="st-evk">叛</i>叛離</span>' +
           '<span class="st-lg muted">圓圈的框色＝誰做的</span>';
         momentKey();
-        host.innerHTML = townsChart({ ...boxOf(host, (m.towns.some((b) => b.note !== "") ? 36 : 26) * m.towns.length + 48), ticks: m.ticks, axisMinutes: m.axisMinutes, moments, bars: m.towns, label: m.towns.map((b) => `${b.name}：${b.events.map((e) => `${clock(e.tick)} ${e.who === "me" ? "我方" : "敵方"}${e.mark === "治" ? "治理" : e.mark === "搶" ? "搶" : "叛離"}`).join("、") || "沒有變化"}`).join("；") });
+        const box = boxOf(host, (m.towns.some((b) => b.note !== "") ? 36 : 26) * m.towns.length + 48);
+        host.innerHTML = townsChart({ ...box, events: m.events, picked: this.picked, ticks: m.ticks, axisMinutes: m.axisMinutes, moments, bars: m.towns, label: m.towns.map((b) => `${b.name}：${b.events.map((e) => `${clock(e.tick)} ${e.who === "me" ? "我方" : "敵方"}${e.mark === "治" ? "治理" : e.mark === "搶" ? "搶" : "叛離"}`).join("、") || "沒有變化"}`).join("；") });
+        this.warCard(cd, host, box.w, TOWNS_SPAN);
         return;
       }
       case "法師": {
