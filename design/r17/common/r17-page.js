@@ -344,4 +344,82 @@
     if (variant !== "現況") axisRow(variant, ev, ticks, sel);
     return [...document.querySelectorAll(".r17-mark")].map((e) => { const b = e.getBoundingClientRect(); return [b.x, b.y, b.width, b.height]; });
   };
+
+  // ---------------------------------------------------------------- R17-03 (the user 2026-11-10: 「感覺可以有進攻 防守
+  // 跟團戰」): three kinds on the time axis, each its own mark, none joined: 進攻 ▲ (we went at a city or town not ours),
+  // 防守 a shield (the computer came at ours), 團戰 ●. Shapes first (colour-blind safe); the colours say whose move it
+  // was (ours blue, theirs red, a battle pale gold), paler than the lines. A small key at the end of the legend row.
+  const C3 = { attack: "#7fb0f5", defend: "#f08a80", battle: "rgba(226,206,160,0.9)" };
+  const NAME3 = { attack: "進攻", defend: "防守", battle: "團戰" };
+
+  function mark3(g, kind, x, y, on, k = 1) {
+    const st = on ? { stroke: "#fff3c0", "stroke-width": 1.4 } : { stroke: "rgba(20,12,6,0.9)", "stroke-width": 0.6 };
+    const fill = on ? GOLD : C3[kind];
+    const a = 3.5 * k, h = 6.6 * k;
+    if (kind === "attack") s("path", { d: `M${x} ${y} L${x + a} ${y + h} L${x - a} ${y + h} Z`, fill, ...st }, g);
+    else if (kind === "defend") s("path", { d: `M${x - a} ${y} L${x + a} ${y} L${x + a} ${y + h * 0.5} L${x} ${y + h} L${x - a} ${y + h * 0.5} Z`, fill, ...st }, g);
+    else s("circle", { cx: x, cy: y + h / 2, r: 3.2 * k, fill, ...st }, g);
+  }
+
+  function key3() {
+    const lg = document.querySelector(".st-legend");
+    if (!lg || lg.querySelector(".r17-key3")) return;
+    const k = document.createElement("span");
+    k.className = "r17-key3";
+    k.style.cssText = "display:inline-flex;gap:5px;align-items:center;margin-left:auto;font-size:12px;opacity:.85;white-space:nowrap";
+    const g = (kind) => { const sv = document.createElementNS(NS, "svg"); sv.setAttribute("width", 10); sv.setAttribute("height", 9); mark3(sv, kind, 5, 1, false); return sv.outerHTML; };
+    k.innerHTML = ["attack", "defend", "battle"].map((kind) => `${g(kind)}${NAME3[kind]}`).join("　");
+    lg.style.display = "flex";
+    lg.style.alignItems = "center";
+    lg.appendChild(k);
+  }
+
+  function card3(e, n, of, anchor) {
+    const box = document.querySelector(".stats-card");
+    const br = box.getBoundingClientRect();
+    const c = document.createElement("div");
+    c.className = "r17-card r17-mark";
+    c.style.cssText = `position:absolute;z-index:9;background:#2a1c11;border:1.5px solid ${GOLD};border-radius:9px;padding:6px 10px 6px;` +
+      "color:#f6efe0;font-size:14px;line-height:1.4;box-shadow:0 4px 14px rgba(0,0,0,.6);width:290px";
+    const dur = (a, b) => { const d = b - a; return d >= 60 ? `${Math.floor(d / 60)} 分${d % 60 ? ` ${d % 60} 秒` : ""}` : `${d} 秒`; };
+    const icon = document.createElementNS(NS, "svg");
+    icon.setAttribute("width", 12); icon.setAttribute("height", 11);
+    icon.style.cssText = "vertical-align:-1px;margin-right:4px";
+    mark3(icon, e.kind, 6, 1, false, 1.25);
+    let t1, t2;
+    if (e.kind === "battle") {
+      t1 = `<b>團戰 ${clock(e.t0)}</b>　${e.place}　<span style="opacity:.8">打了 ${dur(e.t0, e.t1)}</span>`;
+      t2 = `<b>${e.result}</b>　我死 ${e.me_dead}、敵死 ${e.foe_dead}`;
+    } else if (e.kind === "defend") {
+      t1 = `<b>防守 ${clock(e.t0)}</b>　${e.place}　<span style="opacity:.8">敵 ${e.n} 名</span>`;
+      t2 = `<b>${e.result}</b>　敵死 ${e.foe_dead}、我死 ${e.me_dead}`;
+    } else {
+      t1 = `<b>進攻 ${clock(e.t0)}</b>　${e.place}　<span style="opacity:.8">我 ${e.n} 名</span>`;
+      t2 = `<b>${e.result}</b>　我死 ${e.me_dead}、敵死 ${e.foe_dead}`;
+    }
+    c.innerHTML = `<div>${icon.outerHTML}${t1}</div><div>${t2}</div>` +
+      `<div style="display:flex;gap:8px;align-items:center;margin-top:4px"><button class="b secondary" style="min-height:44px;padding:0 12px">‹ 上一件</button>` +
+      `<span style="flex:1;text-align:center;font-weight:700">${n} / ${of}</span><button class="b secondary" style="min-height:44px;padding:0 12px">下一件 ›</button>` +
+      `<button class="b secondary" aria-label="關閉" style="min-width:44px;min-height:44px">✕</button></div>`;
+    box.appendChild(c);
+    const w = 290, h = c.getBoundingClientRect().height;
+    const x = Math.max(8, Math.min(br.width - w - 8, anchor.x - w / 2 - br.left));
+    c.style.left = `${x}px`;
+    c.style.top = `${Math.max(8, anchor.y - br.top - h - 10)}px`;
+  }
+
+  // list: [{kind: "attack"|"defend"|"battle", t0, t1, place, n, me_dead, foe_dead, result}] (seconds); pick [kind, t0] or null
+  window.R17.draw3 = (list, ticks, pick, legend = true) => {
+    const g0 = geom();
+    const { svg, x1, x2, y0 } = g0;
+    const X = (t) => x1 + (t * 20 / ticks) * (x2 - x1);
+    const all = [...list].sort((a, b) => a.t0 - b.t0);
+    const sel = pick === null ? -1 : all.findIndex((e) => e.kind === pick[0] && e.t0 === pick[1]);
+    const g = s("g", { class: "r17-layer" }, svg);
+    all.forEach((e, i) => { if (i !== sel) mark3(g, e.kind, X(e.t0), y0 + 1, false); });
+    if (sel >= 0) mark3(g, all[sel].kind, X(all[sel].t0), y0 + 1, true);
+    if (legend) key3();
+    if (sel >= 0) card3(all[sel], sel + 1, all.length, { x: g0.rect.left + X(all[sel].t0), y: g0.rect.top + y0 });
+    return all.length;
+  };
 })();
