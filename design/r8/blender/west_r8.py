@@ -332,9 +332,18 @@ ROLLER_R21 = dict(r=0.0987, gap=0.62, n=5, y0=1.33, length=1.7)        # a turn 
 
 
 def _siege_r21(kind, base, u, wood, dark, iron):
+    def lift(dz):
+        """The frame up by dz; its pile of shot (a child of the base) stays on the ground, out past the wheels' and
+        the rollers' ends."""
+        base.location.z += dz
+        for ob in bpy.data.objects:
+            if ob.name.split(".")[0].startswith(f"{kind}_pile") and ob.parent is base:
+                ob.location.x += 0.30
+                ob.location.z -= dz
+
     if R21_W == "A":
         w = WHEEL_R21
-        base.location.z += w["r"] - 0.10                      # the axles through the sills' middles (0.10 up)
+        lift(w["r"] - 0.10)                                   # the axles through the sills' middles (0.10 up)
         for e, y in w["ys"]:
             rod(f"{kind}_r21axle{e}", (-w["x"], y, 0.10), (w["x"], y, 0.10), 0.035, dark, parent=base)
             for s in (-1, 1):
@@ -347,7 +356,7 @@ def _siege_r21(kind, base, u, wood, dark, iron):
                             at=(0, 0, f * (w["thick"] / 2 + 0.01)))
     elif R21_W == "B":
         q = ROLLER_R21
-        base.location.z += 2 * q["r"]                        # the sills ride on the rollers
+        lift(2 * q["r"])                                     # the sills ride on the rollers
         log = lib.mat("logend5", (0.50, 0.38, 0.24), 0.8, noise=0.3, noise_scale=8)
         for k in range(q["n"] + 1):                          # one more than lie under it: the one coming out behind
             o = lib.empty(f"{kind}_roller{k}", parent=u.root, loc=(0, q["y0"] - q["gap"] * k, q["r"]), rot=(0, 90, 0))
