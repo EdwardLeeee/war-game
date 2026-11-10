@@ -48,7 +48,14 @@ class Drafts:
         key = (c, new, anim, face, k, team)
         if key not in self._s:
             tag = f"{c}{'N' if new else 'O'}"
-            self._s[key] = S16.farmer(str(self.root / f"{c}_{'new' if new else 'old'}" / f"{tag}_{anim}_f{face}_{k:02d}"), team)
+            (im, ax, ay), sh = S16.farmer(str(self.root / f"{c}_{'new' if new else 'old'}" / f"{tag}_{anim}_f{face}_{k:02d}"), team)
+            bb = im.getbbox()                      # the render's frame is far wider than the figure: only what is drawn
+            im, ax, ay = im.crop(bb), ax - bb[0], ay - bb[1]
+            if sh:
+                si, sx, sy = sh
+                sb = si.getbbox()
+                sh = (si.crop(sb), sx - sb[0], sy - sb[1]) if sb else None
+            self._s[key] = ((im, ax, ay), sh)
         return self._s[key]
 
     def box(self, c, anim, face, frames, pad=6):
@@ -56,8 +63,11 @@ class Drafts:
         l = t = r = b = 0
         for new in (False, True):
             for k in frames:
-                (im, ax, ay), _ = self.spr(c, new, anim, face, k)
+                (im, ax, ay), sh = self.spr(c, new, anim, face, k)
                 l, t, r, b = max(l, ax), max(t, ay), max(r, im.width - ax), max(b, im.height - ay)
+                if sh:                             # room for its shadow, to a point
+                    si, sx, sy = sh
+                    r, b = max(r, min(si.width - sx, im.width - ax + 45)), max(b, min(si.height - sy, im.height - ay + 14))
         return tuple(int(v) + pad for v in (l, t, r, b))
 
     def big(self, c, new, anim, face, k, n, box=None):
@@ -166,21 +176,31 @@ def side(D, c, new, anim, phone_frames, bigs, n=3, face=7):
 
 
 def overview(D, out):
+    def one(c, anim, face, phone_frames, bigs, n=2.2):       # a side: the phone's row over the enlarged frames
+        return lambda new: join([titled(D.phone(c, new, anim, face, phone_frames), "手機"),
+                                 join([D.bigs(cc, new, a, f, ks, n) for cc, a, f, ks in bigs], 8)], 10, vertical=True)
     rows = [
-        ("1　斧頭太大太白", WHAT["axe"], lambda new: join([titled(D.phone("e", new, "work_chop", 7, [0, 2, 4, 6]), "手機"), D.bigs("e", new, "work_chop", 0, [6], 3), D.bigs("e", new, "death", 0, [9], 3)], 18)),
-        ("2　東陸農民平常拿斧頭", WHAT["carry"], lambda new: join([titled(D.phone("e", new, "walk", 0, [0, 2, 4, 6]), "手機"), D.bigs("e", new, "idle", 7, [0], 3), D.bigs("e", new, "walk", 0, [2], 3)], 18)),
-        ("3　十字鎬太大太白", WHAT["pick"], lambda new: join([titled(D.phone("e", new, "work_mine", 7, [0, 2, 4, 6]), "手機"), D.bigs("e", new, "work_mine", 0, [1], 3), D.bigs("w", new, "work_mine", 7, [4], 3)], 18)),
-        ("4　木槌的槌頭和人頭一樣大", WHAT["mallet"], lambda new: join([titled(D.phone("e", new, "work_build", 7, [0, 2, 4, 6]), "手機"), D.bigs("e", new, "work_build", 6, [0], 3), D.bigs("w", new, "work_build", 7, [2], 3)], 18)),
-        ("5　東陸農民攻擊", WHAT["attack"], lambda new: join([titled(D.phone("e", new, "attack", 7, [0, 3, 5, 7, 9]), "手機"), D.bigs("e", new, "attack", 0, [5, 7], 3)], 18)),
-        ("12　挖礦時左前臂橫在臉前", WHAT["raise"], lambda new: join([titled(D.phone("e", new, "work_mine", 7, [1, 2]), "手機"), D.bigs("e", new, "work_mine", 6, [1, 2], 3)], 18)),
+        ("1　斧頭太大太白", WHAT["axe"], one("e", "work_chop", 7, [0, 4, 6], [("e", "work_chop", 0, [6]), ("e", "death", 7, [9])])),
+        ("2　東陸農民平常拿斧頭", WHAT["carry"], one("e", "walk", 0, [0, 2, 6], [("e", "idle", 7, [0]), ("e", "walk", 0, [2])])),
+        ("3　十字鎬太大太白", WHAT["pick"], one("e", "work_mine", 7, [1, 4, 6], [("e", "work_mine", 0, [1]), ("w", "work_mine", 7, [4])])),
+        ("4　木槌的槌頭和人頭一樣大", WHAT["mallet"], one("e", "work_build", 7, [0, 2, 4], [("e", "work_build", 6, [0]), ("w", "work_build", 7, [2])])),
+        ("5　東陸農民攻擊", WHAT["attack"], one("e", "attack", 7, [0, 5, 7], [("e", "attack", 0, [5, 7])])),
+        ("12　挖礦時左前臂橫在臉前", WHAT["raise"], one("e", "work_mine", 7, [1, 2], [("e", "work_mine", 6, [1, 2])])),
     ]
-    blocks = [block(t, line, pair(f(False), f(True))) for t, line, f in rows]
-    W = max(b.width for b in blocks)
-    blocks = [block(t, line, pair(f(False), f(True)), W) for t, line, f in rows]
+    bodies = [(t, line, pair(f(False), f(True))) for t, line, f in rows]
+    W = max(b.width for _, _, b in bodies)
+    blocks = [block(t, line, b, W) for t, line, b in bodies]
+    grid, cols = [], 3                           # three columns: read across, then down
+    for k in range(0, len(blocks), cols):
+        part = blocks[k:k + cols]
+        row = Image.new("RGB", (cols * W + (cols - 1) * 60, max(b.height for b in part)), B.BG)
+        for i, b in enumerate(part):
+            row.paste(b, (i * (W + 60), 0))
+        grid.append(row)
     sheet(out, "R20-總覽-農民-phone", [
-        ("第 1 批 農民（R19 的 1–5、12 項）：都照鋤頭（R16 選 A）的標準改成真實大小、暗色舊鐵；拿法和攻擊照真的做法。每一列左邊改前、右邊改後。可以或不行，看這一張就夠；細的在 R20-01 到 R20-04。", B.font(32), B.PALE),
+        ("第 1 批 農民（R19 的第 1–5、12 項）：工具照鋤頭（R16 選 A）的標準改成真實大小、暗色舊鐵；拿法和攻擊照真的做法。每一項左邊改前、右邊改後。可以或不行，看這一張就夠；細的在 R20-01 到 R20-04。", B.font(32), B.PALE),
         (SRC, B.font(26, False), B.GREY),
-    ], blocks)
+    ], grid)
 
 
 def tools(D, out):
