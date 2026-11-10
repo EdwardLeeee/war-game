@@ -66,13 +66,16 @@ for (const [name, query] of [
     await page.evaluate((id) => window.__proto?.game?.select([id]), farmer.id);
     await page.waitForTimeout(600);
     // Open ground a few cells off, with nothing a tap would pick there: on a slow machine the others have walked further before
-    // the pause, and one standing there took the tap (CI 2026-11-10: it was selected instead, and no order went).
+    // the pause, and one standing there took the tap (CI 2026-11-10: it was selected instead, and no order went). No tree, mine
+    // or berries within 4 cells either: with a farmer selected a tap near one is sent to gather there (input/intent.ts pickNode,
+    // CI 6d1993b: 「gather」 to a tree).
     const spot = await page.evaluate(([fx, fy]) => {
       const g = window.__proto?.game;
       if (g === undefined) return null;
-      for (const [dx, dy] of [[5, -5], [5, 5], [-5, 5], [-5, -5], [6, 0], [0, 6], [-6, 0], [0, -6], [4, -7], [7, 4]]) {
+      const nodes = g.nodes();
+      for (const [dx, dy] of [[5, -5], [5, 5], [-5, 5], [-5, -5], [6, 0], [0, 6], [-6, 0], [0, -6], [4, -7], [7, 4], [-7, 4], [4, 7]]) {
         const c = g.openCellNear(Math.round(fx + dx), Math.round(fy + dy), false);
-        if (c === null) continue;
+        if (c === null || nodes.some((n) => Math.abs(n.cx - c.x) <= 4 && Math.abs(n.cy - c.y) <= 4)) continue;
         const p = g.cellToScreen(c.x, c.y);
         if (p.x > 60 && p.x < window.innerWidth - 60 && p.y > 40 && p.y < window.innerHeight - 40 && g.pickAt(p.x, p.y) === null) return { to: c, at: p };
       }
