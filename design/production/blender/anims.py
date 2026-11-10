@@ -513,7 +513,9 @@ def extend_siege(u, kind):
             r.root.location = home[r].copy()
             if anim == "walk":
                 r.root.rotation_euler = (0, 0, 0)
-                a, o = walk((frame % n) / n, arms=False, stride=21)
+                # the two out of step; the legs swing 17 degrees each way: a planted foot goes back 4 x 0.87 m x sin 17
+                # = 1.02 m a cycle under the hips, the 0.99 m the cart moves (the infantry's 28 degrees: 1.63 m)
+                a, o = walk(((frame % n) / n + 0.5 * i) % 1.0, arms=False, stride=17)
                 r.pose(a, o)
                 bpy.context.view_layer.update()
                 motion.reach(r, "R", r.root.matrix_world @ Vector((0.16, 0.04, 1.40)))
