@@ -4,7 +4,7 @@ design/r20/common/render_r20.py, for any unit.
 
 python3 design/r21/common/render_r21.py TARGET OUTDIR TAG ANIM:FRAMES[:FACINGS] ...   e.g. walk:0-7:7,0 idle:0:7
   FRAMES all, a-b or a,b,c; FACINGS default 7. Env: R21_W (A wheels, B rollers under the West's trebuchet), R21_E (A
-  the East's ropes follow the arm; B, C held by two or four pullers), R21_RESUME=1 (skip frames already there),
+  the East's ropes follow the arm; B, C held by two or four pullers), R21_RESUME=1 (skip frames already there), R21_FRAME=w,h,ax,ay (metres and the anchor's fractions: a wreck is wider than spec's frame),
   R21_SS (supersampling), R21_SAMPLES (beauty samples). Needs the CC0 textures (design/r7/common/textures.py fetch)
   and MPFB in the local Blender, as the r7 CI round."""
 import os
@@ -37,9 +37,11 @@ for arg in sys.argv[4:]:
             if os.environ.get("R21_RESUME") and Path(f"{name}_x3_shadow.png").exists():      # the last pass written
                 continue
             items.append(dict(facing=f, anim=anim, frame=i, n=n, passes=["beauty", "mask", "shadow"], out=str(name)))
+# (the production run grows the frame to the unit's reach first, render_prod.fit_frame; a draft takes spec's, or R21_FRAME)
+FRAME = [float(v) for v in os.environ["R21_FRAME"].split(",")] if os.environ.get("R21_FRAME") else u["frame"]
 extra = dict(shadow_extra=list(spec.SHADOW_EXTRA), new_anims=True)
 if items:
-    batch.run(u["kind"], items, spec.PX_PER_M, level="C", frame_m=u["frame"], tag=f"r21{tag}", outputs={"x3": spec.PX_PER_M}, ss=int(os.environ.get("R21_SS", "1")),
+    batch.run(u["kind"], items, spec.PX_PER_M, level="C", frame_m=FRAME, tag=f"r21{tag}", outputs={"x3": spec.PX_PER_M}, ss=int(os.environ.get("R21_SS", "1")),
               samples={"beauty": int(os.environ.get("R21_SAMPLES", "24")), "shadow": 8, "ao": 6, "mask": 4}, variant=u.get("variant", 0),
               extra=extra)
 print("done", len(items))

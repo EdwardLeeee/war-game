@@ -492,6 +492,40 @@ def dress_bow(u):
     return u
 
 
+def _pullers(u, M):
+    """R21 (the user 2026-11-11 chose two pullers, D-143): two soldiers of the East at the engine's ropes, in front of
+    the cart and turned to it (anims.PULLERS_R21). Dressed as the archer without his arms: the round-collar robe in
+    the player's colour (r7_prod gives the MPFB body its tunic in it), belted, slit at the sides, puttees, the black
+    幞頭; no armour, no weapon, not the farmer's hat and apron. Rigs named <kind>_p<k> (their parts after them, as a
+    rider's), in u.rigs as puller<k>: anims.extend_siege poses them, r7_prod.apply dresses them."""
+    import anims
+    kind = "siege_e"
+    P = units2.palette("C")
+    for k, (x, y) in enumerate(anims.PULLERS_R21):
+        name = f"{kind}_p{k}"
+        r = h2.humanoid2(name, P["skin"], P["indigo"], P["indigo"], P["dark"], detail="C", parent=u.root, beard=None)
+        r.root.location = (x, y, 0)
+        r.root.rotation_euler = (0, 0, math.pi)
+        body2.zero_pose(r)
+        tb = units2._bones_torso(r)
+        _robe_hem(r, f"{name}_r8robe", M)
+        h2.skinned_lathe(f"{name}_r8collar", [(0.1, 1.44), (0.104, 1.46), (0.092, 1.5)], M["team"], r, tb,
+                         scale=(1, 0.92, 1))
+        h2.skinned_lathe(f"{name}_r8belt", [(0.194, 0.98), (0.198, 1.035)], M["belt"], r, tb, scale=(1, 0.92, 1))
+        _puttees(r, f"{name}_r8puttee", M)
+        r.pose()
+        head = r.j["head"]
+        cap = lathe(f"{name}_r8futou", [(0.164, 0.06), (0.17, 0.15), (0.162, 0.23), (0.14, 0.29), (0.1, 0.332),
+                                       (0.05, 0.352), (0.0, 0.357)], M["black"], head, segs=24, at=(0, 0.02, 0))
+        _cut(cap, lambda c: c.y > 0.1 and c.z < 0.15)                    # the forehead and face
+        sphere(f"{name}_r8futoubun", 0.08, M["black"], head, at=(0, -0.01, 0.35), scale=(0.9, 1.0, 0.85))
+        sphere(f"{name}_r8futouknot", 0.036, M["black"], head, at=(0, -0.155, 0.16), scale=(1.4, 0.8, 0.8))
+        for s in (-1, 1):
+            box(f"{name}_r8futoutail{s}", (0.04, 0.008, 0.32), M["black"], head, at=(0.034 * s, -0.175, 0.0),
+                rot=(-10, 0, 4 * s), bevel=0.003)
+        u.rigs[f"puller{k}"] = r
+
+
 def dress_siege(u):
     """霹靂車: more of the player's colour (the flag alone gave 0-10% of the machine, and none from some sides): a cloth
     hung along each side of the cart, and a pennant on each end of the axle. Design choices; the machine is R5's.
@@ -511,4 +545,7 @@ def dress_siege(u):
         slab(f"{kind}_r8enddrape{s}", [(-0.42, 0.0), (0.42, 0.0), (0.42, -0.3), (0.25, -0.35), (0.08, -0.3), (-0.08, -0.35),
                                        (-0.25, -0.3), (-0.42, -0.35)], 0.012, M["team"], parent=base,
              loc=(0.0, 0.97 * s, 0.66), rot=(0, 0, 0))
+    import anims
+    if anims.R21_E == "B":
+        _pullers(u, M)
     return u
