@@ -1606,6 +1606,42 @@ test("D-086 A9 (plan.routeFromArmy): clear of forts from its main city but not f
   assert.ok(!armyOrders(fortsOffHomeLine({ routeFromArmy: true }), 4).includes("m"), "on: it does not set out");
 });
 
+// --- P2 (ceo 2026-11-11): the user's 2fd2e236, minutes 35-50, and AI against AI seed 42: set out, turned back, set out ---
+
+/** Hard's commands to all 20 spearmen, the army moved to each spot in turn (a block of 5 x 4 from it), 10 ticks apart: as armyOrders. */
+function ordersAt(f: ReturnType<typeof fortsOnTheWay>, spots: [number, number][]): string {
+  let out = "";
+  const u = f.w.units.col;
+  for (const [x, y] of spots) {
+    let k = 0;
+    for (let s = 0; s < f.w.units.count; s++) {
+      if (u.owner[s] !== 0 || u.type[s] !== UnitType.Spearman) continue;
+      u.x[s] = (x + (k % 5)) << 10;
+      u.y[s] = (y + Math.trunc(k / 5)) << 10;
+      k++;
+    }
+    f.g.fog.update(f.w);
+    const big = f.ai.think(buildView(f.g, 0)).filter((c) => (c.c === "move" || c.c === "retreat") && c.u.length === 20) as { c: string; x: number; y: number }[];
+    const s0 = f.w.map.spawns[0];
+    const home = big.length > 0 && (big[0].x - s0.cellX) ** 2 + (big[0].y - s0.cellY) ** 2 <= 16 * 16;
+    out += big.length === 0 ? "-" : big[0].c === "retreat" ? "r" : home ? "h" : "m";
+    f.w.tick += 10;
+  }
+  return out;
+}
+
+test("P2 (plan.aheadHold): turned back on the way by forts too strong for it, it does not set out again from a cell back while they are; off, it sets out and turns back at every think", () => {
+  // The towers by (74, 50) are off the way to the enemy base from (38, 60) and on it from (39, 60).
+  const clear: [number, number] = [38, 60];
+  const barred: [number, number] = [39, 60];
+  assert.equal(ordersAt(fortsOnTheWay(5, true, { aheadHold: 0 }, "hard", [74, 50]), [clear, barred, clear, barred]), "mrmr", "off: the back and forth of 2fd2e236");
+  const f = fortsOnTheWay(5, true, { aheadHold: 2 }, "hard", [74, 50]);
+  assert.equal(ordersAt(f, [clear, barred, clear, clear]), "mr--", "on: not out again");
+  assert.equal(f.ai.stats?.().aheadHeld, 2, "on: held twice");
+  f.w.tick += 2 * 1200;
+  assert.equal(ordersAt(f, [clear]), "m", "on: 2 minutes on, out again");
+});
+
 /** As fortAgain's test: 8 spearmen go for a tower, 6 fall, it breaks off; then `more` soldiers more than set out, `later` ticks on: does it go again? */
 function goesAgain(fortExit: number, more: number, later: number, opts: { full?: boolean; lostAgain?: boolean } = {}): boolean {
   const saved = HARD.fortExit;

@@ -3,8 +3,8 @@ x3 with the production rig and look (R8 + R9 units: R7_VERSION 8, R9_UNIT), for 
 design/r16/common/render_r16.py.
 
 python3 design/r20/common/render_r20.py TARGET OUTDIR TAG ANIM:FRAMES[:FACINGS] ...   e.g. work_chop:0-7:7,0 idle:0:7
-  FRAMES all, a-b or a,b,c; FACINGS default 7. Env: R20=1 (the new tools, carry and attack; unset: art-v7.8's, for
-  the before side, rendered the same way), R20_RESUME=1 (skip frames already there), R20_SS (supersampling), R20_SAMPLES (beauty samples). Needs the CC0
+  FRAMES all, a-b or a,b,c; FACINGS default 7. Env: R20=0 (art-v7.8's tools, carry and attack, for the before side,
+  rendered the same way; unset or 1: the new ones, approved 2026-11-11), R20_RESUME=1 (skip frames already there), R20_SS (supersampling), R20_SAMPLES (beauty samples). Needs the CC0
   textures (design/r7/common/textures.py fetch) and MPFB in the local Blender, as the r7 CI round."""
 import os
 import sys

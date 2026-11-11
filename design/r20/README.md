@@ -8,7 +8,7 @@
 - 挖礦舉鎬改成舉過右肩（左前臂原本橫在臉前）。這是兩國共用的動作。
 
 程式在 `design/production/blender/anims.py`：`R20`、`AXE`、`PICK`、`MALLET`、`_tools_r20()`、`carry_axe()`、`AXE_ATTACK`。
-**`R20=1` 才會打開**；使用者核准稿以前，CI 正式算圖不帶這些改動。核准後把預設改成開。
+**使用者 2026-11-11 核准**（「可以，照改後的做」，6 項都照改後，沒選「工具放大一點」）：從 art-v7.9 起預設打開。`R20=0` 畫回 art-v7.8 的工具、拿法和攻擊，用來做改前的圖。
 
 斧頭和十字鎬的鐵是自己的材質（`iron_E`／`iron_W`、`tooledge_r20`）：鋤頭的鐵（`iron_e`／`iron_w`）金屬感高，斧面朝天時會反白。
 
@@ -17,9 +17,9 @@
 ## 稿（`build/out/`，不在 repo）
 
 ```bash
-# 本機 Blender 算草稿（MPFB、CC0 貼圖，同 r7 的 CI）；改前（不設 R20）和改後用同一條流程
-R20=1 R20_SS=2 R20_SAMPLES=48 python3 design/r20/common/render_r20.py farmer_e design/r20/build/draft/e_new eN idle:0-7:7 walk:0-7:0,7 ...
-R20_SS=2 R20_SAMPLES=48 python3 design/r20/common/render_r20.py farmer_e design/r20/build/draft/e_old eO idle:0-7:7 ...
+# 本機 Blender 算草稿（MPFB、CC0 貼圖，同 r7 的 CI）；改前（R20=0）和改後用同一條流程
+R20_SS=2 R20_SAMPLES=48 python3 design/r20/common/render_r20.py farmer_e design/r20/build/draft/e_new eN idle:0-7:7 walk:0-7:0,7 ...
+R20=0 R20_SS=2 R20_SAMPLES=48 python3 design/r20/common/render_r20.py farmer_e design/r20/build/draft/e_old eO idle:0-7:7 ...
 python3 design/r20/common/boards_r20.py design/r20/build/draft design/r19/build/art/x3 design/r20/build/out
 python3 design/r20/common/gif_r20.py design/r20/build/draft design/r19/build/art/x3 design/r20/build/out
 python3 design/r20/common/sheet_r20.py OUT.png 3 design/r20/build/draft/e_new/eN_attack_f7_05 ...     # 看幾格草稿

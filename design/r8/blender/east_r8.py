@@ -17,6 +17,7 @@ Built in the zero pose before anims.extend and before the MPFB body (r8.before_e
 head's size, which human_r7.dress shrinks to a real head like the old helmet.
 """
 import math
+import os
 
 import bmesh
 import bpy
@@ -305,6 +306,48 @@ def dress_farmer(u):
     return u
 
 
+# R23 (D-142, R19's item 14: the circle before the East mage's hand is the West's, a hexagram in rings): options for
+# the user. D-018 put a circle before his hand; only its figure changes. R23_SIGIL=A: the eight trigrams between
+# the rings (Tang mirrors cast with them: Cleveland Museum of Art 1995.351, mid to late 700s, 「中列八卦，備著陰陽」;
+# Kyoto National Museum 日月貞明八卦鏡; Saint Louis Art Museum, 8th-9th century), in the later-heaven order. B: the
+# Northern Dipper, its seven stars joined (a Tang Taoist mirror with the Dipper and Polaris drawn in its field:
+# Early China, "A Tang Taoist Mirror"). Unset: the hexagram. The taiji (yin-yang) figure is Song and later: not used.
+TRIGRAMS = ("101", "000", "110", "111", "010", "001", "100", "011")       # 離 坤 兌 乾 坎 艮 震 巽, inner line first
+DIPPER = [(-0.27, 0.10), (-0.17, 0.17), (-0.07, 0.12), (0.03, 0.06), (0.05, -0.08), (0.20, -0.11), (0.23, 0.05)]
+
+
+def _sigil_r23(kind):
+    opt = os.environ.get("R23_SIGIL", "")
+    spin = bpy.data.objects.get("fx_sigil_spin")
+    if opt not in ("A", "B") or spin is None:
+        return
+    sm = bpy.data.materials["fx_sigil"]
+    gone = [f"fx_hex{k}" for k in range(6)] + (["fx_ring1"] if opt == "A" else ["fx_ring2"])
+    for name in gone:
+        ob = bpy.data.objects.get(name)
+        if ob is not None:
+            ob.hide_render = True
+            for parts in (lib.ALL_PARTS, lib.FX_PARTS):
+                if ob in parts:
+                    parts.remove(ob)
+    if opt == "A":                         # the figure in the XZ plane (lib.ring: it faces +Y)
+        for k, bits in enumerate(TRIGRAMS):
+            a = math.pi / 2 - 2 * math.pi * k / 8
+            rad, tan = (math.cos(a), math.sin(a)), (-math.sin(a), math.cos(a))
+            for line, bit in enumerate(bits):
+                rr = 0.255 + 0.045 * line
+                for s0, s1 in ([(-0.062, 0.062)] if bit == "1" else [(-0.062, -0.014), (0.014, 0.062)]):
+                    p0 = (rad[0] * rr + tan[0] * s0, 0, rad[1] * rr + tan[1] * s0)
+                    p1 = (rad[0] * rr + tan[0] * s1, 0, rad[1] * rr + tan[1] * s1)
+                    rod(f"fx_gua{k}_{line}_{int(s0 * 1000)}", p0, p1, 0.009, sm, parent=spin, fx=True, segs=6)
+    else:
+        for k, (x, z) in enumerate(DIPPER):
+            cyl(f"fx_star{k}", 0.03, 0.006, sm, spin, loc=(x, -0.003, z), rot=(-90, 0, 0), fx=True, segs=12)
+            if k:
+                x0, z0 = DIPPER[k - 1]
+                rod(f"fx_starline{k}", (x0, 0, z0), (x, 0, z), 0.006, sm, parent=spin, fx=True, segs=6)
+
+
 def dress_mage(u):
     """術士 as a Tang Daoist (法服: 《洞玄靈寶三洞奉道科戒營始》, 《三洞法服科戒文》): the hair in a topknot under a
     small lotus crown (芙蓉冠) held by a pin; the wide-sleeved robe (褐) in 木蘭 brown; the 帔 over both shoulders,
@@ -331,7 +374,19 @@ def dress_mage(u):
     pts = [(0.11, 0.215, 0.55), (0.115, 0.19, 0.8), (0.12, 0.17, 1.05), (0.125, 0.163, 1.3), (0.125, 0.07, 1.5),
            (0.1, -0.09, 1.49), (0.0, -0.155, 1.44)]
     path = pts + [(-x, y, z) for x, y, z in reversed(pts[:-1])]
-    mage4.ribbon(f"{kind}_r8pei", path, 0.12, M["team"], r, tb + lg)
+    # R23 (D-142, R19's item 15: the player's colour only the 帔's two strips, 2 pt each on the phone, inside the
+    # shield): options for the user. R23_MAGE_E=A: the 帔 nearly twice as wide; B: the 帔 as it is, and the robe's
+    # collar and the cuffs of its wide sleeves in the player's colour too. Unset: as he is.
+    opt = os.environ.get("R23_MAGE_E", "")
+    mage4.ribbon(f"{kind}_r8pei", path, 0.22 if opt == "A" else 0.12, M["team"], r, tb + lg)
+    if opt == "B":
+        h2.skinned_lathe(f"{kind}_r23collar", [(0.098, 1.43), (0.106, 1.47), (0.094, 1.515)], M["team"], r, tb,
+                         scale=(1, 0.92, 1))
+        for side in "RL":                  # a band 20 cm deep round the sleeve's mouth (mage4._wide_sleeves' cuff is 9)
+            x = 0.215 * (1 if side == "R" else -1)
+            mage4.folded_lathe(f"{kind}_r23cuff{side}", [(0.176, 0.79), (0.18, 0.99)], M["team"], r,
+                               mage4.mage3._arm(r, side, 1.0), folds=(7, 0.06), segs=24, at=(x, 0, 0), zrange=(1.42, 0.8))
+    _sigil_r23(kind)
     r.pose()
     head = _hair_cap(r, M, M["P"]["hair"], f"{kind}_r8hair")
     sphere(f"{kind}_r8bun", 0.07, M["P"]["hair"], head, at=(0, 0.0, 0.36), scale=(0.9, 1.0, 0.9))
@@ -492,6 +547,40 @@ def dress_bow(u):
     return u
 
 
+def _pullers(u, M):
+    """R21 (the user 2026-11-11 chose two pullers, D-143): two soldiers of the East at the engine's ropes, in front of
+    the cart and turned to it (anims.PULLERS_R21). Dressed as the archer without his arms: the round-collar robe in
+    the player's colour (r7_prod gives the MPFB body its tunic in it), belted, slit at the sides, puttees, the black
+    幞頭; no armour, no weapon, not the farmer's hat and apron. Rigs named <kind>_p<k> (their parts after them, as a
+    rider's), in u.rigs as puller<k>: anims.extend_siege poses them, r7_prod.apply dresses them."""
+    import anims
+    kind = "siege_e"
+    P = units2.palette("C")
+    for k, (x, y) in enumerate(anims.PULLERS_R21):
+        name = f"{kind}_p{k}"
+        r = h2.humanoid2(name, P["skin"], P["indigo"], P["indigo"], P["dark"], detail="C", parent=u.root, beard=None)
+        r.root.location = (x, y, 0)
+        r.root.rotation_euler = (0, 0, math.pi)
+        body2.zero_pose(r)
+        tb = units2._bones_torso(r)
+        _robe_hem(r, f"{name}_r8robe", M)
+        h2.skinned_lathe(f"{name}_r8collar", [(0.1, 1.44), (0.104, 1.46), (0.092, 1.5)], M["team"], r, tb,
+                         scale=(1, 0.92, 1))
+        h2.skinned_lathe(f"{name}_r8belt", [(0.194, 0.98), (0.198, 1.035)], M["belt"], r, tb, scale=(1, 0.92, 1))
+        _puttees(r, f"{name}_r8puttee", M)
+        r.pose()
+        head = r.j["head"]
+        cap = lathe(f"{name}_r8futou", [(0.164, 0.06), (0.17, 0.15), (0.162, 0.23), (0.14, 0.29), (0.1, 0.332),
+                                       (0.05, 0.352), (0.0, 0.357)], M["black"], head, segs=24, at=(0, 0.02, 0))
+        _cut(cap, lambda c: c.y > 0.1 and c.z < 0.15)                    # the forehead and face
+        sphere(f"{name}_r8futoubun", 0.08, M["black"], head, at=(0, -0.01, 0.35), scale=(0.9, 1.0, 0.85))
+        sphere(f"{name}_r8futouknot", 0.036, M["black"], head, at=(0, -0.155, 0.16), scale=(1.4, 0.8, 0.8))
+        for s in (-1, 1):
+            box(f"{name}_r8futoutail{s}", (0.04, 0.008, 0.32), M["black"], head, at=(0.034 * s, -0.175, 0.0),
+                rot=(-10, 0, 4 * s), bevel=0.003)
+        u.rigs[f"puller{k}"] = r
+
+
 def dress_siege(u):
     """霹靂車: more of the player's colour (the flag alone gave 0-10% of the machine, and none from some sides): a cloth
     hung along each side of the cart, and a pennant on each end of the axle. Design choices; the machine is R5's.
@@ -511,4 +600,7 @@ def dress_siege(u):
         slab(f"{kind}_r8enddrape{s}", [(-0.42, 0.0), (0.42, 0.0), (0.42, -0.3), (0.25, -0.35), (0.08, -0.3), (-0.08, -0.35),
                                        (-0.25, -0.3), (-0.42, -0.35)], 0.012, M["team"], parent=base,
              loc=(0.0, 0.97 * s, 0.66), rot=(0, 0, 0))
+    import anims
+    if anims.R21_E == "B":
+        _pullers(u, M)
     return u

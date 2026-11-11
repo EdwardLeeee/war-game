@@ -119,8 +119,11 @@ IMPACT.update({u: ("death", 7, 1.0) for u in INFANTRY})
 SLING_RELEASE = 6
 SLING_FROM_M = (0.41, 0.96, 1.78)
 WORK_HIT = {"work_chop": 4, "work_mine": 4, "work_farm": 3, "work_build": 2}
-# a siege engine's walk cycle turns the wheels 90 degrees: it moves 2 pi r / 4 per cycle (client: stride_m)
-STRIDE_M = {"siege_e": round(2 * 3.14159265 * 0.42 / 4, 3), "siege_w": round(2 * 3.14159265 * 0.36 / 4, 3)}
+# a siege engine's walk cycle turns the wheels 90 degrees: it moves 2 pi r / 4 per cycle (client: stride_m). The
+# West's: the small solid wheels of art-v7.10 (R21, design/r8/blender/west_r8.py WHEEL_R21: r 0.24; 0.36 was R5's
+# spoked wheel, gone since R8's fixed frame, its 0.565 still in the atlas)
+# The East's: 135 degrees a cycle from art-v7.10 (anims.SPIN_PER_CYCLE: its pullers' pace), a quarter turn before.
+STRIDE_M = {"siege_e": round(2 * 3.14159265 * 0.42 * 135 / 360, 3), "siege_w": round(2 * 3.14159265 * 0.24 / 4, 3)}
 
 PX_PER_M = 60       # 3x source art (20 pt per metre x 3); scaling and compression are a later step
 SUPERSAMPLE = 2

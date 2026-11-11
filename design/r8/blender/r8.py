@@ -70,6 +70,9 @@ def set_rod(ob, a, b):
     ob.matrix_basis = Matrix.Translation(a) @ q.to_matrix().to_4x4() @ Matrix.Diagonal((1, 1, max(d.length, 1e-4), 1))
 
 
+R23_BOW = os.environ.get("R23_BOW") == "1"
+
+
 def bow_string(u, kind):
     """Replace the bow's straight string with one that follows the drawing hand (u.pose wrapped)."""
     string = bpy.data.objects.get(f"{kind}_string")
@@ -139,6 +142,13 @@ def bow_string(u, kind):
         t = frame / max(1, n)
         if anim == "attack":
             draw_arm(t)
+        elif R23_BOW and anim in ("idle", "walk"):
+            # R23 (D-142, R19's item 10): the right arm hangs at his side and swings as he walks (it kept the attack's
+            # first frame: the empty hand held level before the waist, where it nocks an arrow, and never moved)
+            a = math.sin(2 * math.pi * t) if anim == "walk" else 0.0
+            for name, ang in (("shoulderR", (-20 * a, 0, -6)), ("elbowR", (14 + 8 * max(0.0, -a), 0, 0)), ("wristR", (0, 0, 0))):
+                rig.j[name].rotation_euler = [v * math.pi / 180 for v in ang]
+            h2.update(rig)
         bpy.context.view_layer.update()
         gi = grip.matrix_world.inverted()
         hand = gi @ (rig.j["wristR"].matrix_world @ Vector((0.0, 0.015, -0.075)))
