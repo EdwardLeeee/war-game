@@ -3164,6 +3164,14 @@ export interface HardPlan {
    */
   fortExit: number;
   /**
+   * P2 (ceo 2026-11-11; the user's 2fd2e236, minutes 35-50: 104-150 soldiers stood still by a fortress for 5.6 minutes,
+   * turned back 209 times; AI against AI, random map seed 42: 155 times in 3 spells). Turned back on the way by forts
+   * too strong for its front (with fortExit on, that writes no memory), the next think at home found the way clear from
+   * where the army stood a cell further back and set out again. aheadHold: for this many minutes after such a turn back,
+   * a march to the enemy base counts those forts as on its way while they are too strong for the army (0: as before).
+   */
+  aheadHold: number;
+  /**
    * D-139 (the user's 64a27f8a): the enemy's main city guessed only from a building near a corner (no town's), a corner
    * found empty ruled out and the guess moved on, its scout past corners ruled out (false: as before, for measuring).
    */
@@ -3293,6 +3301,7 @@ export const HARD: HardPlan = {
   // six active groups 10 of 240 as before; push-crush 10/24 -> 10/26. routeFromArmy alone turned back no less (12.7).
   routeFromArmy: true,
   fortExit: 3,
+  aheadHold: 0,
   cornerGuess: true,
   mageHallFirst: 10,
   // D-131 (the user 2026-11-06; ceo 2026-11-07; docs/research/2026-11-ai-tactics.md): against hard without it, new seeds,
@@ -3601,6 +3610,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   const failedAt = new Map<number, Failed>();
   /** D-119 (FORT_HIDE_AI.memory): the enemy outposts as last seen finished. */
   const outpostMemo: OutpostMemory = new Map();
+  /** P2 (plan.aheadHold): the forts a march last turned back from on the way, and until when they bar the next. */
+  let aheadHeld: { ids: number[]; until: number } | null = null;
   /** D-086 A9 (plan.fortExit): forts it really fought and broke off from: how many times in a row, the last when. */
   const fortLost = new Map<number, { n: number; tick: number }>();
   /** Falling back round forts (aroundForts): the point first, and until when. */
@@ -3649,7 +3660,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   /** plan.focusFire: when it last picked; each ranged unit's target it was told. */
   let focusMove = -100000;
   const focusOn = new Map<number, number>();
-  const counted = { townQuickRests: 0, focusOrders: 0, focusBack: 0, avoidSpots: 0, farmerIdle: 0, lumberLost: 0, governHeld: 0, governTowers: 0, governStayed: 0, governBrokeOff: 0, townsBehind: 0, crystalStopped: 0, goldCavalry: 0, behindThinks: 0, behindTowers: 0, townsHeld: 0, gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0 };
+  const counted = { townQuickRests: 0, focusOrders: 0, focusBack: 0, avoidSpots: 0, farmerIdle: 0, lumberLost: 0, governHeld: 0, governTowers: 0, governStayed: 0, governBrokeOff: 0, townsBehind: 0, crystalStopped: 0, goldCavalry: 0, behindThinks: 0, behindTowers: 0, townsHeld: 0, gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0, aheadTurns: 0, aheadHeld: 0 };
 
   /** Nearest spot to (ax, ay) where `type` fits, with a free ring around it (farms may touch); as normal. */
   function spotNear(view: PlayerView, type: BuildingType, ax: number, ay: number, radius: number, fits?: (x: number, y: number) => boolean): { x: number; y: number } | null {
@@ -5474,6 +5485,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             const ahead = groupsOnWay(tooStrong(front), fc, enemy);
             if (ahead.length > 0) {
               if (plan.fortExit <= 0) remember(front, ahead);
+              counted.aheadTurns++;
+              if (plan.aheadHold > 0) aheadHeld = { ids: ahead.flatMap((g) => g.ids), until: tick + plan.aheadHold * TICKS_PER_MINUTE };
               counterReady = false;
               razing = -1;
               reservesRazing = -1;
@@ -5654,6 +5667,15 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         // D-086 A9 (plan.routeFromArmy): from where the army stands.
         const routeFrom = plan.routeFromArmy ? ac : { x: home.cellX, y: home.cellY };
         const toBase = go ? routeFor(routeFrom, { x: enemyHome.cellX, y: enemyHome.cellY }, army) : null;
+        // P2 (plan.aheadHold): the forts it just turned back from bar the way while still too strong for the army.
+        if (aheadHeld !== null && tick >= aheadHeld.until) aheadHeld = null;
+        if (go && toBase!.go && aheadHeld !== null) {
+          const held = aheadHeld.ids;
+          if (tooStrong(army).some((g) => g.ids.some((id) => held.includes(id)))) {
+            toBase!.go = false;
+            counted.aheadHeld++;
+          }
+        }
         if (go && toBase!.go) {
           labels[HEAD_ARMY] = 2;
           armyAtStart = army.length;
