@@ -8,8 +8,8 @@ import { CityWatch, type CityRecord } from "./city-watch.ts";
 import { DeathWatch, type DeathRecord } from "./death-watch.ts";
 import { GoldWatch, type GoldRecord } from "./gold-watch.ts";
 import { SiegeWatch, type SiegeRecord } from "./siege-watch.ts";
-import { createScriptedPlayer, type Plan } from "./ai/scripted-player.ts";
-import { type AiStyle, createAi } from "./ai/ai.ts";
+import { createScriptedPlayer, type Plan, TUNE } from "./ai/scripted-player.ts";
+import { type AiStyle, createAi, type HardPlan } from "./ai/ai.ts";
 import { NO_CRYSTAL, rules } from "./core/rules.ts";
 import { UNIT_KINDS } from "./core/world.ts";
 import type { RandomMap } from "./core/random-map.ts";
@@ -183,6 +183,13 @@ export interface GameRecord {
    * PROBE.home cells of its main city and beyond PROBE.out, and the first fight at its city from then on (city-watch.ts).
    */
   probe?: { at: number; aiHome: number; aiOut: number; fight: CityRecord["fights"][number][number] | null };
+  /** D-147: the plan it played, complete (its tune too); fed back as --plan it plays the same. */
+  plan: Plan;
+  /**
+   * D-147 (war-game-ai sorts the plans it finds by how they play): the player's outposts and arrow towers finished in the
+   * game, and the first of each.
+   */
+  forts: { outposts: number; towers: number; firstOutpost: FortAt | null; firstTower: FortAt | null };
   /** push-late-siege: the player's engines (siege-watch.ts), and what each side had at minutes 30, 45, 60, 90. */
   siege?: SiegeRecord;
   lateAt?: Record<string, [LateSide, LateSide]>;
@@ -219,6 +226,13 @@ function townState(owner: number, state: number): string {
   return state === TownState.Neutral || state === TownState.Ruins ? `=${what}` : `=${who}${what}`;
 }
 
+/** When a fort was first seen finished, and how far its centre stood from each main city's (cells, rounded). */
+export interface FortAt {
+  tick: number;
+  toEnemy: number;
+  toHome: number;
+}
+
 /** One game of the scripted player: everything playScripted reads besides the world. */
 export interface ScriptedOptions {
   seed: number;
@@ -240,10 +254,20 @@ export interface ScriptedOptions {
   /** D-141 --steal-probe: "" none, "away" or "home"; from this game minute (--steal-from). */
   probe: string;
   probeFrom: number;
+  /**
+   * D-147 (war-game-ai: a candidate hard against the plans it found): handed to hard as AiKnowledge.hard. The AI is then
+   * played from outside the Runner (late-start.ts AiSeat), as --takeover does; {} plays as without it.
+   */
+  hard?: Partial<HardPlan>;
 }
 
 export function playScripted(o: ScriptedOptions): GameRecord {
-  const { seed, plan, difficulty, style, think, trace } = o;
+  const { seed, difficulty, style, think, trace } = o;
+  // Its own copy: the probe sets plan.ignore, which must not reach the caller's plan or the next game.
+  const plan: Plan = { ...o.plan, tune: o.plan.tune ?? TUNE };
+  /** What the record says it played (GameRecord.plan). */
+  const played: Plan = { ...plan };
+  delete played.ignore;
   const mapMode = o.map;
   const CAP = o.cap;
   const TAKEOVER = o.takeover;
@@ -257,7 +281,7 @@ export function playScripted(o: ScriptedOptions): GameRecord {
     seed,
     scenario: "standard",
     // --takeover: player 1's AI is played here (AiSeat), normal first.
-    ai: [false, TAKEOVER === 0],
+    ai: [false, TAKEOVER === 0 && o.hard === undefined],
     maxTicks: 0,
     difficulty: ["normal", TAKEOVER === 0 ? difficulty : "normal"],
     styles: style === "" ? undefined : [style as AiStyle, style as AiStyle],
@@ -271,8 +295,8 @@ export function playScripted(o: ScriptedOptions): GameRecord {
   const map = w.map;
   // What the screen gets (view.ts mapInfo): on a random map its own main city only.
   const player = createScriptedPlayer(0, { map: mapInfo(map, 0), rules: rules(map), frame: map.frames[0] }, plan);
-  const aiOf = (d: AiDifficulty) => createAi(1, seed, aiKnowledge(map, 1, 0, d), 1, style === "" ? undefined : (style as AiStyle));
-  const seat = TAKEOVER > 0 ? new AiSeat(r, 1, aiOf("normal")) : null;
+  const aiOf = (d: AiDifficulty) => createAi(1, seed, { ...aiKnowledge(map, 1, 0, d), ...(o.hard !== undefined ? { hard: o.hard } : {}) }, 1, style === "" ? undefined : (style as AiStyle));
+  const seat = TAKEOVER > 0 ? new AiSeat(r, 1, aiOf("normal")) : o.hard !== undefined ? new AiSeat(r, 1, aiOf(difficulty)) : null;
   const bonus = new Bonus(BONUS);
   const home = map.spawns[0];
   const u = w.units.col;
@@ -425,6 +449,8 @@ export function playScripted(o: ScriptedOptions): GameRecord {
     for (let i = 0; i < w.units.count; i++) if (u.owner[i] === p && u.type[i] !== UnitType.Farmer && u.type[i] !== UnitType.Militia) n++;
     return n;
   };
+  const built: GameRecord["forts"] = { outposts: 0, towers: 0, firstOutpost: null, firstTower: null };
+  const builtIds = new Set<number>();
   let probe: GameRecord["probe"] = probeMode === "" ? undefined : { at: -1, aiHome: 0, aiOut: 0, fight: null };
   let probeIds: number[] = [];
   while (!r.over && w.tick < CAP) {
@@ -551,6 +577,20 @@ export function playScripted(o: ScriptedOptions): GameRecord {
       for (let s = 0; s < w.buildings.count; s++) {
         if (b.owner[s] !== 0 || b.progress[s] < 1000 || (b.type[s] !== BuildingType.Outpost && b.type[s] !== BuildingType.ArrowTower)) continue;
         forts.push({ x: b.cellX[s], y: b.cellY[s], size: w.buildingSize(b.type[s]), reach: b.type[s] === BuildingType.ArrowTower ? arrowReach : guardReach });
+        if (!builtIds.has(b.id[s])) {
+          builtIds.add(b.id[s]);
+          const half = (w.buildingSize(b.type[s]) - 1) / 2;
+          const fx = b.cellX[s] + half;
+          const fy = b.cellY[s] + half;
+          const at = { tick: w.tick, toEnemy: Math.round(Math.hypot(fx - aiHome.cellX, fy - aiHome.cellY)), toHome: Math.round(Math.hypot(fx - home.cellX, fy - home.cellY)) };
+          if (b.type[s] === BuildingType.Outpost) {
+            built.outposts++;
+            built.firstOutpost ??= at;
+          } else {
+            built.towers++;
+            built.firstTower ??= at;
+          }
+        }
       }
       const within = (x: number, y: number, f: { x: number; y: number; size: number }, r: number) => {
         const dx = Math.max(f.x - x, 0, x - (f.x + f.size - 1));
@@ -748,10 +788,12 @@ export function playScripted(o: ScriptedOptions): GameRecord {
   const st = player.state();
   aiFarmers.idle = Math.round((farmerIdle * 20 * 10) / 1200) / 10;
   aiFarmers.hiding = Math.round((farmerHiding * 20 * 10) / 1200) / 10;
-  const aiRescue = (r as unknown as { ais: ({ stats?: () => Record<string, number> } | null)[] }).ais[1]?.stats?.() ?? null;
+  // With `hard` (no takeover) the seat plays the AI from the start: its style and counts, as the Runner's would be.
+  const seatAi = TAKEOVER === 0 && seat !== null ? (seat.playing as { style: AiStyle; stats?: () => Record<string, number> }) : null;
+  const aiRescue = seatAi !== null ? (seatAi.stats?.() ?? null) : ((r as unknown as { ais: ({ stats?: () => Record<string, number> } | null)[] }).ais[1]?.stats?.() ?? null);
   return {
     seed,
-    style: r.styles[1] ?? "",
+    style: seatAi !== null ? seatAi.style : (r.styles[1] ?? ""),
     result: !r.over ? "open" : w.winner === 0 ? "won" : "lost",
     endTick: w.tick,
     town,
@@ -810,6 +852,8 @@ export function playScripted(o: ScriptedOptions): GameRecord {
     magesAt20,
     rejected,
     ...(mapMode !== "fixed" ? { layout: (map as RandomMap).layout, found: st.found } : {}),
+    plan: played,
+    forts: built,
     finalHash: (g.hash() >>> 0).toString(16).padStart(8, "0"),
     ...(trace ? { trace: lines } : {}),
   };
