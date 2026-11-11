@@ -153,7 +153,7 @@ export interface Plan {
   bigTown: boolean;
   /**
    * A tower rush (D-080; 0: none), then the push: once the army reaches pushAt, the whole army
-   * and RUSH_BUILDERS farmers walk round the big city (RUSH_WAY) to RUSH_DIST cells from the
+   * and tune.rush.builders farmers walk round the big city (RUSH_WAY) to tune.rush.dist cells from the
    * enemy's main city; there the farmers build an outpost and this many of the spearmen are
    * posted at it; the rest march on the enemy's main city at once, while the farmers put up two
    * arrow towers beside the outpost (toward the enemy). An outpost pulled down before it is
@@ -168,16 +168,16 @@ export interface Plan {
    */
   rushBuildersOnly: boolean;
   /**
-   * The midway fortress (D-081, after the user's game f1fd2a87): from FORT_FROM, once the enemy's
-   * main city is known, RUSH_BUILDERS farmers and `fortGuards` spearmen walk to FORT_DIST cells from
+   * The midway fortress (D-081, after the user's game f1fd2a87): from tune.fort.from, once the enemy's
+   * main city is known, tune.rush.builders farmers and `fortGuards` spearmen walk to tune.fort.dist cells from
    * home on the straight way to the enemy's main city; the farmers build an outpost there, the
-   * spearmen are posted at it, and the farmers put up FORT_TOWERS arrow towers beside it, one after
+   * spearmen are posted at it, and the farmers put up tune.fort.towers arrow towers beside it, one after
    * the other. The army plays the push meanwhile. Both maps.
    */
   fortress: boolean;
   /**
    * With the fortress (D-081, ceo 2026-10-10: as the user in f1fd2a87): once its outpost stands, the
-   * army waits by it, not marching on the enemy, until it is this many or FORT_HOLD_UNTIL; then the push
+   * army waits by it, not marching on the enemy, until it is this many or tune.fort.holdUntil; then the push
    * as ever (0: no waiting, the army plays the push).
    */
   fortressHold: number;
@@ -202,10 +202,10 @@ export interface Plan {
    */
   pushAhead: boolean;
   /**
-   * D-086 A3 (the user's 75830947: some 40 of hard's farmers killed far from its main city): from HARASS_FROM,
-   * this many soldiers kept apart from the army go for the enemy's farmers at work HARASS_FAR cells or more from
+   * D-086 A3 (the user's 75830947: some 40 of hard's farmers killed far from its main city): from tune.harass.from,
+   * this many soldiers kept apart from the army go for the enemy's farmers at work tune.harass.far cells or more from
    * its main city (on a random map, round its main city until they see some); back home when the enemy
-   * soldiers by them outnumber them, out again HARASS_REST later (0: none).
+   * soldiers by them outnumber them, out again tune.harass.rest later (0: none).
    */
   harass: number;
   /**
@@ -243,6 +243,8 @@ export interface Plan {
    * the works up). 0: none, as before.
    */
   engines: number;
+  /** The constants of the plays (D-147); absent: TUNE. */
+  tune?: Tune;
 }
 
 /**
@@ -259,13 +261,12 @@ const RACE_NEAR = 6;
 /**
  * The tower rush (plan.towerRush, D-080), on the fixed map: the escort goes round the big city
  * (its militia and tower) and the far corner town by these canonical cells, and the outpost goes
- * RUSH_DIST cells south of the enemy's main city (canonical, toward the escort's way in).
+ * tune.rush.dist cells south of the enemy's main city (canonical, toward the escort's way in).
  */
 const RUSH_WAY: { u: number; v: number }[] = [
   { u: 66, v: 74 },
   { u: 76, v: 44 },
 ];
-const RUSH_DIST = 12;
 /**
  * The escort is at a waypoint or the spot once its centre is within this many cells of it, or
  * once most of it has stopped within twice that (a big group's formation spreads out), or after
@@ -273,41 +274,31 @@ const RUSH_DIST = 12;
  */
 const RUSH_NEAR = 6;
 const RUSH_WAIT = 1800;
-/** Farmers that walk with the rush and build the outpost and its towers. */
-const RUSH_BUILDERS = 4;
 /** The outpost is put down at most this many times; then the rush gives up (hard pulled it down at once, again and again). */
 const RUSH_TRIES = 3;
-/** The midway fortress (plan.fortress, D-081): from this tick, this far from home (cells), so many towers. */
-const FORT_FROM = 12 * 1200;
-const FORT_DIST = 37;
-const FORT_TOWERS = 5;
-/** Where to try the fortress, in order: cells from home along the way, cells to the side of it. */
-const FORT_TRIES: [number, number][] = [
-  [FORT_DIST, 0],
-  [FORT_DIST - 3, 0],
-  [FORT_DIST + 3, 0],
-  [FORT_DIST, -10],
-  [FORT_DIST, 10],
-  [FORT_DIST - 6, -10],
-  [FORT_DIST - 6, 10],
-  [FORT_DIST + 6, -10],
-  [FORT_DIST + 6, 10],
-  // The fixed map: the way crosses the big town; nearer home, beside the way.
-  [FORT_DIST - 9, -10],
-  [FORT_DIST - 9, 10],
-  [FORT_DIST - 12, -10],
-  [FORT_DIST - 12, 10],
-];
+/** Where to try the fortress, in order: cells from home along the way, cells to the side of it (`dist`: tune.fort.dist). */
+function fortSpots(dist: number): [number, number][] {
+  return [
+    [dist, 0],
+    [dist - 3, 0],
+    [dist + 3, 0],
+    [dist, -10],
+    [dist, 10],
+    [dist - 6, -10],
+    [dist - 6, 10],
+    [dist + 6, -10],
+    [dist + 6, 10],
+    // The fixed map: the way crosses the big town; nearer home, beside the way.
+    [dist - 9, -10],
+    [dist - 9, 10],
+    [dist - 12, -10],
+    [dist - 12, 10],
+  ];
+}
 /** Ranged units hidden in each finished fortress tower (as the user did: 3 in each of 5). */
 const FORT_HIDE = 3;
-/** The army holding by the fortress (plan.fortressHold) marches from this tick whatever its size. */
-const FORT_HOLD_UNTIL = 30 * 1200;
 /** D-086 A (plan.pushAhead): how far back it remembers the most enemy soldiers seen at once. */
 const AHEAD_SEEN = 3 * 1200;
-/** D-086 A3 (plan.harass): from this tick; enemy farmers this far (cells) from their main city; the squad rests this long after falling back. */
-const HARASS_FROM = 10 * 1200;
-const HARASS_FAR = 20;
-const HARASS_REST = 1200;
 /** D-086 A3 (plan.harass): the rounds it makes about the enemy's main city looking for farmers (cells, in player 0's frame). */
 const HARASS_ROUND: readonly [number, number][] = [
   [28, 0],
@@ -319,8 +310,6 @@ const HARASS_ROUND: readonly [number, number][] = [
   [0, -28],
   [20, -20],
 ];
-/** D-086 A (plan.homeTowers): cells from home toward the map centre where the towers go (the barracks: 6). */
-const HOME_TOWER_AT = 9;
 /**
  * plan.turtle (D-086 A5; ceo 2026-10-22 from the user's two long games: about 40 farmers and 20-25
  * soldiers by minute 15 and no tower yet, then 5-7 towers by minute 20, 10 by 25, about 20 by 30):
@@ -333,7 +322,7 @@ const HOME_TOWER_AT = 9;
  * going up at once; a town trip only with `tripTowers` towers standing by home; the big city too with
  * an army of `bigAt`. In a wave at home its ranged units hide in the towers by home and the main city.
  */
-const TURTLE = {
+const TURTLE: Tune["turtle"] = {
   towers: [[14, 0], [20, 7], [25, 10], [30, 20], [35, 22]] as [number, number][],
   max: 24,
   townTowers: 2,
@@ -352,9 +341,9 @@ const TURTLE = {
   bigAt: 40,
 };
 /** plan.crush: the wave beaten off, the least army and its ratio to the enemy in sight (tenths), how long it remembers that, how near counts. */
-const CRUSH = { wave: 15, min: 30, ratio: 13, seen: 600, near: 14 };
+const CRUSH: Tune["crush"] = { wave: 15, min: 30, ratio: 13, seen: 600, near: 14 };
 /** plan.lateSiege (the user's 8d02b76f, ai's replay): (minute, farmers), (minute, arrow towers), straight between. */
-const LATE_SIEGE = {
+const LATE_SIEGE: Tune["lateSiege"] = {
   farmers: [[30, 60], [60, 80], [90, 85]] as [number, number][],
   towers: [[14, 0], [20, 7], [25, 10], [30, 20], [45, 24], [60, 31], [90, 40]] as [number, number][],
   governed: 4,
@@ -364,6 +353,51 @@ const LATE_SIEGE = {
   // Out with this many soldiers and the engines, the towers left out (ceo 2026-11-03, war-game-ai: 100 and the towers
   // were seldom all there at once, 6 games of 40 marched; the user brought his engines with about 120 at minute 67).
   army: 60,
+};
+
+/**
+ * The constants of the plays, carried by the plan (plan.tune; D-147: war-game-ai's search sets them through scripted-games'
+ * --plan, plan-space.ts has their ranges). Absent: TUNE, as before.
+ */
+export interface Tune {
+  /** The midway fortress (plan.fortress, D-081): from tick `from`, `dist` cells from home, `towers` arrow towers; the army holding by it (plan.fortressHold) marches from tick `holdUntil` whatever its size. */
+  fort: { from: number; dist: number; towers: number; holdUntil: number };
+  /** D-086 A3 (plan.harass): from tick `from`; enemy farmers `far` cells or more from their main city; the squad rests `rest` ticks after falling back. */
+  harass: { from: number; far: number; rest: number };
+  /** The tower rush (plan.towerRush, D-080): the outpost `dist` cells south of the enemy's main city (canonical); `builders` farmers build it and its towers (the fortress's too). */
+  rush: { dist: number; builders: number };
+  /** D-086 A (plan.homeTowers, plan.turtle): cells from home toward the map centre where the towers go (the barracks: 6). */
+  homeTowerAt: number;
+  turtle: {
+    towers: [number, number][];
+    max: number;
+    townTowers: number;
+    outposts: number[];
+    outpostAt: number;
+    manned: number;
+    outpostGuards: number;
+    boomBy: number;
+    boomFood: number[];
+    boomSoldiers: number;
+    goldLow: number;
+    goldGlut: number;
+    sites: number;
+    homeR: number;
+    tripTowers: number;
+    bigAt: number;
+  };
+  crush: { wave: number; min: number; ratio: number; seen: number; near: number };
+  lateSiege: { farmers: [number, number][]; towers: [number, number][]; governed: number; worksAt: number; worksTowers: number; engines: number; army: number };
+}
+/** The tune every plan had before D-147. */
+export const TUNE: Readonly<Tune> = {
+  fort: { from: 12 * 1200, dist: 37, towers: 5, holdUntil: 30 * 1200 },
+  harass: { from: 10 * 1200, far: 20, rest: 1200 },
+  rush: { dist: 12, builders: 4 },
+  homeTowerAt: 9,
+  turtle: TURTLE,
+  crush: CRUSH,
+  lateSiege: LATE_SIEGE,
 };
 /** A value by the clock from (minute, value) pairs: straight between them, the first before them, the last after. */
 function byClock(table: [number, number][], tick: number): number {
@@ -376,15 +410,15 @@ function byClock(table: [number, number][], tick: number): number {
   return table[table.length - 1][1];
 }
 /** plan.turtle: the towers by home it wants at this tick. */
-function turtleTowers(tick: number): number {
-  const m = TURTLE.towers;
+function turtleTowers(turtle: Tune["turtle"], tick: number): number {
+  const m = turtle.towers;
   if (tick < m[0][0] * 1200) return 0;
   for (let k = 1; k < m.length; k++) {
     const [t1, n1] = m[k];
     const [t0, n0] = m[k - 1];
     if (tick < t1 * 1200) return n0 + Math.trunc(((tick - t0 * 1200) * (n1 - n0)) / ((t1 - t0) * 1200));
   }
-  return Math.min(TURTLE.max, m[m.length - 1][1] + Math.trunc((tick - m[m.length - 1][0] * 1200) / 2400));
+  return Math.min(turtle.max, m[m.length - 1][1] + Math.trunc((tick - m[m.length - 1][0] * 1200) / 2400));
 }
 /** plan.turtle (D-086 A5): the gold scout's stops, (along u, along v) cells from home with u and v toward the centre. */
 const GOLD_LOOK: [number, number][] = [
@@ -570,6 +604,7 @@ export interface ScriptedPlayer {
 
 export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan: Plan): ScriptedPlayer {
   const n = know.map.size;
+  const tune = plan.tune ?? TUNE;
   const random = know.map.mode === "random";
   if (random && plan.race !== "") throw new Error("the race's route is on the fixed map only (D-072)");
   const rushing = plan.towerRush > 0 || plan.rushBuildersOnly;
@@ -597,14 +632,14 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
   // from the main city, inside its arrows' range (7).
   const rally = real(homeF.u + Math.sign(mid - homeF.u) * 6, homeF.v + Math.sign(mid - homeF.v) * 6);
   const post = real(homeF.u + Math.sign(mid - homeF.u) * 4, homeF.v + Math.sign(mid - homeF.v) * 4);
-  const towerAt = real(homeF.u + Math.sign(mid - homeF.u) * HOME_TOWER_AT, homeF.v + Math.sign(mid - homeF.v) * HOME_TOWER_AT);
+  const towerAt = real(homeF.u + Math.sign(mid - homeF.u) * tune.homeTowerAt, homeF.v + Math.sign(mid - homeF.v) * tune.homeTowerAt);
   // plan.turtle (D-086 A5): the towers round home, by turns toward the centre, along u and along v;
   // the outposts out toward the centre, then along u.
   const su = Math.sign(mid - homeF.u);
   const sv = Math.sign(mid - homeF.v);
-  const turtleAt = [real(homeF.u + su * HOME_TOWER_AT, homeF.v + sv * HOME_TOWER_AT), real(homeF.u + su * HOME_TOWER_AT, homeF.v), real(homeF.u, homeF.v + sv * HOME_TOWER_AT)];
+  const turtleAt = [real(homeF.u + su * tune.homeTowerAt, homeF.v + sv * tune.homeTowerAt), real(homeF.u + su * tune.homeTowerAt, homeF.v), real(homeF.u, homeF.v + sv * tune.homeTowerAt)];
   // The outposts by turns toward the centre, along u, along v, and between.
-  const oa = TURTLE.outpostAt;
+  const oa = tune.turtle.outpostAt;
   const outpostAt = [
     real(homeF.u + su * oa, homeF.v + sv * oa),
     real(homeF.u + su * oa, homeF.v),
@@ -710,7 +745,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
   /** When enemy soldiers were last within WAVE_CELLS of the main city. */
   let lastWave = -100000;
   let counterReady = false;
-  /** plan.crush: a wave of CRUSH.wave or more beaten off, until it falls back. */
+  /** plan.crush: a wave of tune.crush.wave or more beaten off, until it falls back. */
   let crushing = false;
   /** plan.pushAhead: enemy soldiers in sight at each think of the last AHEAD_SEEN ticks. */
   const seenFoes: { tick: number; n: number }[] = [];
@@ -887,8 +922,8 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       }
 
       /** Farmers it wants now; arrow towers it wants now, and those standing (plan.lateSiege: anywhere). */
-      const wantFarmers = plan.lateSiege ? byClock(LATE_SIEGE.farmers, tick) : plan.farmers;
-      const wantTowers = plan.lateSiege ? byClock(LATE_SIEGE.towers, tick) : turtleTowers(tick);
+      const wantFarmers = plan.lateSiege ? byClock(tune.lateSiege.farmers, tick) : plan.farmers;
+      const wantTowers = plan.lateSiege ? byClock(tune.lateSiege.towers, tick) : turtleTowers(tune.turtle, tick);
 
       // --- economy (the AI's) -----------------------------------------------------------------
       // A cavalry rush (plan.raid) mines gold from the start: cavalry cost 70 gold each.
@@ -939,16 +974,16 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         ratio[1] = 60;
         ratio[2] = 20;
       }
-      // plan.turtle (D-086 A5): food first while it is short of its farmers before TURTLE.boomBy (the user's boom).
-      if (plan.turtle && tick < TURTLE.boomBy && farmers.length < wantFarmers) for (let k = 0; k < 3; k++) ratio[k] = TURTLE.boomFood[k];
+      // plan.turtle (D-086 A5): food first while it is short of its farmers before tune.turtle.boomBy (the user's boom).
+      if (plan.turtle && tick < tune.turtle.boomBy && farmers.length < wantFarmers) for (let k = 0; k < 3; k++) ratio[k] = tune.turtle.boomFood[k];
       // plan.turtle (D-086 A5): wood first while the towers by home are behind the clock (60 wood, 20 gold each).
-      if (plan.turtle && own.filter((b) => b.type === BuildingType.ArrowTower && (plan.lateSiege || dist2(b.x, b.y, home.cellX, home.cellY) <= TURTLE.homeR * TURTLE.homeR)).length < wantTowers && res.wood < 200) {
+      if (plan.turtle && own.filter((b) => b.type === BuildingType.ArrowTower && (plan.lateSiege || dist2(b.x, b.y, home.cellX, home.cellY) <= tune.turtle.homeR * tune.turtle.homeR)).length < wantTowers && res.wood < 200) {
         ratio[0] = 30;
         ratio[1] = 55;
         ratio[2] = 15;
       }
       // plan.turtle (D-086 A5): gold piling up (towers and ranged want wood more): its farmers to food and wood.
-      if (plan.turtle && res.gold > TURTLE.goldGlut && res.gold > 2 * Math.min(res.food, res.wood)) {
+      if (plan.turtle && res.gold > tune.turtle.goldGlut && res.gold > 2 * Math.min(res.food, res.wood)) {
         ratio[0] = 45;
         ratio[1] = 50;
         ratio[2] = 5;
@@ -958,7 +993,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       if (plan.fortress && (fortStage === "go" || fortStage === "build" || fortStage === "towers")) {
         const o = rules.buildings[BuildingType.Outpost].cost;
         const t = rules.buildings[BuildingType.ArrowTower].cost;
-        const left = Math.max(0, FORT_TOWERS - own.filter((b) => b.type === BuildingType.ArrowTower).length);
+        const left = Math.max(0, tune.fort.towers - own.filter((b) => b.type === BuildingType.ArrowTower).length);
         reserve.wood += (fortStage === "towers" ? 0 : o.wood) + left * t.wood;
         reserve.gold += (fortStage === "towers" ? 0 : o.gold) + left * t.gold;
       }
@@ -1020,8 +1055,8 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         gatherers.splice(0, crew.length);
       }
       const mageCost = rules.units[UnitType.Mage].cost;
-      // One site at a time (plan.turtle: TURTLE.sites at once, as a person puts up towers side by side).
-      if (own.filter((b) => b.progress < 1000).length < (plan.turtle ? TURTLE.sites : 1) && gatherers.length >= 3) {
+      // One site at a time (plan.turtle: tune.turtle.sites at once, as a person puts up towers side by side).
+      if (own.filter((b) => b.progress < 1000).length < (plan.turtle ? tune.turtle.sites : 1) && gatherers.length >= 3) {
         // `here`: there or nowhere (not by the main city instead).
         const plans: { type: BuildingType; at: { x: number; y: number } | null; here?: boolean }[] = [];
         const granary = done(BuildingType.Granary)[0];
@@ -1047,26 +1082,26 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         if (plan.cavalryShare > 0 && rules.features?.cavalry === true && !has(BuildingType.Stable) && has(BuildingType.Range) && stableReady) add(BuildingType.Stable, rally);
         // D-141 (plan.engines): a siege works once the range stands.
         if (plan.engines > 0 && rules.features?.siege === true && !has(BuildingType.SiegeWorks) && has(BuildingType.Range) && farmers.length >= 14) add(BuildingType.SiegeWorks, rally);
-        // D-086 A5 (plan.turtle): towers round home by the clock, TURTLE.townTowers by every governed town, outposts by home.
+        // D-086 A5 (plan.turtle): towers round home by the clock, tune.turtle.townTowers by every governed town, outposts by home.
         if (plan.turtle && has(BuildingType.Range)) {
           const near = (x: number, y: number, r: number) => own.filter((b) => b.type === BuildingType.ArrowTower && dist2(b.x, b.y, x, y) <= r * r).length;
-          // The next gold once the gold by every mine is under TURTLE.goldLow (the home mine runs out about minute 17),
-          // TURTLE.townTowers by each mine away from home that still has gold. First, so the towers' gold waits for it.
-          if (goldLeft < TURTLE.goldLow && nextGold !== null) add(BuildingType.Mine, nextGold);
+          // The next gold once the gold by every mine is under tune.turtle.goldLow (the home mine runs out about minute 17),
+          // tune.turtle.townTowers by each mine away from home that still has gold. First, so the towers' gold waits for it.
+          if (goldLeft < tune.turtle.goldLow && nextGold !== null) add(BuildingType.Mine, nextGold);
           for (const b of done(BuildingType.Mine)) {
-            if (dist2(b.x, b.y, home.cellX, home.cellY) > TURTLE.homeR * TURTLE.homeR && goldBy(b.x, b.y) > 0 && near(b.x, b.y, 12) < TURTLE.townTowers) add(BuildingType.ArrowTower, { x: b.x, y: b.y }, true);
+            if (dist2(b.x, b.y, home.cellX, home.cellY) > tune.turtle.homeR * tune.turtle.homeR && goldBy(b.x, b.y) > 0 && near(b.x, b.y, 12) < tune.turtle.townTowers) add(BuildingType.ArrowTower, { x: b.x, y: b.y }, true);
           }
           // plan.lateSiege: the siege works first, and towers by its outposts too (their land, TOWER_REACH.outpost).
-          if (plan.lateSiege && rules.features?.siege === true && !has(BuildingType.SiegeWorks) && (tick >= LATE_SIEGE.worksAt || count(BuildingType.ArrowTower) >= LATE_SIEGE.worksTowers)) add(BuildingType.SiegeWorks, rally);
-          const byHome = plan.lateSiege ? count(BuildingType.ArrowTower) : near(home.cellX, home.cellY, TURTLE.homeR);
+          if (plan.lateSiege && rules.features?.siege === true && !has(BuildingType.SiegeWorks) && (tick >= tune.lateSiege.worksAt || count(BuildingType.ArrowTower) >= tune.lateSiege.worksTowers)) add(BuildingType.SiegeWorks, rally);
+          const byHome = plan.lateSiege ? count(BuildingType.ArrowTower) : near(home.cellX, home.cellY, tune.turtle.homeR);
           const towerSpots = plan.lateSiege ? [...turtleAt, ...done(BuildingType.Outpost).map((b) => ({ x: b.x, y: b.y }))] : turtleAt;
           if (byHome < wantTowers) add(BuildingType.ArrowTower, towerSpots[byHome % towerSpots.length]);
           for (let r = 0; r < view.towns.length; r += TOWN_STRIDE) {
             if (view.towns[r + TownField.owner] !== player || view.towns[r + TownField.state] !== TownState.Governed) continue;
             const t = townOf(view.towns[r + TownField.id]);
-            if (near(t.cellX, t.cellY, 12) < TURTLE.townTowers) add(BuildingType.ArrowTower, { x: t.cellX, y: t.cellY }, true);
+            if (near(t.cellX, t.cellY, 12) < tune.turtle.townTowers) add(BuildingType.ArrowTower, { x: t.cellX, y: t.cellY }, true);
           }
-          const outposts = TURTLE.outposts.filter((m) => tick >= m * 1200).length;
+          const outposts = tune.turtle.outposts.filter((m) => tick >= m * 1200).length;
           if (rules.features?.outpost === true && count(BuildingType.Outpost) < outposts) add(BuildingType.Outpost, outpostAt[count(BuildingType.Outpost) % outpostAt.length]);
         }
         if (count(BuildingType.Farm) < Math.min(10, 2 + (farmers.length >> 2))) add(BuildingType.Farm, granary ? { x: granary.x + 1, y: granary.y + 1 } : base);
@@ -1099,8 +1134,8 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       const spear = soldiers.filter((u) => u.type === UnitType.Spearman).length;
       const ranged = soldiers.filter((u) => u.type === UnitType.Ranged).length;
       const mages = soldiers.filter((u) => u.type === UnitType.Mage).length;
-      // plan.turtle (D-086 A5): no more than TURTLE.boomSoldiers soldiers before TURTLE.boomBy (mages aside), the food to the farmers.
-      const boomHold = plan.turtle && tick < TURTLE.boomBy && soldiers.length >= TURTLE.boomSoldiers;
+      // plan.turtle (D-086 A5): no more than tune.turtle.boomSoldiers soldiers before tune.turtle.boomBy (mages aside), the food to the farmers.
+      const boomHold = plan.turtle && tick < tune.turtle.boomBy && soldiers.length >= tune.turtle.boomSoldiers;
       const trainAt = (t: number, type: UnitType) => {
         if (plan.autoTrain) return;
         if (boomHold && type !== UnitType.Mage) return;
@@ -1132,7 +1167,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       // plan.lateSiege: its engines before the rest, what they cost kept from it.
       if ((plan.lateSiege || plan.engines > 0) && done(BuildingType.SiegeWorks).length > 0) {
         const c = rules.units[UnitType.Siege].cost;
-        if (soldiers.filter((u) => u.type === UnitType.Siege).length + done(BuildingType.SiegeWorks).reduce((a, b) => a + b.queue, 0) < (plan.lateSiege ? LATE_SIEGE.engines : plan.engines)) {
+        if (soldiers.filter((u) => u.type === UnitType.Siege).length + done(BuildingType.SiegeWorks).reduce((a, b) => a + b.queue, 0) < (plan.lateSiege ? tune.lateSiege.engines : plan.engines)) {
           if (afford(c)) trainAt(BuildingType.SiegeWorks, UnitType.Siege);
           else {
             reserve.wood += c.wood;
@@ -1235,15 +1270,15 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
           if (loose.length > 0 && tick % 100 === 0) out.push({ c: "guard", u: loose, town: id });
         } else if (away.length > 0 && tick % 100 === 0) out.push({ c: "move", u: away, x: t.x, y: t.y });
       }
-      // D-086 A5 (plan.turtle): spearmen from home stand guard at the first TURTLE.manned finished outposts.
+      // D-086 A5 (plan.turtle): spearmen from home stand guard at the first tune.turtle.manned finished outposts.
       if (plan.turtle) {
-        for (const b of done(BuildingType.Outpost).sort((a, c) => a.id - c.id).slice(0, TURTLE.manned)) {
+        for (const b of done(BuildingType.Outpost).sort((a, c) => a.id - c.id).slice(0, tune.turtle.manned)) {
           const posted = soldiers.filter((u) => u.order === Order.Post && u.orderTarget === b.id).length;
-          if (posted >= TURTLE.outpostGuards) continue;
+          if (posted >= tune.turtle.outpostGuards) continue;
           const free = soldiers
             .filter((u) => u.type === UnitType.Spearman && !isGuard(u.id) && u.order !== Order.Post && u.id !== scout && dist2(u.x, u.y, home.cellX, home.cellY) <= 20 * 20)
             .sort((a, c) => a.id - c.id)
-            .slice(0, TURTLE.outpostGuards - posted);
+            .slice(0, tune.turtle.outpostGuards - posted);
           if (free.length > 0) out.push({ c: "post", u: free.map((u) => u.id), building: b.id });
         }
       }
@@ -1251,7 +1286,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       if (plan.harass > 0) {
         harassers = harassers.filter((id) => soldiers.some((u) => u.id === id));
         // Formed (and topped up while at home) from soldiers at home, ranged first, by id.
-        if (tick >= HARASS_FROM && tick >= harassAgain && harassers.length < plan.harass) {
+        if (tick >= tune.harass.from && tick >= harassAgain && harassers.length < plan.harass) {
           const free = soldiers
             .filter((u) => !isGuard(u.id) && !harassers.includes(u.id) && u.id !== scout && u.id !== sentry && !escort.includes(u.id) && !fortWalk.includes(u.id) && u.order !== Order.Post && u.order !== Order.Garrison && dist2(u.x, u.y, home.cellX, home.cellY) <= 15 * 15)
             .sort((a, b) => (a.type === UnitType.Ranged ? 0 : 1) - (b.type === UnitType.Ranged ? 0 : 1) || a.id - b.id);
@@ -1271,12 +1306,12 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
             .filter((u) => !isGuard(u.id) && !raiders.includes(u) && u.id !== scout && u.id !== sentry && u.order !== Order.Post)
             .sort((a, b) => a.id - b.id);
           const spears = free.filter((u) => u.type === UnitType.Spearman).length;
-          if (free.length >= Math.max(plan.pushAt, plan.towerRush) && spears >= plan.towerRush && gatherers.length >= RUSH_BUILDERS + 3) {
+          if (free.length >= Math.max(plan.pushAt, plan.towerRush) && spears >= plan.towerRush && gatherers.length >= tune.rush.builders + 3) {
             escort = plan.rushBuildersOnly ? [] : free.map((u) => u.id);
-            rushFarmers = gatherers.slice(0, RUSH_BUILDERS);
+            rushFarmers = gatherers.slice(0, tune.rush.builders);
             gatherers.splice(0, rushFarmers.length);
             const e = frame(enemyHome.cellX, enemyHome.cellY);
-            rushSpot = real(e.u, e.v + RUSH_DIST);
+            rushSpot = real(e.u, e.v + tune.rush.dist);
             const wp = real(RUSH_WAY[0].u, RUSH_WAY[0].v);
             // A move: the escort fights what meets it on the way (on a retreat it was shot down unanswered).
             // Builders only: they walk alone.
@@ -1313,7 +1348,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
             if (escort.length > 0) out.push({ c: "stop", u: escort });
             const cost = rules.buildings[BuildingType.Outpost].cost;
             const spot = spotNear(view, BuildingType.Outpost, rushSpot.x, rushSpot.y, 5);
-            const crew = rushFarmers.length > 0 ? rushFarmers : gatherers.slice(0, RUSH_BUILDERS);
+            const crew = rushFarmers.length > 0 ? rushFarmers : gatherers.slice(0, tune.rush.builders);
             if (spot !== null && crew.length > 0 && affordAll(cost)) {
               out.push({ c: "build", u: crew, type: BuildingType.Outpost, x: spot.x, y: spot.y });
               spend(cost);
@@ -1377,16 +1412,16 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       if (plan.fortress && found >= 0) {
         const outpost = own.find((b) => b.type === BuildingType.Outpost);
         const towers = own.filter((b) => b.type === BuildingType.ArrowTower);
-        if (fortStage === "" && tick >= FORT_FROM && done(BuildingType.Barracks).length > 0) {
+        if (fortStage === "" && tick >= tune.fort.from && done(BuildingType.Barracks).length > 0) {
           const spears = soldiers
             .filter((u) => u.type === UnitType.Spearman && !isGuard(u.id) && !raiders.includes(u) && u.id !== scout && u.id !== sentry && u.order !== Order.Post)
             .sort((a, b) => a.id - b.id);
           const fortGuards = plan.fortGuards >= 0 ? plan.fortGuards : (rules.outpost?.slots ?? 6);
-          if (spears.length >= fortGuards && gatherers.length >= RUSH_BUILDERS + 3) {
+          if (spears.length >= fortGuards && gatherers.length >= tune.rush.builders + 3) {
             fortWalk = spears.slice(0, fortGuards).map((u) => u.id);
-            fortCrew = gatherers.slice(0, RUSH_BUILDERS);
+            fortCrew = gatherers.slice(0, tune.rush.builders);
             gatherers.splice(0, fortCrew.length);
-            // About FORT_DIST cells from home on the straight way to the enemy's main city (canonical
+            // About tune.fort.dist cells from home on the straight way to the enemy's main city (canonical
             // cells), clear of the towns (towers may not go near them; the fixed map's way crosses the big town).
             const hf = frame(home.cellX, home.cellY);
             const ef = frame(enemyHome.cellX, enemyHome.cellY);
@@ -1395,7 +1430,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
             const len = Math.sqrt(du * du + dv * dv) || 1;
             const clear = TOWN_CLEARANCE + 8;
             let best: { u: number; v: number } | null = null;
-            for (const [d, side] of FORT_TRIES) {
+            for (const [d, side] of fortSpots(tune.fort.dist)) {
               const u = hf.u + Math.trunc((du * d - dv * side) / len);
               const v = hf.v + Math.trunc((dv * d + du * side) / len);
               if (u < 4 || v < 4 || u > n - 5 || v > n - 5) continue;
@@ -1404,7 +1439,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
               best = { u, v };
               break;
             }
-            const at = best ?? { u: hf.u + Math.trunc((du * FORT_DIST) / len), v: hf.v + Math.trunc((dv * FORT_DIST) / len) };
+            const at = best ?? { u: hf.u + Math.trunc((du * tune.fort.dist) / len), v: hf.v + Math.trunc((dv * tune.fort.dist) / len) };
             fortSpot = real(at.u, at.v);
             fortHoldAt = real(at.u - Math.trunc((du * 3) / len), at.v - Math.trunc((dv * 3) / len));
             out.push({ c: "move", u: [...fortWalk, ...fortCrew], x: fortSpot.x, y: fortSpot.y });
@@ -1465,8 +1500,8 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
           hiding = busy;
         }
         if (fortStage === "towers") {
-          if (outpost === undefined || fortCrew.length === 0 || towers.length >= FORT_TOWERS) {
-            if (towers.length >= FORT_TOWERS) fortress.towers = tick;
+          if (outpost === undefined || fortCrew.length === 0 || towers.length >= tune.fort.towers) {
+            if (towers.length >= tune.fort.towers) fortress.towers = tick;
             fortStage = "done";
           } else if (!towers.some((b) => b.progress < 1000)) {
             // One after the other beside the outpost: three cells toward the enemy, spread across the way.
@@ -1495,7 +1530,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
           // Half gone, or outnumbered while out: home, and out again later with the squad full.
           if (raiding) out.push({ c: "retreat", u: ids, x: post.x, y: post.y });
           raiding = false;
-          harassAgain = tick + HARASS_REST;
+          harassAgain = tick + tune.harass.rest;
           harassTarget = -1;
           if (raiders.length * 2 < plan.harass) harassers = [];
         } else if (raiding || (raiders.length >= plan.harass && tick >= harassAgain)) {
@@ -1507,7 +1542,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
           }
           // Farmers at work (gathering or building), not those walking home or hiding.
           const working = (f: Unit) => f.order === Order.Gather || f.order === Order.Build || f.order === Order.Repair;
-          const prey = found < 0 ? [] : enemyFarmers.filter((f) => working(f) && dist2(f.x, f.y, enemyHome.cellX, enemyHome.cellY) >= HARASS_FAR * HARASS_FAR);
+          const prey = found < 0 ? [] : enemyFarmers.filter((f) => working(f) && dist2(f.x, f.y, enemyHome.cellX, enemyHome.cellY) >= tune.harass.far * tune.harass.far);
           prey.sort((a, b) => dist2(a.x, a.y, sx, sy) - dist2(b.x, b.y, sx, sy) || a.id - b.id);
           if (prey.length > 0) {
             if (prey[0].id !== harassTarget || tick - harassMove >= 200) {
@@ -1631,7 +1666,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         if (wave) {
           turtleQuiet = tick;
           const busy = new Set<number>();
-          const shelters = [...done(BuildingType.MainCity), ...done(BuildingType.ArrowTower).filter((b) => dist2(b.x, b.y, home.cellX, home.cellY) <= TURTLE.homeR * TURTLE.homeR)];
+          const shelters = [...done(BuildingType.MainCity), ...done(BuildingType.ArrowTower).filter((b) => dist2(b.x, b.y, home.cellX, home.cellY) <= tune.turtle.homeR * tune.turtle.homeR)];
           for (const t of shelters) {
             const holds = rules.buildings[t.type].holds ?? 0;
             const inside = soldiers.filter((u) => u.order === Order.Garrison && u.orderTarget === t.id).length;
@@ -1654,7 +1689,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       }
       // plan.turtle (D-086 A5): the gold by its mines running low and no other gold seen, one spearman goes round
       // home GOLD_LOOK cells out (a stop at a time, the next once within SCOUT_NEAR or after SCOUT_STUCK) to find it.
-      if (plan.turtle && goldLeft < 2 * TURTLE.goldLow && nextGold === null) {
+      if (plan.turtle && goldLeft < 2 * tune.turtle.goldLow && nextGold === null) {
         if (!soldiers.some((u) => u.id === goldScout)) {
           const free = soldiers.filter((u) => u.type === UnitType.Spearman && !isGuard(u.id) && !raiders.includes(u) && u.id !== scout && u.id !== sentry && u.order !== Order.Post && u.order !== Order.Garrison).sort((a, c) => a.id - c.id);
           goldScout = free.length > 0 ? free[0].id : -1;
@@ -1775,7 +1810,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
             counterReady = true;
             waves++;
           }
-          if (plan.crush && waveMax >= CRUSH.wave) crushing = true;
+          if (plan.crush && waveMax >= tune.crush.wave) crushing = true;
           waveMax = 0;
         }
         if (mode === "defend") mode = "home";
@@ -1819,8 +1854,8 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
 
       // --- push-crush (plan.crush): out after a big wave beaten off at home --------------------------------
       if (plan.crush) {
-        const close = foes.filter((f) => dist2(f.x, f.y, cx, cy) <= CRUSH.near * CRUSH.near).length;
-        if ((mode === "crush" || mode === "base") && army.length * 10 < close * CRUSH.ratio) {
+        const close = foes.filter((f) => dist2(f.x, f.y, cx, cy) <= tune.crush.near * tune.crush.near).length;
+        if ((mode === "crush" || mode === "base") && army.length * 10 < close * tune.crush.ratio) {
           out.push({ c: "retreat", u: armyIds, x: post.x, y: post.y });
           lastMove = tick;
           mode = "home";
@@ -1829,8 +1864,8 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
           return out;
         }
         let seen = 0;
-        for (const x of seenFoes) if (tick - x.tick <= CRUSH.seen) seen = Math.max(seen, x.n);
-        const ahead = army.length >= CRUSH.min && army.length * 10 >= seen * CRUSH.ratio;
+        for (const x of seenFoes) if (tick - x.tick <= tune.crush.seen) seen = Math.max(seen, x.n);
+        const ahead = army.length >= tune.crush.min && army.length * 10 >= seen * tune.crush.ratio;
         if (crushing && (mode === "crush" || (mode === "home" && ahead))) {
           const theirs = known
             .filter((x) => {
@@ -1864,11 +1899,11 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       // worth a trip, nor waiting at, while governing it cannot be paid for.
       const blocked = (x: Town) => (plan.choice === "govern" || (rules.features?.plunderOnce === true && x.plundered)) && !affordAll(GOVERN_COST[x.size]);
       if (plan.corners && mode !== "town") {
-        // plan.turtle (D-086 A5): the big city too, once the army is TURTLE.bigAt strong (small towns first);
+        // plan.turtle (D-086 A5): the big city too, once the army is tune.turtle.bigAt strong (small towns first);
         // neutral towns only, never one the enemy holds (its army is about).
-        const big = plan.turtle && army.length >= TURTLE.bigAt;
-        // plan.lateSiege: no more once it governs LATE_SIEGE.governed.
-        const enough = plan.lateSiege && [...towns.values()].filter((x) => x.owner === player && (x.state === TownState.Governed || x.state === TownState.Repairing)).length >= LATE_SIEGE.governed;
+        const big = plan.turtle && army.length >= tune.turtle.bigAt;
+        // plan.lateSiege: no more once it governs tune.lateSiege.governed.
+        const enough = plan.lateSiege && [...towns.values()].filter((x) => x.owner === player && (x.state === TownState.Governed || x.state === TownState.Repairing)).length >= tune.lateSiege.governed;
         const open = known
           .filter((x) => !enough && (x.size === TownSize.Small || big) && !ours(towns.get(x.id)!) && !blocked(towns.get(x.id)!) && tick >= (nextTown.get(x.id) ?? 0))
           .filter((x) => !plan.turtle || towns.get(x.id)!.state === TownState.Neutral)
@@ -1950,13 +1985,13 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         (fortStage === "towers" || fortStage === "done") &&
         own.some((b) => b.type === BuildingType.Outpost) &&
         army.length < plan.fortressHold &&
-        tick < FORT_HOLD_UNTIL;
+        tick < tune.fort.holdUntil;
       // plan.pushAhead (D-086 A): and more than the most enemy soldiers it saw at once lately.
       const ahead = !plan.pushAhead || army.length > seenFoes.reduce((a, x) => Math.max(a, x.n), 0);
-      // plan.turtle (D-086 A5): a town trip only with TURTLE.tripTowers towers standing by home.
-      const towersByHome = done(BuildingType.ArrowTower).filter((b) => dist2(b.x, b.y, home.cellX, home.cellY) <= TURTLE.homeR * TURTLE.homeR).length;
+      // plan.turtle (D-086 A5): a town trip only with tune.turtle.tripTowers towers standing by home.
+      const towersByHome = done(BuildingType.ArrowTower).filter((b) => dist2(b.x, b.y, home.cellX, home.cellY) <= tune.turtle.homeR * tune.turtle.homeR).length;
       // plan.lateSiege: the soldiers and the engines, whatever it saw of the enemy (the towers it should have no longer count).
-      const lateReady = army.length >= LATE_SIEGE.army && soldiers.filter((u) => u.type === UnitType.Siege).length >= LATE_SIEGE.engines;
+      const lateReady = army.length >= tune.lateSiege.army && soldiers.filter((u) => u.type === UnitType.Siege).length >= tune.lateSiege.engines;
       // D-141 (plan.engines): with the works up, a march waits for its engines.
       const enginesReady = plan.engines === 0 || done(BuildingType.SiegeWorks).length === 0 || soldiers.filter((u) => u.type === UnitType.Siege).length >= plan.engines;
       const go = !holding && found >= 0 && enginesReady && (plan.lateSiege ? lateReady : rushPush || (counterReady && army.length >= plan.counterAt && ahead) || (plan.pushAt > 0 && army.length >= plan.pushAt && ahead));
@@ -1979,7 +2014,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       } else if (
         townOpen &&
         army.length >= (trips === 0 || plan.turtle ? plan.townAt : Math.min(plan.townAt, 4)) &&
-        (!plan.turtle || plan.earlyTowns || (ahead && towersByHome >= TURTLE.tripTowers))
+        (!plan.turtle || plan.earlyTowns || (ahead && towersByHome >= tune.turtle.tripTowers))
       ) {
         trips++;
         send(t!.x, t!.y, "town");
