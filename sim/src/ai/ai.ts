@@ -3184,6 +3184,12 @@ export interface HardPlan {
   fortArmyBy: number;
   fortIntel: number;
   /**
+   * P4 (ceo 2026-11-11; the user's 078eaccb at 37 and 2fd2e236 at 30: forts it had lost to twice barred armies 4.2 x and
+   * 2.6 x what the forts and the soldiers by them asked). fortLockOver: two lost in a row (FORT_LOST_MOST) no longer hold
+   * the memory for an army this many times what they ask; it is then lifted as any (0: the lock holds, as before).
+   */
+  fortLockOver: number;
+  /**
    * D-139 (the user's 64a27f8a): the enemy's main city guessed only from a building near a corner (no town's), a corner
    * found empty ruled out and the guess moved on, its scout past corners ruled out (false: as before, for measuring).
    */
@@ -3317,6 +3323,7 @@ export const HARD: HardPlan = {
   fortArmyWorth: false,
   fortArmyBy: 13,
   fortIntel: 4,
+  fortLockOver: 0,
   cornerGuess: true,
   mageHallFirst: 10,
   // D-131 (the user 2026-11-06; ceo 2026-11-07; docs/research/2026-11-ai-tactics.md): against hard without it, new seeds,
@@ -5214,7 +5221,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           if (plan.fortExit <= 0) return false;
           for (const id of ids) {
             const l = fortLost.get(id);
-            if (l !== undefined && l.n >= FORT_LOST_MOST && tick - l.tick < fortForget) return false;
+            if (l !== undefined && l.n >= FORT_LOST_MOST && tick - l.tick < fortForget && !(plan.fortLockOver > 0 && w * 10 >= need * plan.fortLockOver)) return false;
           }
           return (cap >= ceiling && pop >= cap - FULL_MARGIN) || w * 100 >= failed * FORT_EXIT_MORE || w * 10 >= need * plan.fortExit;
         };
