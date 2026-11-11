@@ -26,6 +26,7 @@ import {
   type SimEvent,
   TownChoice,
   TownSize,
+  UNIT_STRIDE,
   UnitField,
   UnitType,
 } from "../../sim.ts";
@@ -64,6 +65,15 @@ export const TOWN_HINT_OFF_FORMAL_TEXT = "之後開局不會再提示，可以�
  */
 const HOME_HIT_MS = 15_000;
 const HOME_HIT_TEXT = "家裡被攻擊：主城附近有敵兵";
+/**
+ * 主城被打的警示 (D-141, for the user to choose; ?test=1&homefx=a|b): enemy soldiers the screen sees within HOME_CELLS of our
+ * main city, before they hit: the strip says so (again after HOME_NEAR_AGAIN_MS, or when more come), and 回防 shows right of
+ * 全軍撤退 until HOME_NEAR_MS after the last of them is gone. 甲 看主城: the camera home; 乙 全軍回防: 全軍 selected and
+ * sent home (fighting on the way), the camera with them.
+ */
+const HOME_NEAR_MS = 15_000;
+const HOME_NEAR_AGAIN_MS = 30_000;
+const homeNearText = (n: number) => `敵軍 ${n} 名接近主城`;
 /** 地圖 flashes red, this long each way (R6-25-05). */
 const MAP_ALARM_BLINK_MS = 400;
 
@@ -123,6 +133,12 @@ export class Hud {
   /** 正式介面 (R6) on: the buttons built in R6's look (ui/formal.ts). */
   private readonly formal: boolean;
   private readonly recallBtn: HTMLButtonElement;
+  /** 回防 (D-141) and what it does: 甲 the camera home, 乙 全軍 home too. */
+  private readonly defendBtn: HTMLButtonElement;
+  private readonly defendFx: "a" | "b" = new URLSearchParams(location.search).get("homefx") === "a" ? "a" : "b";
+  private homeNearUntil = 0;
+  private homeNearSaid = Number.NEGATIVE_INFINITY;
+  private homeNearSaidN = 0;
   private readonly idleBtn: HTMLButtonElement;
   /** 正式介面 (R6-13): 地圖 and how many places are under attack on it; 閒置's count. */
   private readonly mapBtn: HTMLButtonElement | null;
@@ -225,6 +241,9 @@ export class Hud {
     // 全軍撤退 (user 2026-10-01): nothing to select first. Top left, far from 全軍.
     const retreatAll = btn(root, "全軍撤退", () => game.retreatAll(), `retreat-all-btn ${this.formal ? "b blue " : ""}${ORDER_TONE.retreat}`);
     if (this.formal) dress(retreatAll, { ic: "retreat", label: "全軍撤退" });
+    // 回防 (D-141): right of 全軍撤退 while enemies are near home or hit it.
+    this.defendBtn = btn(root, "", () => this.defend(), `defend-btn${this.formal ? " b alarm" : ""}`);
+    this.defendBtn.hidden = true;
 
     const host = {
       view: () => game.view,
@@ -358,6 +377,7 @@ export class Hud {
     this.minimap.update(now);
     this.drawArrows(now);
     if (this.formal) this.updateLeft(now);
+    this.updateDefend(now);
     if (now - this.lastUpdate < UPDATE_MS) return;
     this.lastUpdate = now;
     this.dialogTick?.();
@@ -704,6 +724,73 @@ export class Hud {
     g.growBase = null;
     if (g.grow) g.refill = true;
     this.game.toast(g.grow ? `編隊 ${i + 1} 自動擴編：開，資源多時照比例多練` : `編隊 ${i + 1} 自動擴編：關，加的人數留著`);
+  }
+
+  /** Our main city's footprint (the first standing), or null. */
+  private homeBox(): { x: number; y: number; w: number; h: number } | null {
+    const view = this.game.view;
+    const bs = view?.curr?.snap.buildings;
+    if (view === null || bs === undefined) return null;
+    for (let o = 0; o < bs.length; o += BUILDING_STRIDE) {
+      if (bs[o + BuildingField.owner] !== view.me || bs[o + BuildingField.type] !== BuildingType.MainCity) continue;
+      const size = view.rules.buildings[BuildingType.MainCity]?.size ?? 4;
+      return { x: bs[o + BuildingField.cellX], y: bs[o + BuildingField.cellY], w: size, h: size };
+    }
+    return null;
+  }
+
+  /** 敵軍接近主城 (D-141): the enemy's soldiers the screen sees within HOME_CELLS of our main city; the strip and 回防. */
+  private updateDefend(now: number): void {
+    const view = this.game.view;
+    const u = view?.curr?.snap.units;
+    const home = this.homeBox();
+    let n = 0;
+    if (view !== null && u !== undefined && home !== null) {
+      for (let o = 0; o < u.length; o += UNIT_STRIDE) {
+        const owner = u[o + UnitField.owner];
+        if (owner === view.me || owner === NEUTRAL || owner === NO_OWNER || u[o + UnitField.type] === UnitType.Farmer) continue;
+        if (nearFootprint(home, u[o + UnitField.x] / CELL, u[o + UnitField.y] / CELL, HOME_CELLS)) n++;
+      }
+    }
+    if (n > 0) {
+      this.homeNearUntil = now + HOME_NEAR_MS;
+      if (now - this.homeNearSaid >= HOME_NEAR_AGAIN_MS || n >= this.homeNearSaidN + 5) {
+        this.homeNearSaid = now;
+        this.homeNearSaidN = n;
+        this.game.toast(homeNearText(n));
+      }
+    }
+    const show = now < this.homeNearUntil || now < this.homeHitUntil;
+    const b = this.defendBtn;
+    if (b.hidden === show) b.hidden = !show;
+    if (!show) return;
+    const what = this.defendFx === "a" ? "看主城" : "全軍回防";
+    const sub = n > 0 ? `敵 ${n} 名` : "主城被打";
+    if (this.formal) {
+      if (b.dataset.k !== `${what}|${sub}`) {
+        b.dataset.k = `${what}|${sub}`;
+        dress(b, { ic: "home", label: what, sub });
+      }
+    } else if (b.textContent !== `${what}（${sub}）`) b.textContent = `${what}（${sub}）`;
+    b.setAttribute("aria-label", `${what}：${sub}`);
+  }
+
+  /** 回防 (D-141): 甲 the camera to our main city; 乙 also 全軍 selected and sent to it. */
+  private defend(): void {
+    const home = this.homeBox();
+    if (home === null) return;
+    const cx = home.x + home.w / 2;
+    const cy = home.y + home.h / 2;
+    this.game.camera?.centerOn(cx * TILE_PX, cy * TILE_PX);
+    if (this.defendFx === "a") return;
+    const all = this.game.armyIds();
+    if (all.length === 0) {
+      this.game.toast("還沒有軍隊");
+      return;
+    }
+    this.game.apply([{ kind: "select", units: all }]);
+    this.game.command({ c: "move", u: all, x: Math.floor(cx), y: home.y + home.h });
+    this.game.toast(`全軍 ${all.length} 名回主城`, "ok");
   }
 
   /** 全軍: every own soldier on the map, except the ones stationed in a town (留守, D-026). */
