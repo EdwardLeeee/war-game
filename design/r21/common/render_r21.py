@@ -40,6 +40,8 @@ for arg in sys.argv[4:]:
 # (the production run grows the frame to the unit's reach first, render_prod.fit_frame; a draft takes spec's, or R21_FRAME)
 FRAME = [float(v) for v in os.environ["R21_FRAME"].split(",")] if os.environ.get("R21_FRAME") else u["frame"]
 extra = dict(shadow_extra=list(spec.SHADOW_EXTRA), new_anims=True)
+if u.get("style"):                    # a mage's (render_prod.run)
+    extra["mage_style"] = u["style"]
 if items:
     batch.run(u["kind"], items, spec.PX_PER_M, level="C", frame_m=FRAME, tag=f"r21{tag}", outputs={"x3": spec.PX_PER_M}, ss=int(os.environ.get("R21_SS", "1")),
               samples={"beauty": int(os.environ.get("R21_SAMPLES", "24")), "shadow": 8, "ao": 6, "mask": 4}, variant=u.get("variant", 0),

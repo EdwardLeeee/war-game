@@ -66,6 +66,18 @@ FALL_KEYS = [
                shoulderR=(4, -40, 0), elbowR=(10, 0, 0), shoulderL=(4, 28, 0), elbowL=(12, 0, 0),
                hipR=(4, -14, 0), kneeR=(-10, 0, 0), hipL=(40, 12, 0), kneeL=(-72, 0, 0)), "smooth"),
 ]
+# R22 (D-142, R19's items 8 and 9; R22=1 until the user approves the boards, design/r22):
+# 8  the recoil that opens the fall (approved as P2-03) flung both arms out level to the sides: for two or three
+#    frames a T, the rig's rest pose to the eye. The arms unlike now: the right bent up to the chest (struck there),
+#    the left hanging at his side. The same times, the same landing (INF_IMPACT, the mages' impact frame).
+# 9  the sword in its scabbard at the left hip (the East's 橫刀, the West's falchion and arming sword) kept its
+#    standing angle on a body lying down: through the ground under a spearman on his back, straight up over a rider
+#    lying prone. As the body goes down it comes round to lie along the thigh (_lay_swords).
+R22 = os.environ.get("R22") == "1"
+if R22:
+    FALL_KEYS[0][1].update(shoulderR=(62, -34, 0), elbowR=(68, 0, 0), shoulderL=(-24, 20, 0), elbowL=(22, 0, 0),
+                           torso=(16, 0, 12), neck=(12, 0, -14))
+SWORD_LIES = -6.0                  # degrees about the hip's x: the scabbard along the thigh (standing: -60, -62)
 STAFF_LEN = 1.0                    # hand to the foot of the staff (mage5.staff)
 STAFF_LIES = (0.80, 0.55, 0.0)     # where the dropped staff points on the ground (unit space)
 MAGE_IMPACT = 8                    # the frame of `fall` where the body lands (for the game's dust)
@@ -1439,16 +1451,37 @@ def sling_from(u, kind):
     return [round(v, 2) for v in motion.unit_point(u, ob.matrix_world.translation)]
 
 
+def _lay_swords(u):
+    """R22: the scabbards hung at the hips (east_r8._sword, west_r8's <kind>_r8swordroot) come round to lie along
+    the thigh as the body falls, from 0.35 to 0.7 of the fall; every other animation as built."""
+    roots = [o for o in bpy.data.objects if o.name.split(".")[0].endswith(("swordroot", "falchionroot"))]
+    if not R22 or not roots:
+        return u
+    rest = {o: tuple(o.rotation_euler) for o in roots}
+    inner = u.pose
+
+    def pose(anim, frame):
+        inner(anim, frame)
+        k = 0.0
+        if anim == "death":
+            k = ease(motion.clamp((frame / (u.frames.get("death", 10) - 1.0) - 0.35) / 0.35))
+        for o in roots:
+            rx, ry, rz = rest[o]
+            o.rotation_euler = (rx + (SWORD_LIES * lib.D2R - rx) * k, ry, rz)
+    u.pose = pose
+    return u
+
+
 def extend(u, kind, style=None):
     if kind.startswith("mage"):
         return extend_mage(u, style or "")
     if kind in ("hcav_e", "knight_w"):
-        return extend_cav(u, kind)
+        return _lay_swords(extend_cav(u, kind))
     if kind.startswith("siege"):
         return extend_siege(u, kind)
     if kind.startswith("farmer"):
         u = extend_farmer(u, kind)
     if kind in DROPS:
         u = extend_infantry(u, kind)
-        return extend_sling(u, kind) if kind in SLING_KINDS else u
+        return _lay_swords(extend_sling(u, kind) if kind in SLING_KINDS else u)
     return u
