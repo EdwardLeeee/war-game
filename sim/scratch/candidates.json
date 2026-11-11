@@ -1,0 +1,454 @@
+{
+ "traces": [
+  {
+   "name": "w13-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 0 --shards 8 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "fortArmyWorth": true
+   },
+   "b": {}
+  },
+  {
+   "name": "w13-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 1 --shards 8 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "fortArmyWorth": true
+   },
+   "b": {}
+  },
+  {
+   "name": "w13-hhr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 2 --shards 8 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "fortArmyWorth": true
+   },
+   "b": {}
+  },
+  {
+   "name": "w13-hhr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 3 --shards 8 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "fortArmyWorth": true
+   },
+   "b": {}
+  },
+  {
+   "name": "w13-hhr-4",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 4 --shards 8 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "fortArmyWorth": true
+   },
+   "b": {}
+  },
+  {
+   "name": "w13-hhr-5",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 5 --shards 8 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "fortArmyWorth": true
+   },
+   "b": {}
+  },
+  {
+   "name": "w13-hhr-6",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 6 --shards 8 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "fortArmyWorth": true
+   },
+   "b": {}
+  },
+  {
+   "name": "w13-hhr-7",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 7 --shards 8 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "fortArmyWorth": true
+   },
+   "b": {}
+  },
+  {
+   "name": "p4-hhr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 0 --shards 8 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "fortLockOver": 2
+   },
+   "b": {}
+  },
+  {
+   "name": "p4-hhr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 1 --shards 8 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "fortLockOver": 2
+   },
+   "b": {}
+  },
+  {
+   "name": "p4-hhr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 2 --shards 8 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "fortLockOver": 2
+   },
+   "b": {}
+  },
+  {
+   "name": "p4-hhr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 3 --shards 8 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "fortLockOver": 2
+   },
+   "b": {}
+  },
+  {
+   "name": "p4-hhr-4",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 4 --shards 8 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "fortLockOver": 2
+   },
+   "b": {}
+  },
+  {
+   "name": "p4-hhr-5",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 5 --shards 8 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "fortLockOver": 2
+   },
+   "b": {}
+  },
+  {
+   "name": "p4-hhr-6",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 6 --shards 8 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "fortLockOver": 2
+   },
+   "b": {}
+  },
+  {
+   "name": "p4-hhr-7",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 200 --shard 7 --shards 8 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "fortLockOver": 2
+   },
+   "b": {}
+  },
+  {
+   "name": "w13-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "fortArmyWorth": true
+   },
+   "b": {
+    "fortArmyWorth": true
+   }
+  },
+  {
+   "name": "w13-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "fortArmyWorth": true
+   },
+   "b": {
+    "fortArmyWorth": true
+   }
+  },
+  {
+   "name": "w13-hnr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "fortArmyWorth": true
+   },
+   "b": {
+    "fortArmyWorth": true
+   }
+  },
+  {
+   "name": "w13-hnr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "fortArmyWorth": true
+   },
+   "b": {
+    "fortArmyWorth": true
+   }
+  },
+  {
+   "name": "base-hnr-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "base-hnr-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "base-hnr-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "base-hnr-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "w13-hnf-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "fortArmyWorth": true
+   },
+   "b": {
+    "fortArmyWorth": true
+   }
+  },
+  {
+   "name": "w13-hnf-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "fortArmyWorth": true
+   },
+   "b": {
+    "fortArmyWorth": true
+   }
+  },
+  {
+   "name": "w13-hnf-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "fortArmyWorth": true
+   },
+   "b": {
+    "fortArmyWorth": true
+   }
+  },
+  {
+   "name": "w13-hnf-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {
+    "fortArmyWorth": true
+   },
+   "b": {
+    "fortArmyWorth": true
+   }
+  },
+  {
+   "name": "base-hnf-0",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 0 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "base-hnf-1",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 1 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "base-hnf-2",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 2 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "base-hnf-3",
+   "script": "late-metrics.ts",
+   "args": "--mode ai --games 100 --shard 3 --shards 4 --difficulty hard,normal --map fixed --seed-from 1 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "p4-push-fortress-1-20",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 1-20 --strategy push --speed h1 --formation close --fortress --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortLockOver": 2
+   },
+   "b": {
+    "fortLockOver": 2
+   }
+  },
+  {
+   "name": "p4-push-fortress-21-40",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 21-40 --strategy push --speed h1 --formation close --fortress --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortLockOver": 2
+   },
+   "b": {
+    "fortLockOver": 2
+   }
+  },
+  {
+   "name": "p4-push-fortress-random-1-20",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 1-20 --strategy push --speed h1 --formation close --fortress --map random --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortLockOver": 2
+   },
+   "b": {
+    "fortLockOver": 2
+   }
+  },
+  {
+   "name": "p4-push-fortress-random-21-40",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 21-40 --strategy push --speed h1 --formation close --fortress --map random --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortLockOver": 2
+   },
+   "b": {
+    "fortLockOver": 2
+   }
+  },
+  {
+   "name": "p4-push-fortress-hold-1-20",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 1-20 --strategy push --speed h1 --formation close --fortress-hold 60 --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortLockOver": 2
+   },
+   "b": {
+    "fortLockOver": 2
+   }
+  },
+  {
+   "name": "p4-push-fortress-hold-21-40",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 21-40 --strategy push --speed h1 --formation close --fortress-hold 60 --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortLockOver": 2
+   },
+   "b": {
+    "fortLockOver": 2
+   }
+  },
+  {
+   "name": "p4-push-fortress-hold-random-1-20",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 1-20 --strategy push --speed h1 --formation close --fortress-hold 60 --map random --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortLockOver": 2
+   },
+   "b": {
+    "fortLockOver": 2
+   }
+  },
+  {
+   "name": "p4-push-fortress-hold-random-21-40",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 21-40 --strategy push --speed h1 --formation close --fortress-hold 60 --map random --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortLockOver": 2
+   },
+   "b": {
+    "fortLockOver": 2
+   }
+  },
+  {
+   "name": "p4-push-fortress-wall-1-20",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 1-20 --strategy push --speed h1 --formation close --fortress --fort-guards 0 --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortLockOver": 2
+   },
+   "b": {
+    "fortLockOver": 2
+   }
+  },
+  {
+   "name": "p4-push-fortress-wall-21-40",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 21-40 --strategy push --speed h1 --formation close --fortress --fort-guards 0 --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortLockOver": 2
+   },
+   "b": {
+    "fortLockOver": 2
+   }
+  },
+  {
+   "name": "p4-push-fortress-wall-random-1-20",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 1-20 --strategy push --speed h1 --formation close --fortress --fort-guards 0 --map random --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortLockOver": 2
+   },
+   "b": {
+    "fortLockOver": 2
+   }
+  },
+  {
+   "name": "p4-push-fortress-wall-random-21-40",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 21-40 --strategy push --speed h1 --formation close --fortress --fort-guards 0 --map random --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortLockOver": 2
+   },
+   "b": {
+    "fortLockOver": 2
+   }
+  }
+ ],
+ "scripted": [
+  {
+   "name": "w13",
+   "a": {
+    "fortArmyWorth": true
+   },
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "base",
+   "a": {},
+   "groups": [
+    "push",
+    "push-auto",
+    "push-random",
+    "push-auto-random",
+    "push-cavalry",
+    "push-cavalry-random"
+   ],
+   "difficulty": "hard"
+  }
+ ]
+}
