@@ -1,0 +1,12 @@
+{
+ "scripted": [
+  {
+   "name": "off",
+   "a": {},
+   "groups": [
+    "push-auto-random"
+   ],
+   "difficulty": "hard"
+  }
+ ]
+}
