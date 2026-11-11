@@ -76,7 +76,7 @@ export const minuteOf = (tick: number): number => Math.floor(tick / MINUTE_TICKS
 export const continueLabel = (s: SavedGame): string => `繼續上一局（第 ${minuteOf(s.tick)} 分）`;
 
 /** Under the button when the simulation is not the one the game was played on. */
-export const UPDATED_TEXT = "網站已經更新，這一局不能繼續";
+export const UPDATED_TEXT = "網站已經更新，這一局不能繼續，請開新局";
 
 /** The saved game goes on on this page: the same simulation (protocol and build). */
 export const canGoOn = (s: SavedGame, protocol: number, build: string): boolean => s.protocol === protocol && s.build === build;
