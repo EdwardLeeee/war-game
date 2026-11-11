@@ -205,6 +205,7 @@ export function rules(map?: { towerSize?: number } & Partial<CastleMap>): Requir
       ...(WALL_SHIFT.on && WALLS.on ? { wallHold: true } : {}),
       ...(OUTPOST.on && OUTPOST_HIDE.on ? { outpostHide: true } : {}),
       ...(NO_CRYSTAL.on ? { noCrystal: true } : {}),
+      ...(MAIN_CITY_TOUGH.on ? { mainCityTough: true } : {}),
     },
     arrows: {
       mainCity: MAIN_ARROW,
@@ -228,6 +229,7 @@ export function rules(map?: { towerSize?: number } & Partial<CastleMap>): Requir
     wallShift: { wait: WALL_SHIFT.wait, back: WALL_SHIFT.back, stay: WALL_SHIFT.stay, odds: WALL_SHIFT.odds },
     siege: { vsBuildings: SIEGE.vsBuildings, flightTicks: SIEGE.flightTicks },
     market: { lot: MARKET.lot, start: MARKET.start, step: MARKET.step, min: MARKET.min, max: MARKET.max, sellPermille: MARKET.sellPermille, recoverTicks: MARKET.recoverTicks, maxLots: MARKET.maxLots },
+    mainCityTough: [MAIN_CITY_TOUGH.num, MAIN_CITY_TOUGH.den],
   };
 }
 
@@ -851,5 +853,7 @@ function noTownCrystal(c: Cost): Cost {
  * soldiers, still takes it; one that comes back has a battle). A unit's own attack on a main city does `num` / `den` of
  * itself, summed over the city each tick, the rest carried to the next (Building.toughRem); siege stones as before (so
  * an army that means to take one brings engines). 30 cavalry took an unguarded one in about 6-20 s before. Off: as before.
+ * 2/5 (the user 2026-11-11 chose 「耐打 2.5 倍」 so that a raid stays strong; ceo's 1/4 not taken): 30 cavalry take an
+ * unguarded one in about 16 s (7.5 off); with the AI's army out, 40 of 40 stolen still (1/4: 38 of 40, 27 s).
  */
-export const MAIN_CITY_TOUGH = { on: false, num: 1, den: 3 };
+export const MAIN_CITY_TOUGH = { on: true, num: 2, den: 5 };

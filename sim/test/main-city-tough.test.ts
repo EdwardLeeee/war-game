@@ -1,11 +1,11 @@
 // D-141 (MAIN_CITY_TOUGH): a main city takes num / den of units' own attacks, summed each tick and the rest carried;
-// siege stones in full; off, as before and out of the hash. city-watch.ts sees the fight and the fall.
+// siege stones in full; off, as before and out of the hash. city-watch.ts sees the fight and the fall. On at 2/5 (D-141).
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { CityWatch } from "../src/city-watch.ts";
 import { Game } from "../src/core/game.ts";
-import { MAIN_CITY_TOUGH, SIEGE, UNITS } from "../src/core/rules.ts";
+import { MAIN_CITY_TOUGH, SIEGE, UNITS, rules } from "../src/core/rules.ts";
 import { CELL_SHIFT, UnitType } from "../src/protocol.ts";
 const S = 20;
 
@@ -17,6 +17,17 @@ function tough<T>(num: number, den: number, body: () => T): T {
     return body();
   } finally {
     Object.assign(MAIN_CITY_TOUGH, was);
+  }
+}
+
+/** `body` with MAIN_CITY_TOUGH off (as before D-141). */
+function off<T>(body: () => T): T {
+  const was = MAIN_CITY_TOUGH.on;
+  MAIN_CITY_TOUGH.on = false;
+  try {
+    return body();
+  } finally {
+    MAIN_CITY_TOUGH.on = was;
   }
 }
 
@@ -55,10 +66,10 @@ test("on: units' attacks on a main city at num / den, the rest carried, so 30 ca
     const down = hp.indexOf(0);
     return down < 0 ? -1 : down - first;
   };
-  const off = fall([[UnitType.Cavalry, 30]]);
+  const before = off(() => fall([[UnitType.Cavalry, 30]]));
   const on = tough(1, 10, () => fall([[UnitType.Cavalry, 30]]));
-  assert.ok(off > 0 && off < 15 * S, `off: ${off} ticks`);
-  assert.ok(on > 8 * off && on < 12 * off, `1/10: ${on} ticks against ${off}`);
+  assert.ok(before > 0 && before < 15 * S, `off: ${before} ticks`);
+  assert.ok(on > 8 * before && on < 12 * before, `1/10: ${on} ticks against ${before}`);
 });
 
 test("on: the carried rest makes every point count (one spearman's 6 a hit at 1/4: 1.5 a hit, not 1)", () => {
@@ -68,10 +79,10 @@ test("on: the carried rest makes every point count (one spearman's 6 a hit at 1/
     const { hp } = siege([[UnitType.Spearman, 1]], 60 * S);
     return 1200 - hp[hp.length - 1];
   };
-  const off = lost();
+  const before = off(lost);
   const on = tough(1, 4, lost);
-  assert.ok(off >= 60, `off: ${off}`);
-  assert.ok(Math.abs(on - off / 4) <= 1, `1/4: ${on} against ${off}`);
+  assert.ok(before >= 60, `off: ${before}`);
+  assert.ok(Math.abs(on - before / 4) <= 1, `1/4: ${on} against ${before}`);
 });
 
 test("on: siege stones in full (SIEGE.vsBuildings), as fast as off", () => {
@@ -80,22 +91,37 @@ test("on: siege stones in full (SIEGE.vsBuildings), as fast as off", () => {
     return hp.indexOf(0);
   };
   assert.equal(SIEGE.on, true);
-  const off = fall();
-  assert.ok(off > 0);
-  assert.equal(tough(1, 10, fall), off);
+  const before = off(fall);
+  assert.ok(before > 0);
+  assert.equal(tough(1, 10, fall), before);
 });
 
-test("off: as before, toughRem out of the hash; the city watch sees the fight and its fall", () => {
-  assert.equal(MAIN_CITY_TOUGH.on, false);
+test("default: on at 2/5 (D-141); 30 cavalry take an unguarded main city in about 16 s, toughRem in the hash", () => {
+  assert.deepEqual({ ...MAIN_CITY_TOUGH }, { on: true, num: 2, den: 5 });
+  assert.equal(rules().features.mainCityTough, true);
+  assert.deepEqual(rules().mainCityTough, [2, 5]);
+  assert.equal(off(() => rules().features.mainCityTough), undefined);
   const { g, watch } = siege([[UnitType.Cavalry, 30]], 120 * S);
   assert.ok(g.w.over && g.w.winner === 0, "fell");
-  const fights = watch.result(g.w).fights;
-  assert.equal(fights[0].length, 1);
-  assert.equal(fights[0][0].fell, true);
-  assert.ok(fights[0][0].heldSecs > 0 && fights[0][0].heldSecs < 15, `held ${fights[0][0].heldSecs} s`);
-  assert.equal(fights[1].length, 0);
+  const held = watch.result(g.w).fights[0][0].heldSecs;
+  assert.ok(held > 12 && held < 20, `held ${held} s`);
   const h = g.hash();
   const b = g.w.buildings.col;
   for (let s = 0; s < g.w.buildings.count; s++) b.toughRem[s] += 3;
-  assert.equal(g.hash(), h);
+  assert.notEqual(g.hash(), h);
 });
+
+test("off: as before, toughRem out of the hash; the city watch sees the fight and its fall", () =>
+  off(() => {
+    const { g, watch } = siege([[UnitType.Cavalry, 30]], 120 * S);
+    assert.ok(g.w.over && g.w.winner === 0, "fell");
+    const fights = watch.result(g.w).fights;
+    assert.equal(fights[0].length, 1);
+    assert.equal(fights[0][0].fell, true);
+    assert.ok(fights[0][0].heldSecs > 0 && fights[0][0].heldSecs < 15, `held ${fights[0][0].heldSecs} s`);
+    assert.equal(fights[1].length, 0);
+    const h = g.hash();
+    const b = g.w.buildings.col;
+    for (let s = 0; s < g.w.buildings.count; s++) b.toughRem[s] += 3;
+    assert.equal(g.hash(), h);
+  }));
