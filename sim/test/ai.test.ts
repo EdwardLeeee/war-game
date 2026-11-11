@@ -1410,6 +1410,59 @@ function fortsOnTheWay(towers: number, hidden: boolean, more: Partial<HardPlan> 
   return { g, w, ai, s1: w.map.spawns[1], ids };
 }
 
+// --- P1 (ceo 2026-11-11): the enemy soldiers by forts, weighed in which worth ---------------------------------------
+
+/** Hard's 20 soldiers of `type` at home; one tower on the way (no one hiding) with `foes` enemy spearmen by it, seen by two farmers of its own. */
+function soldiersByTower(type: UnitType, foes: number, more: Partial<HardPlan>) {
+  const g = emptyGame();
+  const w = g.w;
+  for (const t of w.map.towns) {
+    w.townState[t.id] = TownState.Ruins;
+    w.townOwner[t.id] = NO_OWNER;
+    w.townTimer[t.id] = 4800;
+  }
+  w.tick = 12 * 1200;
+  const s0 = w.map.spawns[0];
+  for (let k = 0; k < 20; k++) put(g, 0, type, s0.cellX + 6 + (k % 6), s0.cellY - 6 - Math.trunc(k / 6));
+  const at = [34, 56];
+  w.addBuilding(1, BuildingType.ArrowTower, at[0], at[1], 600, 1000);
+  const farmers = [put(g, 0, UnitType.Farmer, at[0] + 1, at[1] + 6), put(g, 0, UnitType.Farmer, at[0] + 6, at[1] + 6)];
+  for (let k = 0; k < foes; k++) put(g, 1, UnitType.Spearman, at[0] + 2 + (k % 5), at[1] + 2 + Math.trunc(k / 5));
+  g.fog.update(w);
+  const ai = hardAi(g, { dodge: false, pushArmy: 18, townArmy: 99, bigArmy: 99, peekFirst: 0, ...more });
+  return { g, w, ai, farmers };
+}
+/** Whether all 20 set out (a move away from its main city). */
+function setsOut(f: ReturnType<typeof soldiersByTower>): boolean {
+  const s0 = f.w.map.spawns[0];
+  return f.ai.think(buildView(f.g, 0)).some((c) => c.c === "move" && c.u.length === 20 && (c.x - s0.cellX) ** 2 + (c.y - s0.cellY) ** 2 > 16 * 16);
+}
+
+test("P1 (plan.fortArmyWorth): 20 ranged units (worth 100 against forts, 200 in WORTH) pass a tower with 6 spearmen by it only with the soldiers weighed in WORTH; spearmen as before", () => {
+  assert.ok(!setsOut(soldiersByTower(UnitType.Ranged, 6, {})), "off: not with 3.3 x the spearmen by the tower");
+  assert.ok(setsOut(soldiersByTower(UnitType.Ranged, 6, { fortArmyWorth: true })), "on: out");
+  assert.ok(!setsOut(soldiersByTower(UnitType.Ranged, 12, { fortArmyWorth: true })), "on: not with 12 by it");
+  for (const on of [false, true]) {
+    assert.ok(setsOut(soldiersByTower(UnitType.Spearman, 12, { fortArmyWorth: on })), `spearmen (worth against forts as WORTH), ${on}: out with 12 by it`);
+    assert.ok(!setsOut(soldiersByTower(UnitType.Spearman, 14, { fortArmyWorth: on })), `spearmen, ${on}: not with 14`);
+  }
+});
+
+test("P1 (plan.fortArmyBy, fortIntel): the enemy soldiers by forts x fortArmyBy tenths; only those seen within fortIntel minutes", () => {
+  assert.ok(setsOut(soldiersByTower(UnitType.Ranged, 6, { fortArmyBy: 8 })), "fortArmyBy 8: out with 6 by the tower");
+  // Seen by the tower, then out of sight (its farmers gone), 2 minutes on.
+  const twoMinutesOn = (fortIntel: number) => {
+    const f = soldiersByTower(UnitType.Ranged, 6, { fortIntel });
+    assert.ok(!setsOut(f), `fortIntel ${fortIntel}: not while it sees them`);
+    kill(f.g, f.farmers);
+    f.w.tick += 2 * 1200;
+    f.g.fog.update(f.w);
+    return setsOut(f);
+  };
+  assert.ok(!twoMinutesOn(4), "fortIntel 4: not 2 minutes on, remembering them");
+  assert.ok(twoMinutesOn(1), "fortIntel 1: out 2 minutes on");
+});
+
 test("D-081: hard does not march into forts too strong for it on the way; it does when stronger", () => {
   const strong = fortsOnTheWay(5, true);
   const out = strong.ai.think(buildView(strong.g, 0));
@@ -1607,11 +1660,12 @@ test("D-086 A9 (plan.routeFromArmy): clear of forts from its main city but not f
 });
 
 /** As fortAgain's test: 8 spearmen go for a tower, 6 fall, it breaks off; then `more` soldiers more than set out, `later` ticks on: does it go again? */
-function goesAgain(fortExit: number, more: number, later: number, opts: { full?: boolean; lostAgain?: boolean } = {}): boolean {
-  const saved = HARD.fortExit;
+function goesAgain(fortExit: number, more: number, later: number, opts: { full?: boolean; lostAgain?: boolean; lockOver?: number } = {}): boolean {
+  const saved = [HARD.fortExit, HARD.fortLockOver] as const;
   HARD.fortExit = fortExit;
+  HARD.fortLockOver = opts.lockOver ?? 0;
   const { g, w, ai, fort, spears, centre } = fortGame({ type: BuildingType.ArrowTower, at: [2, -14], spears: 8, difficulty: "hard" });
-  HARD.fortExit = saved;
+  [HARD.fortExit, HARD.fortLockOver] = saved;
   const farmers: number[] = [];
   for (let s = 0; s < w.units.count; s++) if (w.units.col.owner[s] === 0 && w.units.col.type[s] === UnitType.Farmer) farmers.push(w.units.col.id[s]);
   kill(g, [...spears.slice(2), ...farmers]);
@@ -1658,6 +1712,13 @@ test("D-086 A9 (plan.fortExit): the memory of a break-off holds no army 1.2 x th
   assert.equal(goesAgain(0, 0, 0, { full: true }), false, "off: not with the population full either");
   assert.equal(goesAgain(99, 0, 0, { lostAgain: true }), false, "two lost in a row: the memory holds, 12 of 10 or not");
   assert.equal(goesAgain(99, 0, 10 * 1200 + 10, { lostAgain: true }), true, "and is forgotten: 10 minutes on it goes");
+});
+
+test("P4 (plan.fortLockOver): two lost in a row hold no army that many times what the forts ask; it goes as any break-off allows", () => {
+  // 12 spearmen after two lost in a row at a tower: 2 x what it asks, not 3 x; 1.2 x the 10 that broke off.
+  assert.equal(goesAgain(99, 0, 0, { lostAgain: true }), false, "off: the lock holds");
+  assert.equal(goesAgain(99, 0, 0, { lostAgain: true, lockOver: 2 }), true, "2: lifted (1.2 x the army that broke off)");
+  assert.equal(goesAgain(99, 0, 0, { lostAgain: true, lockOver: 3 }), false, "3: not 3 x, the lock holds");
 });
 
 test("D-086 A9 (plan.fortExit): turning back from forts ahead without a fight writes no memory", () => {
