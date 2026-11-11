@@ -1,0 +1,292 @@
+{
+ "traces": [
+  {
+   "name": "w13-push-fortress-1-20",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 1-20 --strategy push --speed h1 --formation close --fortress --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortArmyWorth": true
+   },
+   "b": {
+    "fortArmyWorth": true
+   }
+  },
+  {
+   "name": "w13-push-fortress-21-40",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 21-40 --strategy push --speed h1 --formation close --fortress --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortArmyWorth": true
+   },
+   "b": {
+    "fortArmyWorth": true
+   }
+  },
+  {
+   "name": "w13-push-fortress-random-1-20",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 1-20 --strategy push --speed h1 --formation close --fortress --map random --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortArmyWorth": true
+   },
+   "b": {
+    "fortArmyWorth": true
+   }
+  },
+  {
+   "name": "w13-push-fortress-random-21-40",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 21-40 --strategy push --speed h1 --formation close --fortress --map random --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortArmyWorth": true
+   },
+   "b": {
+    "fortArmyWorth": true
+   }
+  },
+  {
+   "name": "w13-push-fortress-hold-1-20",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 1-20 --strategy push --speed h1 --formation close --fortress-hold 60 --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortArmyWorth": true
+   },
+   "b": {
+    "fortArmyWorth": true
+   }
+  },
+  {
+   "name": "w13-push-fortress-hold-21-40",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 21-40 --strategy push --speed h1 --formation close --fortress-hold 60 --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortArmyWorth": true
+   },
+   "b": {
+    "fortArmyWorth": true
+   }
+  },
+  {
+   "name": "w13-push-fortress-hold-random-1-20",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 1-20 --strategy push --speed h1 --formation close --fortress-hold 60 --map random --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortArmyWorth": true
+   },
+   "b": {
+    "fortArmyWorth": true
+   }
+  },
+  {
+   "name": "w13-push-fortress-hold-random-21-40",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 21-40 --strategy push --speed h1 --formation close --fortress-hold 60 --map random --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortArmyWorth": true
+   },
+   "b": {
+    "fortArmyWorth": true
+   }
+  },
+  {
+   "name": "w13-push-fortress-wall-1-20",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 1-20 --strategy push --speed h1 --formation close --fortress --fort-guards 0 --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortArmyWorth": true
+   },
+   "b": {
+    "fortArmyWorth": true
+   }
+  },
+  {
+   "name": "w13-push-fortress-wall-21-40",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 21-40 --strategy push --speed h1 --formation close --fortress --fort-guards 0 --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortArmyWorth": true
+   },
+   "b": {
+    "fortArmyWorth": true
+   }
+  },
+  {
+   "name": "w13-push-fortress-wall-random-1-20",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 1-20 --strategy push --speed h1 --formation close --fortress --fort-guards 0 --map random --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortArmyWorth": true
+   },
+   "b": {
+    "fortArmyWorth": true
+   }
+  },
+  {
+   "name": "w13-push-fortress-wall-random-21-40",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 21-40 --strategy push --speed h1 --formation close --fortress --fort-guards 0 --map random --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortArmyWorth": true
+   },
+   "b": {
+    "fortArmyWorth": true
+   }
+  },
+  {
+   "name": "w20-push-fortress-1-20",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 1-20 --strategy push --speed h1 --formation close --fortress --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortArmyWorth": true,
+    "fortArmyBy": 20
+   },
+   "b": {
+    "fortArmyWorth": true,
+    "fortArmyBy": 20
+   }
+  },
+  {
+   "name": "w20-push-fortress-21-40",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 21-40 --strategy push --speed h1 --formation close --fortress --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortArmyWorth": true,
+    "fortArmyBy": 20
+   },
+   "b": {
+    "fortArmyWorth": true,
+    "fortArmyBy": 20
+   }
+  },
+  {
+   "name": "w20-push-fortress-random-1-20",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 1-20 --strategy push --speed h1 --formation close --fortress --map random --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortArmyWorth": true,
+    "fortArmyBy": 20
+   },
+   "b": {
+    "fortArmyWorth": true,
+    "fortArmyBy": 20
+   }
+  },
+  {
+   "name": "w20-push-fortress-random-21-40",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 21-40 --strategy push --speed h1 --formation close --fortress --map random --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortArmyWorth": true,
+    "fortArmyBy": 20
+   },
+   "b": {
+    "fortArmyWorth": true,
+    "fortArmyBy": 20
+   }
+  },
+  {
+   "name": "w20-push-fortress-hold-1-20",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 1-20 --strategy push --speed h1 --formation close --fortress-hold 60 --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortArmyWorth": true,
+    "fortArmyBy": 20
+   },
+   "b": {
+    "fortArmyWorth": true,
+    "fortArmyBy": 20
+   }
+  },
+  {
+   "name": "w20-push-fortress-hold-21-40",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 21-40 --strategy push --speed h1 --formation close --fortress-hold 60 --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortArmyWorth": true,
+    "fortArmyBy": 20
+   },
+   "b": {
+    "fortArmyWorth": true,
+    "fortArmyBy": 20
+   }
+  },
+  {
+   "name": "w20-push-fortress-hold-random-1-20",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 1-20 --strategy push --speed h1 --formation close --fortress-hold 60 --map random --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortArmyWorth": true,
+    "fortArmyBy": 20
+   },
+   "b": {
+    "fortArmyWorth": true,
+    "fortArmyBy": 20
+   }
+  },
+  {
+   "name": "w20-push-fortress-hold-random-21-40",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 21-40 --strategy push --speed h1 --formation close --fortress-hold 60 --map random --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortArmyWorth": true,
+    "fortArmyBy": 20
+   },
+   "b": {
+    "fortArmyWorth": true,
+    "fortArmyBy": 20
+   }
+  },
+  {
+   "name": "w20-push-fortress-wall-1-20",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 1-20 --strategy push --speed h1 --formation close --fortress --fort-guards 0 --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortArmyWorth": true,
+    "fortArmyBy": 20
+   },
+   "b": {
+    "fortArmyWorth": true,
+    "fortArmyBy": 20
+   }
+  },
+  {
+   "name": "w20-push-fortress-wall-21-40",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 21-40 --strategy push --speed h1 --formation close --fortress --fort-guards 0 --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortArmyWorth": true,
+    "fortArmyBy": 20
+   },
+   "b": {
+    "fortArmyWorth": true,
+    "fortArmyBy": 20
+   }
+  },
+  {
+   "name": "w20-push-fortress-wall-random-1-20",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 1-20 --strategy push --speed h1 --formation close --fortress --fort-guards 0 --map random --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortArmyWorth": true,
+    "fortArmyBy": 20
+   },
+   "b": {
+    "fortArmyWorth": true,
+    "fortArmyBy": 20
+   }
+  },
+  {
+   "name": "w20-push-fortress-wall-random-21-40",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 21-40 --strategy push --speed h1 --formation close --fortress --fort-guards 0 --map random --difficulty hard --json /tmp/s.json",
+   "a": {
+    "fortArmyWorth": true,
+    "fortArmyBy": 20
+   },
+   "b": {
+    "fortArmyWorth": true,
+    "fortArmyBy": 20
+   }
+  }
+ ]
+}

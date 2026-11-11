@@ -844,3 +844,9 @@ function noTownCrystal(c: Cost): Cost {
   const boost = GOVERN_INCOME.boost;
   switched(GOVERN_INCOME, "boost", NO_CRYSTAL, () => boost.map(noTownCrystal));
 }
+
+// SCRATCH ONLY: gates off from the environment (HARD_PLAN.gatesOff).
+{ const e = (globalThis as unknown as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {}; if (JSON.parse(e.HARD_PLAN || "{}").gatesOff) { GATE.on = false; WALLS.on = false; } }
+
+// SCRATCH ONLY: SIEGE, RICH and MARKET on from the environment (HARD_PLAN.siegeOn, richOn, marketOn).
+{ const e = JSON.parse((globalThis as unknown as { process?: { env?: Record<string, string | undefined> } }).process?.env?.HARD_PLAN || "{}"); if (e.siegeOn) SIEGE.on = true; if (e.richOn) RICH.on = true; if (e.marketOn) MARKET.on = true; }
