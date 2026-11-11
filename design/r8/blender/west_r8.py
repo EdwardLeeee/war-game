@@ -241,20 +241,17 @@ def dress_farmer(u):
     h2.skinned_lathe(f"{kind}_r8belt", [(0.198, 0.99), (0.202, 1.04)], M["belt"], r, tb, scale=(1, 0.88, 1))
     _hood(r, f"{kind}_r8hood", M["team"])
     # R23 (D-142, R19's item 13: the player's colour only the cape on his shoulders, a collar from the front; the
-    # East farmer wears a whole apron of it): options for the user. R23_FARMER_W=A: the hood up over his head (as the
-    # bowman wears his), no coif; B: an apron of the player's colour from the belt to the knees, front and sides (the
-    # East's wrap; R5's bib apron went in R8). Unset: as he is.
-    opt = os.environ.get("R23_FARMER_W", "")
-    if opt == "B":
+    # East farmer wears a whole apron of it). The user chose B (2026-11-11): an apron of the player's colour from the
+    # belt to the knees, front and sides (the East's wrap; R5's bib apron went in R8). Not A, the hood up over his
+    # head: that is the West bowman's dress, and a villager must not read as a soldier. From art-v7.11;
+    # R23_FARMER_W=0: without it.
+    if os.environ.get("R23_FARMER_W") != "0":
         import mage4
         lg = units2._bones_legs(r)
         # over the tunic's skirt (_skirt: 0.185 at 1.0 m, 0.232 at 0.86, 0.25 at 0.62, folds 3.5 cm deep): 3 cm out
         mage4.folded_lathe(f"{kind}_r23apron", [(0.2, 1.03), (0.228, 0.98), (0.27, 0.86), (0.287, 0.62), (0.29, 0.5)],
                            M["team"], r, tb[:1] + lg, folds=(9, 0.02), scale=(1, 0.92, 1), cut=lambda c: c.y < -0.06)
     r.pose()
-    if opt == "A":
-        _hood_head(r, M["team"], f"{kind}_r8hoodhead")
-        return u
     head = _hair_cap(r, M, M["braies"], f"{kind}_r8coif")                 # the coif: white linen, tied under the chin
     for s in (-1, 1):
         rod(f"{kind}_r8coiftie{s}", (0.13 * s, 0.06, 0.08), (0.03 * s, 0.12, -0.08), 0.008, M["braies"], parent=head,

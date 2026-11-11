@@ -66,14 +66,15 @@ FALL_KEYS = [
                shoulderR=(4, -40, 0), elbowR=(10, 0, 0), shoulderL=(4, 28, 0), elbowL=(12, 0, 0),
                hipR=(4, -14, 0), kneeR=(-10, 0, 0), hipL=(40, 12, 0), kneeL=(-72, 0, 0)), "smooth"),
 ]
-# R22 (D-142, R19's items 8 and 9; R22=1 until the user approves the boards, design/r22):
+# R22 (D-142, R19's items 8 and 9; the user approved the boards 2026-11-11, 「可以，照改後的做」: on from art-v7.11;
+# R22=0 gives art-v7.10's fall, for the before side of the boards):
 # 8  the recoil that opens the fall (approved as P2-03) flung both arms out level to the sides: for two or three
 #    frames a T, the rig's rest pose to the eye. The arms unlike now: the right bent up to the chest (struck there),
 #    the left hanging at his side. The same times, the same landing (INF_IMPACT, the mages' impact frame).
 # 9  the sword in its scabbard at the left hip (the East's 橫刀, the West's falchion and arming sword) kept its
 #    standing angle on a body lying down: through the ground under a spearman on his back, straight up over a rider
 #    lying prone. As the body goes down it comes round to lie along the thigh (_lay_swords).
-R22 = os.environ.get("R22") == "1"
+R22 = os.environ.get("R22", "1") != "0"
 if R22:
     FALL_KEYS[0][1].update(shoulderR=(62, -34, 0), elbowR=(68, 0, 0), shoulderL=(-24, 20, 0), elbowL=(22, 0, 0),
                            torso=(16, 0, 12), neck=(12, 0, -14))
@@ -105,12 +106,13 @@ def _pose_body(r, a, o=None):
 def _shards(u, n=18):
     """Shield fragments (effect layer only), hidden until the shield breaks. Solid, not edge-lit:
     a flat shard seen face-on is almost transparent with the shield's fresnel material."""
-    m = fx_mat("fx_shard", CRYSTAL, strength=3.0, alpha=1.0, fresnel=False)
-    # R23 (D-142, R19's item 11: the shield a pale blue-green ball, its shards opaque white chips, like paper): options
-    # for the user. Strength 3 burns the shield's colour out to white. R23_SHARD=A: the shield's colour, see-through
-    # (not edge-lit: see above); B: the shield's colour, opaque. Unset: as they are.
-    if os.environ.get("R23_SHARD") in ("A", "B"):
-        m = fx_mat("fx_shard_r23", CRYSTAL, strength=1.2, alpha=0.6 if os.environ["R23_SHARD"] == "A" else 1.0, fresnel=False)
+    # R23 (D-142, R19's item 11: the shield a pale blue-green ball, its shards opaque white chips, like paper). The
+    # user chose B (2026-11-11): the shield's colour, opaque (strength 3 burnt the colour out to white; not A, the
+    # same see-through). From art-v7.11; R23_SHARD=0: the white ones.
+    if os.environ.get("R23_SHARD") == "0":
+        m = fx_mat("fx_shard", CRYSTAL, strength=3.0, alpha=1.0, fresnel=False)
+    else:
+        m = fx_mat("fx_shard_r23", CRYSTAL, strength=1.2, alpha=1.0, fresnel=False)
     out = []
     ga = math.pi * (3 - math.sqrt(5))
     for k in range(n):
