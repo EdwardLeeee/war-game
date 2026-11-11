@@ -368,7 +368,6 @@ export class Hud {
     this.minimap.update(now);
     this.drawArrows(now);
     if (this.formal) this.updateLeft(now);
-    this.updateHomeNear(now);
     if (now - this.lastUpdate < UPDATE_MS) return;
     this.lastUpdate = now;
     this.dialogTick?.();
@@ -735,8 +734,8 @@ export class Hud {
     return null;
   }
 
-  /** 敵軍接近主城 (D-141): the enemy's soldiers the screen sees within HOME_CELLS of our main city, said on the strip. */
-  private updateHomeNear(now: number): void {
+  /** 敵軍接近主城 (D-141): the enemy's soldiers the screen sees within HOME_CELLS of our main city, said on the strip (game.ts, each snapshot). */
+  homeNearCheck(now: number): void {
     const view = this.game.view;
     const u = view?.curr?.snap.units;
     const home = this.homeBox();

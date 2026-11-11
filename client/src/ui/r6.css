@@ -155,14 +155,6 @@
   position: absolute;
 }
 
-/* 回防 (D-141): right of 全軍撤退, red as 全體回城 when home is hit. */
-:root[data-ui="r6"] .defend-btn.b {
-  position: absolute;
-  top: calc(var(--safe-t) + 46px);
-  left: calc(var(--safe-l) + 136px + 150px);
-  padding: 0 12px;
-}
-
 /* 全軍撤退 (INV-19): 136, 46. */
 :root[data-ui="r6"] .retreat-all-btn.b {
   top: calc(var(--safe-t) + 46px);
