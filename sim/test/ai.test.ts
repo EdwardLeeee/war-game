@@ -1660,11 +1660,12 @@ test("D-086 A9 (plan.routeFromArmy): clear of forts from its main city but not f
 });
 
 /** As fortAgain's test: 8 spearmen go for a tower, 6 fall, it breaks off; then `more` soldiers more than set out, `later` ticks on: does it go again? */
-function goesAgain(fortExit: number, more: number, later: number, opts: { full?: boolean; lostAgain?: boolean } = {}): boolean {
-  const saved = HARD.fortExit;
+function goesAgain(fortExit: number, more: number, later: number, opts: { full?: boolean; lostAgain?: boolean; lockOver?: number } = {}): boolean {
+  const saved = [HARD.fortExit, HARD.fortLockOver] as const;
   HARD.fortExit = fortExit;
+  HARD.fortLockOver = opts.lockOver ?? 0;
   const { g, w, ai, fort, spears, centre } = fortGame({ type: BuildingType.ArrowTower, at: [2, -14], spears: 8, difficulty: "hard" });
-  HARD.fortExit = saved;
+  [HARD.fortExit, HARD.fortLockOver] = saved;
   const farmers: number[] = [];
   for (let s = 0; s < w.units.count; s++) if (w.units.col.owner[s] === 0 && w.units.col.type[s] === UnitType.Farmer) farmers.push(w.units.col.id[s]);
   kill(g, [...spears.slice(2), ...farmers]);
@@ -1711,6 +1712,13 @@ test("D-086 A9 (plan.fortExit): the memory of a break-off holds no army 1.2 x th
   assert.equal(goesAgain(0, 0, 0, { full: true }), false, "off: not with the population full either");
   assert.equal(goesAgain(99, 0, 0, { lostAgain: true }), false, "two lost in a row: the memory holds, 12 of 10 or not");
   assert.equal(goesAgain(99, 0, 10 * 1200 + 10, { lostAgain: true }), true, "and is forgotten: 10 minutes on it goes");
+});
+
+test("P4 (plan.fortLockOver): two lost in a row hold no army that many times what the forts ask; it goes as any break-off allows", () => {
+  // 12 spearmen after two lost in a row at a tower: 2 x what it asks, not 3 x; 1.2 x the 10 that broke off.
+  assert.equal(goesAgain(99, 0, 0, { lostAgain: true }), false, "off: the lock holds");
+  assert.equal(goesAgain(99, 0, 0, { lostAgain: true, lockOver: 2 }), true, "2: lifted (1.2 x the army that broke off)");
+  assert.equal(goesAgain(99, 0, 0, { lostAgain: true, lockOver: 3 }), false, "3: not 3 x, the lock holds");
 });
 
 test("D-086 A9 (plan.fortExit): turning back from forts ahead without a fight writes no memory", () => {
