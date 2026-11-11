@@ -1,0 +1,25 @@
+{
+ "traces": [
+  {
+   "name": "seen-hhr-0",
+   "script": "fort-cal.ts",
+   "args": "ai --mode ai --games 200 --shard 0 --shards 8 --difficulty hard,hard --map random --seed-from 1 --sides all --ticks 144000",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "seen-push-fortress-1-20",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 1-20 --strategy push --speed h1 --formation close --fortress --difficulty hard --json /tmp/s.json",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "seen-push-fortress-hold-1-20",
+   "script": "fort-cal.ts",
+   "args": "scripted --seeds 1-20 --strategy push --speed h1 --formation close --fortress-hold 60 --difficulty hard --json /tmp/s.json",
+   "a": {},
+   "b": {}
+  }
+ ]
+}
