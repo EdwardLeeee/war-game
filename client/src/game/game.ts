@@ -2960,6 +2960,8 @@ export class Game implements GestureHost {
           }
         }
         this.askSiegeArt(view);
+        // 敵軍接近主城 (D-141): on each snapshot, not each frame (a busy page may draw none for seconds).
+        this.hud.homeNearCheck(performance.now());
         this.stances.settle(view.header?.[H.tick] ?? 0, (id) => (view.unitRow(id) >= 0 ? view.unitStance(id) : null));
         this.cannonsOn(view);
         this.pending.settle(view.header?.[H.tick] ?? 0);

@@ -70,7 +70,7 @@ def set_rod(ob, a, b):
     ob.matrix_basis = Matrix.Translation(a) @ q.to_matrix().to_4x4() @ Matrix.Diagonal((1, 1, max(d.length, 1e-4), 1))
 
 
-R23_BOW = os.environ.get("R23_BOW") == "1"
+R23_BOW = os.environ.get("R23_BOW", "1") != "0"      # (the user 2026-11-11: as changed; on from art-v7.11)
 
 
 def bow_string(u, kind):
