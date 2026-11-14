@@ -358,8 +358,8 @@ function keepGame(g: Game, why: KeepWhy): Promise<void> {
       const got = performance.now();
       if (upload) {
         const end = over !== null ? { result: resultFor(over.winner, init.human ?? 0), reason: reasonName(over.reason), ticks } : { result: "abandoned" as const, reason: why === "hidden" ? "hidden" : "", ticks };
-        // 美術 in use, and the note of the page that last died with a game on screen (once, logs/heartbeat.ts).
-        const record = makeRecord({ id: crypto.randomUUID(), code, commit: __COMMIT__, protocol: PROTOCOL_VERSION, scenario: init.scenario, difficulty: init.difficulty?.[1] ?? "normal", end, lastHash: g.lastHash, log: log.jsonl, art: artInUse(), crash: heartbeat.takeCrash() });
+        // 美術 and 介面 in use, and the note of the page that last died with a game on screen (once, logs/heartbeat.ts).
+        const record = makeRecord({ id: crypto.randomUUID(), code, commit: __COMMIT__, protocol: PROTOCOL_VERSION, scenario: init.scenario, difficulty: init.difficulty?.[1] ?? "normal", end, lastHash: g.lastHash, log: log.jsonl, art: artInUse(), ui: formalUi() ? "r6" : "proto", crash: heartbeat.takeCrash() });
         void logs.keep(record, k.game);
       }
       if (screen === null || g.over !== null) return;

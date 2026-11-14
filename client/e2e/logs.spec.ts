@@ -101,9 +101,10 @@ test("對局紀錄：投降後存在手機上並上傳；內容是這局的版�
   const commit = await page.evaluate(() => window.__proto?.commit);
   expect(rec).toMatchObject({ v: 1, code, commit, scenario: "e2e", difficulty: "easy", result: "loss", reason: "surrender" });
   expect(rec.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
-  expect(Object.keys(rec).sort(), "nothing else: no account, no device name").toEqual(["art", "code", "commit", "difficulty", "id", "lastHash", "log", "protocol", "reason", "result", "scenario", "ticks", "v"]);
+  expect(Object.keys(rec).sort(), "nothing else: no account, no device name").toEqual(["art", "code", "commit", "difficulty", "id", "lastHash", "log", "protocol", "reason", "result", "scenario", "ticks", "ui", "v"]);
   // 美術 the game was drawn with (ceo 2026-10-22: the long games' crashes could not tell 3 倍 from 2 倍).
   expect(rec.art).toMatch(/^(x3|x2|off|test)$/);
+  expect(rec.ui, "原型, as the page opens by default").toBe("proto");
   const lines = rec.log.trim().split("\n");
   expect(JSON.parse(lines[0])).toMatchObject({ protocol: rec.protocol, scenario: "e2e", ai: [false, false] });
   expect(lines.slice(1).map((l) => (JSON.parse(l) as { c: string }).c)).toEqual(expect.arrayContaining(["move", "surrender"]));
@@ -131,6 +132,16 @@ test("對局紀錄：測試頁沒給 ?logs= 時只存在手機上，不傳出去
   await surrender(page);
   await expect.poll(async () => (await kept(page)).map((e) => [e.rec.result, e.state])).toEqual([["loss", "pending"]]);
   expect(out, "nothing posted").toEqual([]);
+  check();
+});
+
+test("對局紀錄：用正式介面（?ui=r6）打的局，紀錄寫著 ui r6（R24-01）", async ({ page }) => {
+  const check = watchErrors(page);
+  await start(page, "tps=200&ui=r6");
+  await expect(page.locator("html")).toHaveAttribute("data-ui", "r6");
+  await expect.poll(() => tick(page)).toBeGreaterThan(200);
+  await surrender(page);
+  await expect.poll(async () => (await kept(page)).map((e) => [e.rec.result, e.rec.ui])).toEqual([["loss", "r6"]]);
   check();
 });
 

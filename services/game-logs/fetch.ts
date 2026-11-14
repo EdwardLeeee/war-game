@@ -6,8 +6,9 @@
 // GAME_LOGS_READ_KEY from the environment, or else from ~/.config/war-game/game-logs.env
 // (KEY=value lines, written in the deployment steps of README.md). Writes DIR/<id>.json, the
 // record as posted; DIR/<id>.jsonl, its command log, for `node sim/src/headless.ts --replay`;
-// and DIR/index.json, the summaries of the records kept. DIR defaults to ~/war-game-logs,
-// outside the repository. `--code` keeps one phone's records only.
+// and DIR/index.json, the summaries of the records kept, each with the 介面 its record says it
+// was played in (`ui`: "r6", "proto", or null for a record without one, src/record.ts). DIR
+// defaults to ~/war-game-logs, outside the repository. `--code` keeps one phone's records only.
 // The key is never printed.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -48,6 +49,21 @@ async function get(fetchFn: Fetch, url: string, key: string): Promise<Response> 
   return res;
 }
 
+/** An entry of index.json: the Worker's summary, and the record's 介面 (null: it has none). */
+export type IndexEntry = RecordSummary & { ui: string | null };
+
+const UI_PATTERN = /^[a-z0-9_]{1,24}$/;
+
+/** The 介面 a downloaded record says it was played in; null for none (or a file that is not one). */
+function uiOf(file: string): string | null {
+  try {
+    const ui = (JSON.parse(readFileSync(file, "utf8")) as { ui?: unknown }).ui;
+    return typeof ui === "string" && UI_PATTERN.test(ui) ? ui : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Lists every record and downloads those not in `out` yet (of one phone, with `code`). */
 export async function download(
   o: { url: string; key: string; out: string; code: string },
@@ -71,7 +87,8 @@ export async function download(
     writeFileSync(file, body);
     fetched++;
   }
-  writeFileSync(join(o.out, "index.json"), `${JSON.stringify(wanted, null, 1)}\n`);
+  const index: IndexEntry[] = wanted.map((s) => ({ ...s, ui: uiOf(join(o.out, `${s.id}.json`)) }));
+  writeFileSync(join(o.out, "index.json"), `${JSON.stringify(index, null, 1)}\n`);
   return { listed: all.length, kept: wanted.length, fetched };
 }
 
