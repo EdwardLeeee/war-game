@@ -44,6 +44,14 @@ export interface GameRecord {
    */
   art?: string;
   /**
+   * 介面 the game was played in: "r6" 正式介面, "proto" 原型 (R24-01, ceo 2026-11-15). Records
+   * from before it came in have none: of a commit before f5d775a (#499), only test pages had
+   * 正式介面 and those send no records, so they are all 原型; from f5d775a until it came in, a
+   * `?ui=r6` game cannot be told from 原型. The Worker keeps what it is sent, as with art (its
+   * summaries are unchanged: nothing to deploy); fetch.ts puts it in index.json.
+   */
+  ui?: string;
+  /**
    * The page before died with a game on screen (client/src/logs/heartbeat.ts CrashNote: its tick,
    * units, buildings, art, bytes on the GPU, WebGL contexts lost, last error): with the next record.
    */

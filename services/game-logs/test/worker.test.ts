@@ -180,16 +180,17 @@ test("紀錄格式：手機產生的每一種結果都合格；表頭的協定�
     assert.equal(typeof checkRecord(record({ result, reason: result === "abandoned" ? "" : "surrender" })), "object");
   }
   assert.equal(typeof checkRecord(record({ lastHash: null })), "object");
+  assert.equal(typeof checkRecord(record({ ui: "proto" })), "object", "介面 (R24-01): kept as sent");
   assert.equal(checkRecord(record({ scenario: "e2e" })), "log header");
 });
 
-test("fetch.ts：用讀取金鑰把還沒下載的紀錄抓到資料夾，寫 index.json；再跑一次不重抓；--code 只留一支手機的", async () => {
+test("fetch.ts：用讀取金鑰把還沒下載的紀錄抓到資料夾，寫 index.json（帶紀錄裡的介面，舊紀錄沒有就是 null）；再跑一次不重抓；--code 只留一支手機的", async () => {
   const { mkdtempSync, readdirSync, readFileSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const { download, parseEnv } = await import("../fetch.ts");
   const kv = new MemoryKV();
-  const mine = record();
+  const mine = record({ ui: "r6" });
   const other = record({ code: "zz99yy88" });
   for (const r of [mine, other]) assert.equal((await handle(postReq(JSON.stringify(r)), env(kv))).status, 201);
   const viaWorker = (url: string, init?: RequestInit) => handle(new Request(url, init), env(kv));
@@ -198,7 +199,11 @@ test("fetch.ts：用讀取金鑰把還沒下載的紀錄抓到資料夾，寫 in
   assert.deepEqual(await download({ url, key: KEY, out, code: "" }, viaWorker), { listed: 2, kept: 2, fetched: 2 });
   assert.deepEqual(JSON.parse(readFileSync(join(out, `${mine.id}.json`), "utf8")), mine);
   assert.equal(readFileSync(join(out, `${mine.id}.jsonl`), "utf8"), mine.log, "the log alone, for headless --replay");
+  // 介面 (R24-01): the record's, beside the Worker's summary; a record from before has none.
+  const ui = () => Object.fromEntries((JSON.parse(readFileSync(join(out, "index.json"), "utf8")) as { id: string; ui: string | null }[]).map((e) => [e.id, e.ui]));
+  assert.deepEqual(ui(), { [mine.id]: "r6", [other.id]: null });
   assert.deepEqual(await download({ url, key: KEY, out, code: "" }, viaWorker), { listed: 2, kept: 2, fetched: 0 });
+  assert.deepEqual(ui(), { [mine.id]: "r6", [other.id]: null }, "from the files already there");
   const one = mkdtempSync(join(tmpdir(), "game-logs-"));
   assert.deepEqual(await download({ url, key: KEY, out: one, code: "ab12cd34" }, viaWorker), { listed: 2, kept: 1, fetched: 1 });
   assert.deepEqual(readdirSync(one).sort(), [`${mine.id}.json`, `${mine.id}.jsonl`, "index.json"].sort());
