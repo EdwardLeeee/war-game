@@ -62,8 +62,14 @@
      and ✕; 軍團 again closes it), the kinds three to a line, the switches on the line under them. */
   #hud .sel-info.r24-legion-pop { width: var(--r24-w) !important; max-width: none !important; padding: 6px 6px !important; display: flex; flex-direction: column; gap: 6px; }
   #hud .sel-info.r24-legion-pop > .sel-close, #hud .sel-info.r24-legion-pop .sel-body > .sel-head,
-  #hud .sel-info.r24-legion-pop .sel-more, #hud .sel-info.r24-legion-pop .sel-more-btn { display: none !important; }
-  #hud .sel-info.r24-legion-pop .sel-body { display: grid !important; grid-template-columns: repeat(3, 1fr); gap: 4px 5px; padding: 0 !important; margin: 0 !important; overflow-y: auto; min-height: 0; }
+  #hud .sel-info.r24-legion-pop .sel-more { display: none !important; }
+  #hud .sel-info.r24-legion-pop > .group-actions > .sel-more-btn { margin-left: auto; }
+  #hud .sel-info.r24-legion-pop .sel-body { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 5px; padding: 0 !important; margin: 0 !important; overflow-y: auto; min-height: 0; }
+  #hud .sel-info.r24-legion-pop .sel-body > :not(.group-row) { grid-column: 1 / -1; }
+  /* Four kinds or more (the page's .group-grid, two to a line, the name over − N +): the same three to a line. */
+  #hud .sel-info.r24-legion-pop .group-grid { display: contents !important; }
+  #hud .sel-info.r24-legion-pop .group-row > .group-label { grid-column: 1; grid-row: 1 / 3; display: flex !important; flex-direction: column; justify-content: center; align-items: flex-start !important; gap: 0 !important; flex: none !important; min-width: 0; }
+  #hud .sel-info.r24-legion-pop .group-row { flex-wrap: nowrap !important; }
   #hud .sel-info.r24-legion-pop .group-row { display: grid !important; grid-template-columns: 1fr 44px 22px 44px; grid-template-rows: 22px 22px; align-items: center; height: 44px; margin: 0 !important; padding: 0 0 0 6px; gap: 0; border-radius: 6px; background: rgba(0, 0, 0, 0.16); }
   #hud .sel-info.r24-legion-pop .group-type { grid-column: 1; grid-row: 1; font-size: 12px; font-weight: 700; align-self: end; width: auto !important; }
   #hud .sel-info.r24-legion-pop .group-has { grid-column: 1; grid-row: 2; font-size: 10px; align-self: start; width: auto !important; min-width: 0 !important; opacity: 0.8; }

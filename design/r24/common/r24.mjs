@@ -116,6 +116,32 @@ try {
       await p.waitForTimeout(300);
       console.log("capped 軍團畫面", await p.evaluate(() => { const r = document.querySelector("#hud .sel-info").getBoundingClientRect(); const e = document.querySelector("#hud .sel-info .sel-body"); return [Math.round(r.y), Math.round(r.height), e ? `${e.scrollHeight}/${e.clientHeight}` : ""]; }));
       await shot(p, "02-groupscreen-new");
+      // A group of five kinds on the bar: what does not fit is one cell, 「＋2 種」 (軍團 opens it).
+      await p.evaluate(() => document.querySelector(".r24-fakebar")?.remove());
+      await p.evaluate(() => document.querySelector("#hud .sel-info").classList.remove("r24-capped", "r24-legion-pop"));
+      await tap(p, ".sel-info .sel-fold");
+      await p.waitForTimeout(400);
+      await p.evaluate(([c, s]) => window.R24.bar({ title: "編隊 1", sub: "16/16", chips: c, state: s, stateUnder: true, legion: true }), [[...CHIPS, ["＋2 種", ""]], state]);
+      await shot(p, "02-group5-new");
+      await ctx.close();
+    }
+    // An empty group (編隊 2) tapped: 軍團畫面 opens by itself, as now (nothing to order; 改成剛才選的 saves).
+    // r7's rules: four kinds, the fullest 軍團畫面 the fake world gives.
+    {
+      const { ctx, page: p } = await page("&r7=1&outpost=1");
+      await p.evaluate((i) => window.__proto.game.select(i), await own(p));
+      await p.evaluate(() => document.querySelectorAll(".groups > button")[1].click());
+      await p.waitForTimeout(600);
+      await shot(p, "02-groupempty-now");
+      await p.evaluate(() => {
+        window.R24.capPanel();
+        window.R24.fakeBar({ title: "編隊 2", sub: "還沒有兵", legion: "on" });
+      });
+      await p.waitForTimeout(400);
+      await p.evaluate(() => document.querySelector("#hud .sel-info .sel-body").dispatchEvent(new Event("scroll")));
+      await p.waitForTimeout(300);
+      console.log("capped empty 軍團畫面", await p.evaluate(() => { const r = document.querySelector("#hud .sel-info").getBoundingClientRect(); const e = document.querySelector("#hud .sel-info .sel-body"); return [Math.round(r.y), Math.round(r.height), `${e.scrollHeight}/${e.clientHeight}`]; }));
+      await shot(p, "02-groupempty-new");
       await ctx.close();
     }
   }
@@ -153,7 +179,7 @@ try {
       await p.evaluate((i) => window.__proto.game.select(i), await own(p));
       await p.evaluate(() => window.__proto.game.centerOn(17, 66, 1.1));
       await tap(p, ".sel-info .sel-fold");
-      await p.evaluate(() => window.R24.hint("城鎮修好了：選兵按「進駐」再點這座城，兵就會留下來守"));
+      await p.evaluate(() => window.R24.hint("城鎮修繕完成，開始產出。選兵按「進駐」再點這座城，兵就會進城守"));
       await shot(p, "04-h3-governed");
       await ctx.close();
     }
@@ -172,7 +198,7 @@ try {
     // h5 十名以上的兵，沒有編隊.
     {
       const { ctx, page: p } = await page();
-      await p.evaluate(() => window.R24.hint("選好兵，再按右邊的 1–4，就能編成軍團"));
+      await p.evaluate(() => window.R24.hint("選好兵，按右邊的 1–4，再按「改成剛才選的」，就編成軍團"));
       await shot(p, "04-h5-groups");
       await ctx.close();
     }
@@ -198,7 +224,7 @@ try {
     await p.evaluate(([c, s]) => {
       window.R24.bar({ title: "已選", sub: "12", chips: c, state: s, stateUnder: true });
       window.R24.moreCmds(["攻擊", "移動", "進駐"], false);
-      window.R24.hint("選好兵，再按右邊的 1–4，就能編成軍團");
+      window.R24.hint("選好兵，按右邊的 1–4，再按「改成剛才選的」，就編成軍團");
     }, [CHIPS, state]);
     await shot(p, "all-new");
     await ctx.close();
