@@ -96,6 +96,8 @@ export const BUILDING_COLS = [
   // An outpost's guards go for this unit or building (D-080, OUTPOST; -1: none): whoever last hit
   // the outpost or one of its guards. In the hash only while OUTPOST is on.
   "provoker",
+  // A main city's carried damage, in MAIN_CITY_TOUGH.den-ths of a point (D-141). In the hash only while MAIN_CITY_TOUGH is on.
+  "toughRem",
 ] as const;
 export type BuildingCol = (typeof BUILDING_COLS)[number];
 
@@ -625,6 +627,7 @@ export class World {
     c.lastHurt[s] = -100000;
     c.town[s] = -1;
     c.provoker[s] = -1;
+    c.toughRem[s] = 0;
     if (owner < PLAYER_COUNT && this.autoTrain[owner] === 1 && AUTO_TRAIN.buildings.includes(type)) c.flags[s] = BuildingFlag.AutoTrain;
     this.setFootprint(id, type, cellX, cellY, true);
     if (progress >= 1000 && BUILDINGS[type].accepts.length > 0) this.dropVersion++;
