@@ -1439,7 +1439,7 @@ function setsOut(f: ReturnType<typeof soldiersByTower>): boolean {
 }
 
 test("P1 (plan.fortArmyWorth): 20 ranged units (worth 100 against forts, 200 in WORTH) pass a tower with 6 spearmen by it only with the soldiers weighed in WORTH; spearmen as before", () => {
-  assert.ok(!setsOut(soldiersByTower(UnitType.Ranged, 6, {})), "off: not with 3.3 x the spearmen by the tower");
+  assert.ok(!setsOut(soldiersByTower(UnitType.Ranged, 6, { fortArmyWorth: false })), "off: not with 3.3 x the spearmen by the tower");
   assert.ok(setsOut(soldiersByTower(UnitType.Ranged, 6, { fortArmyWorth: true })), "on: out");
   assert.ok(!setsOut(soldiersByTower(UnitType.Ranged, 12, { fortArmyWorth: true })), "on: not with 12 by it");
   for (const on of [false, true]) {
@@ -1449,10 +1449,11 @@ test("P1 (plan.fortArmyWorth): 20 ranged units (worth 100 against forts, 200 in 
 });
 
 test("P1 (plan.fortArmyBy, fortIntel): the enemy soldiers by forts x fortArmyBy tenths; only those seen within fortIntel minutes", () => {
-  assert.ok(setsOut(soldiersByTower(UnitType.Ranged, 6, { fortArmyBy: 8 })), "fortArmyBy 8: out with 6 by the tower");
+  // The old weighing (fortArmyWorth off), where x 1.3 holds 20 ranged units back from 6 spearmen by a tower.
+  assert.ok(setsOut(soldiersByTower(UnitType.Ranged, 6, { fortArmyWorth: false, fortArmyBy: 8 })), "fortArmyBy 8: out with 6 by the tower");
   // Seen by the tower, then out of sight (its farmers gone), 2 minutes on.
   const twoMinutesOn = (fortIntel: number) => {
-    const f = soldiersByTower(UnitType.Ranged, 6, { fortIntel });
+    const f = soldiersByTower(UnitType.Ranged, 6, { fortArmyWorth: false, fortIntel });
     assert.ok(!setsOut(f), `fortIntel ${fortIntel}: not while it sees them`);
     kill(f.g, f.farmers);
     f.w.tick += 2 * 1200;
@@ -1655,7 +1656,7 @@ function armyOrders(f: ReturnType<typeof fortsOffHomeLine>, n: number): string {
 }
 
 test("D-086 A9 (plan.routeFromArmy): clear of forts from its main city but not from where the army stands, it does not set out; off, it sets out and turns back at every think", () => {
-  assert.equal(armyOrders(fortsOffHomeLine({ routeFromArmy: false }), 4), "mrmr", "off: the back and forth of 8d02b76f");
+  assert.equal(armyOrders(fortsOffHomeLine({ routeFromArmy: false, aheadHold: 0 }), 4), "mrmr", "off: the back and forth of 8d02b76f");
   assert.ok(!armyOrders(fortsOffHomeLine({ routeFromArmy: true }), 4).includes("m"), "on: it does not set out");
 });
 
@@ -1760,7 +1761,8 @@ test("P4 (plan.fortLockOver): two lost in a row hold no army that many times wha
 test("D-086 A9 (plan.fortExit): turning back from forts ahead without a fight writes no memory", () => {
   /** Off the home line, routeFromArmy off: it sets out and turns back; 15 join it, what the forts ask met, short of 2 x; does it turn back again? */
   const turnsAgain = (fortExit: number) => {
-    const f = fortsOffHomeLine({ fortExit, routeFromArmy: false });
+    // aheadHold 0: this is about the memory, not P2's hold after a turn back.
+    const f = fortsOffHomeLine({ fortExit, routeFromArmy: false, aheadHold: 0 });
     assert.equal(armyOrders(f, 2), "mr");
     for (let k = 0; k < 15; k++) put(f.g, 0, UnitType.Spearman, 64 + (k % 5), 78 + Math.trunc(k / 5));
     f.w.tick += 400;

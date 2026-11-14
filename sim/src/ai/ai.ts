@@ -3319,8 +3319,14 @@ export const HARD: HardPlan = {
   // six active groups 10 of 240 as before; push-crush 10/24 -> 10/26. routeFromArmy alone turned back no less (12.7).
   routeFromArmy: true,
   fortExit: 3,
-  aheadHold: 0,
-  fortArmyWorth: false,
+  // P2 and P1 (ceo 2026-11-11, docs/research/2026-11-ai-forts.md): both on. With the main city 2/5 (D-141; run 42981700510,
+  // on against off): hard against hard on random maps 100-0-100 where the same against itself went 100-0-100, turns back
+  // on the way by forts 114 -> 10; the midway fortress groups, the player's wins 2 -> 2 of 240, soldiers lost by forts
+  // -0.10 +- 1.01 a game; the six active groups game for game as before. No automated opponent shows fortArmyWorth
+  // stronger: it is for forts with the player's soldiers by them, as in the user's games (12 of 27 turns back there
+  // would not have been). fortLockOver 2 lost 7.5 and 14.6 more soldiers a game by the fixed map's fortresses: left off.
+  aheadHold: 2,
+  fortArmyWorth: true,
   fortArmyBy: 13,
   fortIntel: 4,
   fortLockOver: 0,
