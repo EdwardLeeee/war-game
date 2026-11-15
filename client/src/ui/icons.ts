@@ -30,6 +30,10 @@ const ICON = {
   reform: '<path d="M5 4v16"/><path d="M9 7h10M9 12h8M9 17h11"/>',
   unfold: '<path d="M6 10l6 6 6-6"/>',
   army: '<path d="M4 18l4-10 4 6 4-6 4 10z"/>',
+  // 新手教學 (R25): a step done, the way there, the entry's book.
+  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  go: '<path d="M5 12h13M13 6l6 6-6 6"/>',
+  book: '<path d="M4 5.5C6.5 4.5 9.5 4.5 12 6c2.5-1.5 5.5-1.5 8-.5V19c-2.5-1-5.5-1-8 .5-2.5-1.5-5.5-1.5-8-.5z"/><path d="M12 6v13.5"/>',
   // 更多 (R24-03): the commands used least, in a row over the others.
   more: '<circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/>',
   map: '<path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/>',

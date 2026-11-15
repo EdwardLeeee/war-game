@@ -75,6 +75,8 @@ const MAP_ALARM_BLINK_MS = 400;
 export interface HudLifecycle {
   restart(): void;
   toStart(): void;
+  /** 新手教學 (R25): leave this game (kept for 繼續上一局) and start the tutorial. */
+  tutorial?(): void;
   /** Start a game of this perf scenario that measures itself (量測, D-083). */
   perf(scenario: PerfScenario): void;
 }
@@ -546,6 +548,12 @@ export class Hud {
     return false;
   }
 
+  /** 新手教學 (R25): step 1 opened it to teach it; put away after, as the player had it. */
+  closeMinimap(): void {
+    this.setMinimap(false);
+    this.minimapAuto = false;
+  }
+
   private toggleMinimap(): void {
     this.setMinimap(!this.minimapOpen);
     this.minimapAuto = false;
@@ -973,11 +981,14 @@ export class Hud {
       this.closeDialog();
       this.game.lab.show();
     }, "secondary");
-    btn(list, "重來（開新的一局）", () => {
-      this.closeDialog();
-      this.life.restart();
-    }, "secondary");
-    btn(list, "投降", () => this.confirmSurrender(), "secondary");
+    // 新手教學 (R25): no 重來 or 投降 in it (✕ on its card leaves it; 回開局畫面 too).
+    if (this.game.tutor === null) {
+      btn(list, "重來（開新的一局）", () => {
+        this.closeDialog();
+        this.life.restart();
+      }, "secondary");
+      btn(list, "投降", () => this.confirmSurrender(), "secondary");
+    }
     btn(list, "回開局畫面", () => {
       this.closeDialog();
       this.life.toStart();
@@ -1039,8 +1050,22 @@ export class Hud {
       this.openSettings();
     }, "secondary town-hint-pref");
     hb.setAttribute("aria-pressed", hintOff ? "false" : "true");
+    // 新手教學 (R25 共用元件): beside 開局提示, not in the tutorial itself.
+    if (this.life.tutorial !== undefined && this.game.tutor === null) btn(end, "新手教學", () => this.askTutorial(), "secondary tutorial-entry").prepend(icon("book"));
     btn(end, "回選單", () => this.openMenu(), "secondary");
     btn(end, "關閉", () => this.closeDialog());
+  }
+
+  /** 新手教學 from a game: leave it first (it is kept for 繼續上一局), R25 共用元件's words. */
+  private askTutorial(): void {
+    const card = this.openDialog("開始新手教學？", "menu");
+    el("p", card, "", "先離開這一局。這一局會存著，教學完回開局畫面按「繼續上一局」就接得上。");
+    const row = el("div", card, "dialog-buttons");
+    btn(row, "取消", () => this.openSettings(), "secondary");
+    btn(row, "開始教學", () => {
+      this.closeDialog();
+      this.life.tutorial?.();
+    });
   }
 
   /**

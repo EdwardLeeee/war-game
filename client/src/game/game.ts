@@ -2,6 +2,7 @@
 // PixiJS world, and the gestures that turn into selections and commands. The only way
 // anything reaches the simulation is `command()`, which posts a protocol command.
 
+import type { TutorHooks } from "../tutorial/hooks.ts";
 import { type EdgeArt, EdgeRenderer } from "../render/edge.ts";
 import type { Application } from "pixi.js";
 import { Camera } from "../camera/camera.ts";
@@ -285,6 +286,8 @@ export class Game implements GestureHost {
   private enterRefreshAt = 0;
   private enterPan: { id: string; x: number; y: number; fromX: number; fromY: number; toX: number; toY: number; at: number; ms: number } | null = null;
   placement: Placement | null = null;
+  /** 新手教學 (R25): what the tutorial watches and lets through (tutorial/tutor.ts); null in any other game. */
+  tutor: TutorHooks | null = null;
   /** Commands posted, newest last (the test hook reads them). `auto`: given by the interface, not by the player's hand. */
   readonly sent: (CommandBody & { seq: number; auto?: boolean })[] = [];
   /** Garrisons and control groups (D-026). */
@@ -801,6 +804,11 @@ export class Game implements GestureHost {
   minimapTap(cx: number, cy: number): void {
     const view = this.view;
     if (view === null) return;
+    if (this.tutor !== null && !this.tutor.minimapAllowed()) {
+      this.tutor.blocked();
+      return;
+    }
+    this.tutor?.minimapTapped();
     const wx = (cx + 0.5) * TILE_PX;
     const wy = (cy + 0.5) * TILE_PX;
     if (this.mode === "enter") {
@@ -816,6 +824,10 @@ export class Game implements GestureHost {
 
   /** Minimap long press with units selected (GDD §10): they move there (D-094: as a tap on the ground). */
   minimapLongPress(cx: number, cy: number): void {
+    if (this.tutor !== null && !this.tutor.minimapAllowed()) {
+      this.tutor.blocked();
+      return;
+    }
     const view = this.view;
     const units = view?.selection.units ?? [];
     if (view === null || units.length === 0) {
@@ -2962,6 +2974,8 @@ export class Game implements GestureHost {
         this.askSiegeArt(view);
         // 敵軍接近主城 (D-141): on each snapshot, not each frame (a busy page may draw none for seconds).
         this.hud.homeNearCheck(performance.now());
+        // 新手教學: whether this step is done, on each snapshot too.
+        this.tutor?.snapshot();
         this.stances.settle(view.header?.[H.tick] ?? 0, (id) => (view.unitRow(id) >= 0 ? view.unitStance(id) : null));
         this.cannonsOn(view);
         this.pending.settle(view.header?.[H.tick] ?? 0);
@@ -3057,6 +3071,11 @@ export class Game implements GestureHost {
   tap(x: number, y: number, count: 1 | 2): void {
     const view = this.view;
     if (view === null) return;
+    // 新手教學's dim (R25 A, ceo 2026-11-15): a tap outside what is framed does nothing; drags and pinches still do.
+    if (this.tutor !== null && this.placement === null && !this.tutor.tapAllowed(x, y)) {
+      this.tutor.blocked();
+      return;
+    }
     const w = this.world(x, y);
     if (this.placement !== null) {
       this.placement.moveTo(w.x, w.y, view.placement);
@@ -3327,6 +3346,10 @@ export class Game implements GestureHost {
   longPress(x: number, y: number): LongPressResult {
     const view = this.view;
     if (view === null || this.placement !== null) return "none";
+    if (this.tutor !== null && !this.tutor.tapAllowed(x, y)) {
+      this.tutor.blocked();
+      return "none";
+    }
     const w = this.world(x, y);
     const kind = longPressKind(view, w.x, w.y, this.hitRadius());
     if (kind === "wheel") {
@@ -3353,7 +3376,10 @@ export class Game implements GestureHost {
 
   pan(dx: number, dy: number, x: number, y: number): void {
     if (this.placement !== null) this.moveGhost(x, y);
-    else this.camera?.panBy(dx, dy);
+    else {
+      this.camera?.panBy(dx, dy);
+      this.tutor?.panned();
+    }
   }
 
   panEnd(vx: number, vy: number): void {
@@ -3392,6 +3418,7 @@ export class Game implements GestureHost {
     if (cam === null) return;
     cam.panBy(dx, dy);
     cam.zoomAt(cx, cy, cam.scale * factor);
+    this.tutor?.pinched();
   }
 
   pinchEnd(): void {}
