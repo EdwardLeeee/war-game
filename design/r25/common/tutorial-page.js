@@ -49,7 +49,7 @@
   .r25-card.side .r25-btns .b { min-height: 44px; width: 100%; font-size: 13px; }
   /* The highlight. A: the rest dimmed (only this answers); B: nothing dimmed, a gold frame and an arrow. */
   .r25-layer { --p: 1; }
-  .r25-spot { position: absolute; box-sizing: border-box; border: 3px solid ${GOLD}; border-radius: 10px;
+  .r25-spot { position: absolute; box-sizing: border-box; border: 3px solid rgba(242, 200, 98, calc(0.35 + 0.65 * var(--p))); border-radius: 10px;
     box-shadow: 0 0 0 2px rgba(40, 24, 8, 0.85), 0 0 calc(6px + 10px * var(--p)) calc(1px + 4px * var(--p)) rgba(242, 200, 98, calc(0.25 + 0.5 * var(--p))); }
   .r25-arrow { translate: 0 calc(-5px * var(--p)); }
   .r25-spot.round { border-radius: 50%; }
@@ -219,7 +219,7 @@
       if (kind === "press") {
         g += `<rect x="${from.x}" y="${from.y}" width="${to.x - from.x}" height="${to.y - from.y}" fill="rgba(255,255,255,0.10)" stroke="#fff" stroke-width="2.5" stroke-dasharray="8 6"/>`;
         g += line(from.x + 10, from.y + 10, to.x - 6, to.y - 6) + tip(from.x, from.y);
-        g += `<text x="${from.x + 24}" y="${from.y - 12}" fill="#fff" font-size="13" font-weight="700" stroke="#2a1806" stroke-width="3" paint-order="stroke">長按 0.4 秒再拖</text>`;
+        g += `<text x="${from.x + 24}" y="${from.y - 12}" fill="#fff" font-size="13" font-weight="700" stroke="#2a1806" stroke-width="3" paint-order="stroke">按住不動一下再拖</text>`;
       }
       l.insertAdjacentHTML("beforeend", `<svg class="r25-hand" width="${W}" height="${H}" style="left:0;top:0">${g}</svg>`);
     },

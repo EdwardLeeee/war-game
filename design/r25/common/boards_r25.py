@@ -3,7 +3,7 @@
 and the steps in detail (1-5, 6-9). Every label above its screen, none over it. Each label checked against the font
 first (R24 drew two empty boxes for glyphs the font lacks).
 
-python3 -I design/r25/common/boards_r25.py SHOTS OUT     (SHOTS: r25.mjs's screenshots)
+python3 -I design/r25/common/boards_r25.py SHOTS OUT [A|B]     (SHOTS: r25.mjs's screenshots; the look of the steps, A by default)
 """
 import sys
 from pathlib import Path
@@ -127,6 +127,7 @@ def board(out, title, head, rows, foot, cols, cw):
 
 def main():
     shots, out = Path(sys.argv[1]), Path(sys.argv[2])
+    st = sys.argv[3] if len(sys.argv) > 3 else "A"     # the look the nine steps and the details are drawn in
     out.mkdir(parents=True, exist_ok=True)
 
     def S(name, k):
@@ -145,7 +146,7 @@ def main():
         ("6", "編軍團", "6b", "選著兵按右邊的 1，再按「改成剛才選的」；之後兵營自動補兵", "編隊 1 有兵"),
         ("7", "守家", "7a", "敵人打主城 → 全軍撤退 → 點敵人打", "來打主城的小隊被打光"),
         ("8", "打城鎮", "8b", "打倒小鎮的民兵 → 治理（修 10 秒）→ 進駐", "小鎮治理好、有兵進駐"),
-        ("9", "打下對手主城", "9a", "帶攻城砲和軍團打對手主城", "勝利"),
+        ("9", "打下對手主城", "9d", "選砲坊練 2 門攻城砲，帶攻城砲和軍團打對手主城", "勝利"),
     ]
 
     # 總覽.
@@ -160,14 +161,15 @@ def main():
                                                     ("下面九格先用 A 畫，你選了以後照選的重畫。", 26, GREY, False)]))]),
     ]
     for i in range(0, 9, 3):
-        cells = [(f"{n} {name}：{what}　→ 過關：{done}", INK, S(f"{key}-A", SMALL)) for n, name, key, what, done in steps[i:i + 3]]
+        cells = [(f"{n} {name}：{what}　→ 過關：{done}", INK, S(f"{key}-{st}", SMALL)) for n, name, key, what, done in steps[i:i + 3]]
         rows.append(("九步（約 10–15 分鐘）" if i == 0 else None, None, cells))
     img = board(out / "x", "R25-總覽-phone",
                 [("選單 → 設定、開局畫面都有「新手教學」。一步一張說明卡，要按的東西框起來，做對了才往下；每步都能「跳過這步」或按 × 離開。", 30, GOLD, True),
                  ("步驟從 ceo 草案的 11 步併成 9 步：「攻擊」和「主城被打」併成 7 守家；「打城鎮」和「進駐」併成 8；「練兵」說明的自動補兵移到 6 編軍團（兵營要有軍團才會自動練）。", 26, GREY, False),
                  (same, 24, DIM, False)],
                 rows,
-                [("要 core 和 client 配合的：教學場景的小鎮修 10 秒（core 已答應）；第 9 步給蓋好的砲坊和練 2 門砲的錢；「跳過這步」直接擺好那一步的結果（例如給一座蓋好的兵營、5 名槍兵）再往下。", 26, INK, False)],
+                [("要 core 和 client 配合的：教學場景的小鎮修 10 秒（core 已答應）；第 9 步給蓋好的砲坊和練 2 門砲的錢；「跳過這步」直接擺好那一步的結果（例如給一座蓋好的兵營、5 名槍兵）再往下。", 26, INK, False),
+                 ("7 守家要成立：5 那個發亮的地方要離主城遠一點（往小鎮的方向）；來打主城的小隊等 6 做完才派，到主城時軍團還在外面，「全軍撤退」才有用（軍團還沒駐守過別的城，會退回主城）。", 26, INK, False)],
                 cols=3, cw=932)
     save(img, out / "R25-總覽-phone.png")
 
@@ -184,16 +186,15 @@ def main():
                  (None, None, [("目標不在畫面裡：邊上一個金色標籤指過去，卡片上有「帶我去看」", INK, S("8a-A", BIG)),
                                ("進駐的標籤照遊戲原本的排法（說明卡收起，讓出上面）", INK, S("8d-A", BIG))]),
                  ("手勢", "要拖、縮放、長按的步驟，畫一根手指和它要走的路。", [
-                     ("拖動、兩指縮放（1 看地圖）", INK, S("1a-A", BIG)), ("長按 0.4 秒再拖，拉出框（5 選兵）", INK, S("5a-A", BIG))]),
+                     ("拖動、兩指縮放（1 看地圖）", INK, S("1a-A", BIG)), ("按住不動一下再拖，拉出框（5 選兵）", INK, S("5a-A", BIG))]),
                  ("進來和離開", None, [
                      ("開局畫面：「開始」下面多一顆「新手教學」", INK, S("e-start-A", BIG)),
                      ("遊戲中：選單 → 設定，「開局提示」旁邊（選單本身十格已滿）", INK, S("e-settings-A", BIG))]),
                  (None, None, [("遊戲中按「新手教學」：先離開這一局（這一局存著，回來按「繼續上一局」）", INK, S("e-enter-A", BIG)),
                                ("教學中按 ×：問一次再離開，進度不存", INK, S("e-leave-A", BIG))]),
-                 ("完成", None, [("打下對手主城：結算畫面加「教學完成」，可以直接開第一局", GREEN, S("9b-A", BIG)),
+                 ("完成", None, [("打下對手主城：結算畫面加「教學完成」，可以直接開第一局", GREEN, S("9e-A", BIG)),
                                 ("6 編好軍團：做對了的樣子（框變綠）", GREEN, S("6c-A", BIG))])],
-                [("每一格都量過：按鈕都 ≥ 44 pt、都在安全區內，說明卡沒有蓋到按鈕或遊戲自己的提示。例外：對話框開著時（8b、9b）卡片蓋到的是對話框後面、本來就按不到的按鈕；下面三處是現在的遊戲本來就這樣。", 26, INK, False),
-                 ("順帶發現（現在的遊戲就這樣，跟教學無關；Chromium 量，安全區到 y 315）：放建築時的確定、取消兩顆到 y 325；搶或治理對話框的「稍後再決定」到 y 320；結算畫面的「回開局畫面」「重來」到 y 317。", 26, GREY, False)],
+                [("每一格都量過：按鈕都 ≥ 44 pt，說明卡沒有蓋到按鈕、遊戲自己的提示或進駐標籤。對話框開著時（8b、9e）卡片蓋到的是對話框後面、本來就按不到的按鈕。", 26, INK, False)],
                 cols=2, cw=1398)
     save(img, out / "R25-共用元件-phone.png")
 
@@ -207,14 +208,15 @@ def main():
         "6": ["6a 選著兵，按右邊的 1", "6b 空的編隊打開軍團畫面：按「改成剛才選的」", "6c 做對了：之後兵營自動補兵"],
         "7": ["7a 敵人來打主城（訊息條照舊報）：按「全軍撤退」，軍團退回主城", "7b 軍團回來了：點敵人，打光就過關"],
         "8": ["8a 小鎮不在畫面裡：邊上的標籤、「帶我去看」", "8b 打倒民兵後：選治理（卡片移到左邊）", "8c 等城修好（10 秒）", "8d 選軍團按「進駐」，點亮起來的小鎮（說明卡收起，讓出遊戲的提示和標籤）"],
-        "9": ["9a 選著攻城砲和軍團，點對手的主城（假世界用對手的兵營代替）", "9b 勝利：教學完成"],
+        "9": ["9a core 給一座蓋好的砲坊：選它，按 2 下「訓練攻城砲」", "9b 等 2 門練好", "9c 對手主城不在畫面裡：邊上的標籤、「帶我去看」",
+              "9d 選著攻城砲和軍團，點對手的主城（假世界用對手的兵營代替）", "9e 勝利：教學完成"],
     }
     for name, part in (("1到5", steps[:5]), ("6到9", steps[5:])):
         rows = []
         for n, title, _key, what, done in part:
             frames = detail[n]
             for i in range(0, len(frames), 2):
-                cells = [(lab, INK, S(f"{lab.split(' ')[0]}-A", BIG)) for lab in frames[i:i + 2]]
+                cells = [(lab, INK, S(f"{lab.split(' ')[0]}-{st}", BIG)) for lab in frames[i:i + 2]]
                 rows.append((f"{n} {title}" if i == 0 else None, f"要做的：{what}。過關：{done}。" if i == 0 else None, cells))
         img = board(out / "x", f"R25-步驟-{name}-phone", [("每一步的每一格：說明卡寫什麼、框哪裡、做對了怎麼往下。先用 A（遮暗）畫。", 30, GOLD, True), (same, 24, DIM, False)],
                     rows, [], cols=2, cw=1398)

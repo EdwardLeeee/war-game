@@ -28,4 +28,4 @@ node design/r25/common/gif_r25.mjs design/r25/build/gif
 python3 -I design/r25/common/boards_r25.py design/r25/build/shots design/r25/build/boards
 ```
 
-圖在 `design/r25/build/`（不進 repo）。使用者選了 B 的話，第一行改成 `B`，再排一次。
+圖在 `design/r25/build/`（不進 repo）。使用者選了 B 的話：`r25.mjs ... B` 拍每一格，`boards_r25.py ... B` 再排一次。

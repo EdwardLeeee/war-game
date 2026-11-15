@@ -333,8 +333,33 @@ const FRAMES = {
       window.R25.spot({ cell: [30, 66], r: 70, squash: 0.6 }, { arrow: "up" });
     }, [state]);
   },
-  // 9 收尾: the siege engines at the enemy's (its barracks stands in for the main city in the fake world).
+  // 9 收尾: core gives a finished 砲坊 and the money for two engines; train them, then the enemy's main city.
   async "9a"(p) {
+    const c = await centreOfBuilding(p, 41);
+    await G(p, ([x, y]) => window.__proto.game.centerOn(x + 0.5, y - 0.5, 1.1), c);
+    await p.waitForTimeout(300);
+    await tapCell(p, c[0], c[1]);
+    await G(p, () => {
+      window.R25.card({ n: 9, title: "打下對手主城", body: "砲坊蓋好了。選砲坊，按 <b>2 下「訓練攻城砲」</b>。", list: [["已排 0／2", false]] });
+      window.R25.spot({ sel: "#hud .cmds button", text: "攻城砲" }, { arrow: "up" });
+    });
+  },
+  async "9b"(p) {
+    const c = await centreOfBuilding(p, 41);
+    await G(p, ([x, y]) => window.__proto.game.centerOn(x + 0.5, y - 0.5, 1.1), c);
+    await p.waitForTimeout(300);
+    await G(p, ([x, y]) => window.R25.card({ n: 9, title: "打下對手主城", state: "wait", body: "練好 <b>1／2</b> 門。攻城砲打建築最快，但走得慢、怕近身：要和軍團一起走。", wait: 0.5 }), c);
+  },
+  async "9c"(p) {
+    await G(p, () => window.__proto.game.centerOn(8, 84, 1.1));
+    await p.waitForTimeout(300);
+    await G(p, () => {
+      window.R25.card({ n: 9, title: "打下對手主城", body: "對手的主城在右上：選著攻城砲和軍團，一起帶過去。", go: "帶我去看" });
+      window.R25.edge([35, 59], "對手主城");
+    });
+  },
+  // 9d: the siege engines at the enemy's (its barracks stands in for the main city in the fake world).
+  async "9d"(p) {
     const siege = await own(p, [6]);
     const ids = [...siege, ...(await own(p, SOLDIERS))];
     const cells = await G(p, (n) => { const out = []; for (let i = 0; i < n; i++) { const c = window.__proto.game.openCellNear(28 + (i % 5), 63 + Math.floor(i / 5)); if (c) out.push(c); } return out; }, ids.length);
@@ -351,7 +376,7 @@ const FRAMES = {
       window.R25.gesture("tap", { x: r.x + r.w / 2 + 12, y: r.y + r.h / 2 + 10 });
     }, [c, ids.length]);
   },
-  async "9b"(p, me) {
+  async "9e"(p, me) {
     await G(p, (m) => window.__proto.game.endGame(m, 0), me);
     await p.waitForTimeout(1200);
     await G(p, () => {
