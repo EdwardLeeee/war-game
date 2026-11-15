@@ -2753,6 +2753,40 @@ test("D-099 (plan.siegeUse): with 6 enemy towers known, hard puts up a siege wor
   assert.equal(works(6, false), false, "off: none, as before");
 });
 
+test("D-141 follow-up (plan.siegeCity): broken off by the enemy's main city, hard puts up a siege works; not before, nor off", () => {
+  /** 30 spearmen march, are met by 40 enemy spearmen within 30 cells of the enemy's main city and break off; does it put up a works then? */
+  const works = (siegeCity: number) => {
+    const g = behindGame(0, 30);
+    const w = g.w;
+    const s1 = w.map.spawns[1];
+    const ai = hardAi(g, { dodge: false, goldCavalry: 0, siegeCity, pushArmy: 20, peekFirst: 0, townArmy: 99, bigArmy: 99 });
+    const build = (out: CommandBody[]) => out.some((c) => c.c === "build" && c.type === BuildingType.SiegeWorks);
+    const first = ai.think(buildView(g, 0));
+    assert.ok(!build(first), "not before it has broken off there");
+    assert.ok(first.some((c) => c.c === "move" && c.u.length === 30), "it marches");
+    // The army by the enemy's main city, toward the map's centre; 40 enemy spearmen on it.
+    const dx = Math.sign(w.map.size / 2 - s1.cellX);
+    const dy = Math.sign(w.map.size / 2 - s1.cellY);
+    const u = w.units.col;
+    let k = 0;
+    for (let i = 0; i < w.units.count; i++) {
+      if (u.owner[i] !== 0 || u.type[i] !== UnitType.Spearman) continue;
+      u.x[i] = (s1.cellX + dx * (16 + (k % 6))) << 10;
+      u.y[i] = (s1.cellY + dy * (16 + Math.trunc(k / 6))) << 10;
+      k++;
+    }
+    for (let j = 0; j < 40; j++) put(g, 1, UnitType.Spearman, s1.cellX + dx * (12 + (j % 8)), s1.cellY + dy * (12 + Math.trunc(j / 8)));
+    w.tick += 10;
+    g.fog.update(w);
+    assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "retreat"), "outnumbered by the city: it breaks off");
+    w.tick += 10;
+    g.fog.update(w);
+    return build(ai.think(buildView(g, 0))) || build(((w.tick += 10), g.fog.update(w), ai.think(buildView(g, 0))));
+  };
+  assert.equal(works(3), true, "on: a siege works");
+  assert.equal(works(0), false, "off: none, as before");
+});
+
 test("D-099 (plan.cavalryHunt): cavalry charge an enemy siege engine before a ranged unit by it; off, the ranged unit", () => {
   const hunt = (cavalryHunt: boolean) => {
     const g = emptyGame();

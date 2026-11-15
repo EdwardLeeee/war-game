@@ -3006,6 +3006,14 @@ export interface HardPlan {
   siegeUse: boolean;
   /** D-099: cavalry charges (plan.charge) go for the enemy's siege engines first, out of its forts' reach (false: ranged units and mages only). */
   cavalryHunt: boolean;
+  /**
+   * D-141 follow-up (ceo 2026-11-15; with the main city 2/5 its marches were ground down there: of 123 break-offs by the
+   * enemy's main city at full hp, 107 with the front under 40% of those that set out). siegeCity: once its own front has
+   * broken off within SIEGE_CITY_NEAR cells of the enemy's main city, a siege works (once a range is up) and this many
+   * engines; a march waits for them SIEGE_CITY_WAIT at most, then goes as before; they go with the army (engines choose
+   * buildings themselves) and count against forts; after SIEGE_CITY_LOST of them lost it builds no more (0: none).
+   */
+  siegeCity: number;
   chargeRest: number;
   /**
    * D-086 A4: arrow towers by its main city (this many), and by each town it governs (townTowers), toward where
@@ -3277,6 +3285,7 @@ export const HARD: HardPlan = {
   charge: true,
   siegeUse: false,
   cavalryHunt: false,
+  siegeCity: 0,
   chargeRest: 2,
   towers: 0,
   townTowers: 0,
@@ -3389,6 +3398,10 @@ const TOWN_QUICK = 10 * 20;
 const SIEGE_FORTS = 6;
 const SIEGE_MOST = 3;
 const SIEGE_ARMY = 60;
+/** D-141 follow-up (plan.siegeCity): a break-off this near the enemy's main city calls for engines; a march waits for them this long at most; engines lost before it gives them up. */
+const SIEGE_CITY_NEAR = 30;
+const SIEGE_CITY_WAIT = 3 * 1200;
+const SIEGE_CITY_LOST = 6;
 const CHARGE_NEAR = 8;
 const CHARGE_SPEAR = 4;
 const CHARGE_MOVE = 40;
@@ -3658,6 +3671,13 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   const outpostMemo: OutpostMemory = new Map();
   /** P2 (plan.aheadHold): the forts a march last turned back from on the way, and until when they bar the next. */
   let aheadHeld: { ids: number[]; until: number } | null = null;
+  /** plan.siegeCity: its front broke off by the enemy's main city (its own memory); since when a march waits for engines; its engines, and those lost. */
+  let siegeWanted = false;
+  let siegeWaitFrom = -1;
+  const engineIds = new Set<number>();
+  let enginesLost = 0;
+  /** plan.siegeCity: engines called for and not given up. */
+  const siegeCityOn = () => plan.siegeCity > 0 && siegeWanted && enginesLost < SIEGE_CITY_LOST;
   /** D-086 A9 (plan.fortExit): forts it really fought and broke off from: how many times in a row, the last when. */
   const fortLost = new Map<number, { n: number; tick: number }>();
   /** Falling back round forts (aroundForts): the point first, and until when. */
@@ -3706,7 +3726,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
   /** plan.focusFire: when it last picked; each ranged unit's target it was told. */
   let focusMove = -100000;
   const focusOn = new Map<number, number>();
-  const counted = { enginesTrained: 0, siegeMarches: 0, townQuickRests: 0, focusOrders: 0, focusBack: 0, avoidSpots: 0, farmerIdle: 0, lumberLost: 0, governHeld: 0, governTowers: 0, governStayed: 0, governBrokeOff: 0, townsBehind: 0, crystalStopped: 0, goldCavalry: 0, behindThinks: 0, behindTowers: 0, townsHeld: 0, gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0, aheadTurns: 0, aheadHeld: 0 };
+  const counted = { enginesTrained: 0, siegeMarches: 0, siegeCityWaits: 0, enginesLost: 0, townQuickRests: 0, focusOrders: 0, focusBack: 0, avoidSpots: 0, farmerIdle: 0, lumberLost: 0, governHeld: 0, governTowers: 0, governStayed: 0, governBrokeOff: 0, townsBehind: 0, crystalStopped: 0, goldCavalry: 0, behindThinks: 0, behindTowers: 0, townsHeld: 0, gateFocus: 0, gateBrokeOff: 0, gateSkipped: 0, wallUp: 0, chargeSent: 0, chargeDone: 0, chargeBack: 0, chargeLost: 0, chargeCavalryLost: 0, cavalryTrained: 0, towersPlaced: 0, rescueSent: 0, rescueDone: 0, rescueWeak: 0, rescueLost: 0, rescueCityHit: 0, rescueDeclined: 0, farmersHid: 0, farmersReleased: 0, peekSent: 0, peekSaw: 0, peekFell: 0, peekTimeout: 0, aheadTurns: 0, aheadHeld: 0 };
 
   /** Nearest spot to (ax, ay) where `type` fits, with a free ring around it (farms may touch); as normal. */
   function spotNear(view: PlayerView, type: BuildingType, ax: number, ay: number, radius: number, fits?: (x: number, y: number) => boolean): { x: number; y: number } | null {
@@ -4374,6 +4394,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         if (cavalryWant && !has(BuildingType.Stable) && has(BuildingType.Range) && stableReady) add(BuildingType.Stable, rally);
         // D-099 (plan.siegeUse): many enemy forts known: a siege works.
         if (plan.siegeUse && rules.features?.siege === true && !has(BuildingType.SiegeWorks) && has(BuildingType.Range) && enemyForts(view, player, rules).length >= SIEGE_FORTS) add(BuildingType.SiegeWorks, rally);
+        // plan.siegeCity: its front broke off by the enemy's main city: a siege works.
+        if (siegeCityOn() && rules.features?.siege === true && !has(BuildingType.SiegeWorks) && has(BuildingType.Range)) add(BuildingType.SiegeWorks, rally);
         if (!has(BuildingType.LumberCamp) && farmers.length >= 6) add(BuildingType.LumberCamp, nearestNode(NodeKind.Tree));
         // D-086 A8 (plan.lumberFar): its woodcutters' trees far from its camps: another camp by them, where it is safe.
         else if (plan.lumberFar > 0 && farmers.length >= 12 && count(BuildingType.LumberCamp) < LUMBER_FAR_MOST && lumberFarAt() !== null) add(BuildingType.LumberCamp, lumberFarAt());
@@ -4526,10 +4548,11 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
         if (cavalry * 100 < plan.goldCavalry * (soldiers.length + 1)) trainAt(BuildingType.Stable, UnitType.Cavalry);
         counted.goldCavalry += before - room;
       }
-      // D-099 (plan.siegeUse): engines up to SIEGE_MOST.
-      if (plan.siegeUse && done(BuildingType.SiegeWorks).length > 0) {
+      // D-099 (plan.siegeUse): engines up to SIEGE_MOST; plan.siegeCity: up to that many once called for.
+      const enginesWanted = Math.max(plan.siegeUse ? SIEGE_MOST : 0, siegeCityOn() ? plan.siegeCity : 0);
+      if (enginesWanted > 0 && done(BuildingType.SiegeWorks).length > 0) {
         const engines = soldiers.filter((u) => u.type === UnitType.Siege).length + done(BuildingType.SiegeWorks).reduce((a, b) => a + b.queue, 0);
-        if (engines < SIEGE_MOST) {
+        if (engines < enginesWanted) {
           const before = out.length;
           trainAt(BuildingType.SiegeWorks, UnitType.Siege);
           counted.enginesTrained += out.length - before;
@@ -4714,7 +4737,15 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
       // Hiding in a building (round 7) too: a move would bring it out.
       // D-099 (plan.siegeUse): engines at home till there are SIEGE_MOST with SIEGE_ARMY other soldiers.
       const engines = soldiers.filter((u) => u.type === UnitType.Siege);
-      const enginesHome = engines.length > 0 && (engines.length < SIEGE_MOST || soldiers.length - engines.length < SIEGE_ARMY) ? new Set(engines.map((u) => u.id)) : null;
+      // plan.siegeCity: engines it had that are gone were lost.
+      for (const id of engineIds) if (!engines.some((u) => u.id === id)) {
+        engineIds.delete(id);
+        enginesLost++;
+        counted.enginesLost++;
+      }
+      for (const u of engines) engineIds.add(u.id);
+      // (plan.siegeCity's engines go with the army: no holding them at home.)
+      const enginesHome = plan.siegeUse && engines.length > 0 && (engines.length < SIEGE_MOST || soldiers.length - engines.length < SIEGE_ARMY) ? new Set(engines.map((u) => u.id)) : null;
       const detached = (id: number) => enginesHome?.has(id) === true || dodging.has(id) || homeSquad.has(id) || rescueSquad.has(id) || chargers.has(id) || id === peekId || byId.get(id)?.order === Order.Cast || byId.get(id)?.order === Order.Garrison;
 
       // --- loose against several mages ---------------------------------------------------------------
@@ -5541,6 +5572,8 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           if (front.length === 0 || (!endgame && !cityLow && (ground || defenders * 10 > worth(front) * 12 || (front.length < 6 && defenders > 0) || byFront.length > 0))) {
             cityFailed = armyAtStart;
             cityFailedAt = tick;
+            // plan.siegeCity: broken off by the enemy's main city: engines next time.
+            if (plan.siegeCity > 0 && dist2(fc.x, fc.y, enemyHome.cellX, enemyHome.cellY) <= SIEGE_CITY_NEAR * SIEGE_CITY_NEAR) siegeWanted = true;
             // D-081 / A4 (plan.fortStage): broke off from the forts it gathered for: remembered too.
             const stopped = fortStop;
             if (fought(front)) remember(front, stopped !== null && stopped.go ? [...byFront, ...groups.filter((g) => g.ids.some((id) => stopped.ids.includes(id)))] : byFront);
@@ -5748,8 +5781,17 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
             counted.aheadHeld++;
           }
         }
+        // plan.siegeCity: a march waits for its engines, SIEGE_CITY_WAIT at most (no works, too dear, lost: it goes as before).
+        if (go && toBase!.go && siegeCityOn() && army.filter((u) => u.type === UnitType.Siege).length < plan.siegeCity) {
+          if (siegeWaitFrom < 0) siegeWaitFrom = tick;
+          if (tick - siegeWaitFrom < SIEGE_CITY_WAIT) {
+            toBase!.go = false;
+            counted.siegeCityWaits++;
+          }
+        }
         if (go && toBase!.go) {
           labels[HEAD_ARMY] = 2;
+          siegeWaitFrom = -1;
           if (army.some((u) => u.type === UnitType.Siege)) counted.siegeMarches++;
           armyAtStart = army.length;
           marchWorth = vsForts(army);
