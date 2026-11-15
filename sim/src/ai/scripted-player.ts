@@ -113,6 +113,14 @@ export interface Plan {
    */
   raid: number;
   /**
+   * D-141 (stealing the main city, as the user's cavalry did): with `raid` cavalry trained as a raid's, the group goes for
+   * the enemy main city itself, an attack on it, never its farmers: "home" as soon as the group is full, "away" only while
+   * STEAL_OUT or more enemy soldiers are seen STEAL_FAR cells or more from its home (its army out). "": a raid as before.
+   */
+  steal: "" | "home" | "away";
+  /** Own units it leaves alone, as if they were not there (D-141: scripted-games' steal probe). */
+  ignore?: Set<number>;
+  /**
    * Racing the AI to its main city (D-072; the user beat hard so: "我直接帶三十幾隻兵攻擊電腦主堡，
    * 他的兵比我慢到我的主堡，他的主堡比我早被打爆了"). "" no. Once it sets out the army never comes
    * home to defend and never breaks off; farmers still go inside when the enemy comes (recall).
@@ -229,6 +237,12 @@ export interface Plan {
    * engines, whatever it has seen of the enemy.
    */
   lateSiege: boolean;
+  /**
+   * D-141 (a main city that holds a while: an army that means to take one brings engines): a siege works once its range
+   * stands and it has 14 farmers, this many engines kept up, and its marches on the enemy's main city wait for them (with
+   * the works up). 0: none, as before.
+   */
+  engines: number;
 }
 
 /**
@@ -449,6 +463,9 @@ GOVERN_COST[TownSize.Small] = { food: 0, wood: 80, gold: 80, crystal: 0 };
 GOVERN_COST[TownSize.Large] = { food: 0, wood: 150, gold: 150, crystal: 0 };
 /** Ruins last 240 s; a person would go back a little after that. */
 const RUINS_TICKS = 240 * 20 + 100;
+/** plan.steal "away": the enemy's army counts as out with this many of its soldiers seen this far (cells) from its home. */
+const STEAL_OUT = 12;
+const STEAL_FAR = 25;
 /**
  * No crystal (D-135, rules.features.noCrystal): its mage hall goes up when the crystal for a mage used to come in, so the
  * plan's first mage comes as before: on its first plunder (a small town paid 75), else by the main city's crystal alone
@@ -501,6 +518,7 @@ export function planFor(strategy: Strategy, speed: Speed, formation: Formation):
     corners: false,
     autoTrain: false,
     raid: 0,
+    steal: "",
     race: "",
     raceAt: 30,
     raceSeen: 12,
@@ -522,6 +540,7 @@ export function planFor(strategy: Strategy, speed: Speed, formation: Formation):
     crush: false,
     earlyTowns: false,
     lateSiege: false,
+    engines: 0,
   };
 }
 
@@ -778,7 +797,9 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
           flags: view.units[r + UnitField.flags],
         };
         const owner = view.units[r + UnitField.owner];
-        if (owner === player) mine.push(u);
+        if (owner === player) {
+          if (plan.ignore === undefined || !plan.ignore.has(u.id)) mine.push(u);
+        }
         else if (owner === 1 - player && u.type !== UnitType.Farmer) foes.push(u);
         else if (owner === 1 - player && plan.harass > 0) enemyFarmers.push(u);
       }
@@ -872,7 +893,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       // --- economy (the AI's) -----------------------------------------------------------------
       // A cavalry rush (plan.raid) mines gold from the start: cavalry cost 70 gold each.
       const ratio =
-        done(BuildingType.MageHall).length > 0 ? [35, 30, 35] : plan.raid > 0 ? [45, 25, 30] : done(BuildingType.Range).length > 0 ? [40, 35, 25] : [50, 40, 10];
+        done(BuildingType.MageHall).length > 0 ? [35, 30, 35] : plan.raid > 0 && plan.steal === "" ? [45, 25, 30] : done(BuildingType.Range).length > 0 ? [40, 35, 25] : [50, 40, 10];
       const stock = [res.food, res.wood, res.gold];
       for (let k = 0; k < 3; k++) {
         if (stock[k] > 400) ratio[k] -= 10;
@@ -967,7 +988,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       const main = done(BuildingType.MainCity)[0];
       const farmerCost = rules.units[UnitType.Farmer].cost;
       // A cavalry rush (plan.raid) stops at 14 farmers until its first raid has set off.
-      const farmerGoal = plan.raid > 0 && raids === 0 ? Math.min(wantFarmers, 14) : wantFarmers;
+      const farmerGoal = plan.raid > 0 && plan.steal === "" && raids === 0 ? Math.min(wantFarmers, 14) : wantFarmers;
       if (main && main.queue < 2 && farmers.length + main.queue < farmerGoal && room > 0 && afford(farmerCost)) {
         out.push({ c: "train", building: main.id, type: UnitType.Farmer, n: 1 });
         spend(farmerCost);
@@ -1013,8 +1034,10 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         if (!has(BuildingType.Granary) && farmers.length >= 8) add(BuildingType.Granary, base);
         // Raiders (round 7): the stable first, as early as it may go up (its `requires`, if any, before it).
         const stableReady = (rules.buildings[BuildingType.Stable]?.requires ?? []).every((t) => done(t).length > 0);
-        if (plan.raid > 0 && rules.features?.cavalry === true && !has(BuildingType.Stable) && stableReady && farmers.length >= 6) add(BuildingType.Stable, rally);
-        if (plan.raid > 0 && !has(BuildingType.Mine) && farmers.length >= 8) add(BuildingType.Mine, nearestNode(NodeKind.GoldMine));
+        if (plan.raid > 0 && plan.steal === "" && rules.features?.cavalry === true && !has(BuildingType.Stable) && stableReady && farmers.length >= 6) add(BuildingType.Stable, rally);
+        if (plan.raid > 0 && plan.steal === "" && !has(BuildingType.Mine) && farmers.length >= 8) add(BuildingType.Mine, nearestNode(NodeKind.GoldMine));
+        // D-141 (plan.steal): a stable once the range stands; the group is trained beside the army.
+        if (plan.steal !== "" && rules.features?.cavalry === true && !has(BuildingType.Stable) && has(BuildingType.Range) && stableReady) add(BuildingType.Stable, rally);
         if (!has(BuildingType.Barracks) && farmers.length >= (plan.userEco ? 9 : 10)) add(BuildingType.Barracks, rally);
         if (!plan.noRange && !has(BuildingType.Range) && farmers.length >= (plan.userEco ? 10 : 12)) add(BuildingType.Range, rally);
         const hallTime = plan.userEco ? plunders > 0 : (noCrystal ? plunders > 0 : res.crystal >= 40) || tick > 10 * 1200;
@@ -1022,6 +1045,8 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         // D-086 A: towers by home and a stable, as the user had them in the long wins.
         if (plan.homeTowers > 0 && has(BuildingType.Range) && count(BuildingType.ArrowTower) < plan.homeTowers) add(BuildingType.ArrowTower, towerAt);
         if (plan.cavalryShare > 0 && rules.features?.cavalry === true && !has(BuildingType.Stable) && has(BuildingType.Range) && stableReady) add(BuildingType.Stable, rally);
+        // D-141 (plan.engines): a siege works once the range stands.
+        if (plan.engines > 0 && rules.features?.siege === true && !has(BuildingType.SiegeWorks) && has(BuildingType.Range) && farmers.length >= 14) add(BuildingType.SiegeWorks, rally);
         // D-086 A5 (plan.turtle): towers round home by the clock, TURTLE.townTowers by every governed town, outposts by home.
         if (plan.turtle && has(BuildingType.Range)) {
           const near = (x: number, y: number, r: number) => own.filter((b) => b.type === BuildingType.ArrowTower && dist2(b.x, b.y, x, y) <= r * r).length;
@@ -1090,7 +1115,9 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       const cavalry = soldiers.filter((u) => u.type === UnitType.Cavalry);
       const stableQueue = done(BuildingType.Stable).reduce((a, b) => a + b.queue, 0);
       // A rush: while the group is short and a stable stands, nothing else is trained (mages aside).
-      const raidFirst = plan.raid > 0 && has(BuildingType.Stable) && cavalry.length + stableQueue < plan.raid;
+      const raidFirst = plan.raid > 0 && plan.steal === "" && has(BuildingType.Stable) && cavalry.length + stableQueue < plan.raid;
+      // D-141 (plan.steal): the group's cavalry before the foot, while it is short.
+      if (plan.steal !== "" && cavalry.length + stableQueue < plan.raid) trainAt(BuildingType.Stable, UnitType.Cavalry);
       if (raidFirst) trainAt(BuildingType.Stable, UnitType.Cavalry);
       const hallQueue = done(BuildingType.MageHall).reduce((a, b) => a + b.queue, 0);
       // Crystal kept for the cannon (mageReserve) only while there is crystal; without it, gold alone (trainAt).
@@ -1103,9 +1130,9 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         reserve.crystal += mageCost.crystal;
       }
       // plan.lateSiege: its engines before the rest, what they cost kept from it.
-      if (plan.lateSiege && done(BuildingType.SiegeWorks).length > 0) {
+      if ((plan.lateSiege || plan.engines > 0) && done(BuildingType.SiegeWorks).length > 0) {
         const c = rules.units[UnitType.Siege].cost;
-        if (soldiers.filter((u) => u.type === UnitType.Siege).length + done(BuildingType.SiegeWorks).reduce((a, b) => a + b.queue, 0) < LATE_SIEGE.engines) {
+        if (soldiers.filter((u) => u.type === UnitType.Siege).length + done(BuildingType.SiegeWorks).reduce((a, b) => a + b.queue, 0) < (plan.lateSiege ? LATE_SIEGE.engines : plan.engines)) {
           if (afford(c)) trainAt(BuildingType.SiegeWorks, UnitType.Siege);
           else {
             reserve.wood += c.wood;
@@ -1500,6 +1527,24 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
               harassMove = tick;
             }
           }
+        }
+      } else if (raiders.length > 0 && plan.steal !== "") {
+        // D-141: the group goes for the enemy main city itself.
+        const ids = raiders.map((u) => u.id);
+        const armyOut = foes.filter((f) => dist2(f.x, f.y, enemyHome.cellX, enemyHome.cellY) >= STEAL_FAR * STEAL_FAR).length >= STEAL_OUT;
+        if (!raiding && raiders.length >= plan.raid && found >= 0 && (plan.steal === "home" || armyOut)) {
+          raiding = true;
+          raids++;
+          if (firstRaid < 0) firstRaid = tick;
+          lastRaidMove = -100000;
+        }
+        if (raiding && raiders.length * 2 <= plan.raid) {
+          raiding = false;
+          out.push({ c: "retreat", u: ids, x: post.x, y: post.y });
+        } else if (raiding && tick - lastRaidMove >= 200) {
+          if (enemyCity >= 0) out.push({ c: "attack", u: ids, target: enemyCity });
+          else out.push({ c: "move", u: ids, x: enemyHome.cellX, y: enemyHome.cellY });
+          lastRaidMove = tick;
         }
       } else if (raiders.length > 0) {
         const ids = raiders.map((u) => u.id);
@@ -1912,7 +1957,9 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       const towersByHome = done(BuildingType.ArrowTower).filter((b) => dist2(b.x, b.y, home.cellX, home.cellY) <= TURTLE.homeR * TURTLE.homeR).length;
       // plan.lateSiege: the soldiers and the engines, whatever it saw of the enemy (the towers it should have no longer count).
       const lateReady = army.length >= LATE_SIEGE.army && soldiers.filter((u) => u.type === UnitType.Siege).length >= LATE_SIEGE.engines;
-      const go = !holding && found >= 0 && (plan.lateSiege ? lateReady : rushPush || (counterReady && army.length >= plan.counterAt && ahead) || (plan.pushAt > 0 && army.length >= plan.pushAt && ahead));
+      // D-141 (plan.engines): with the works up, a march waits for its engines.
+      const enginesReady = plan.engines === 0 || done(BuildingType.SiegeWorks).length === 0 || soldiers.filter((u) => u.type === UnitType.Siege).length >= plan.engines;
+      const go = !holding && found >= 0 && enginesReady && (plan.lateSiege ? lateReady : rushPush || (counterReady && army.length >= plan.counterAt && ahead) || (plan.pushAt > 0 && army.length >= plan.pushAt && ahead));
       if (go) rushPush = false;
       const townOpen =
         t !== undefined &&

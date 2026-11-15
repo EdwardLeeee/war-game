@@ -838,6 +838,8 @@ export interface Features {
   wallHold?: boolean;
   /** Spearmen hide in outposts and strike from them (D-119), `Rules.outpost.poke`. Absent: off. */
   outpostHide?: boolean;
+  /** A main city takes `Rules.mainCityTough` of units' own attacks, siege stones in full (D-141). Absent: off, in full. */
+  mainCityTough?: boolean;
 }
 
 export interface MapInfo {
@@ -932,6 +934,11 @@ export interface Rules {
    * reach of an enemy after `wait` ticks, and back to where they stood after `back` ticks calm (PROTOCOL.md 3.7).
    */
   wallShift?: { wait: number; back: number; stay: number; odds: number };
+  /**
+   * D-141 (in play while `features.mainCityTough`): a unit's own attack on a main city does [num, den] of itself,
+   * summed over the city each tick and the rest carried to the next; siege stones (`siege.vsBuildings`) in full.
+   */
+  mainCityTough?: [number, number];
   /**
    * The population ceiling (D-083): `base` plus `town[size]` (by TownSize) for each town the
    * player governs; HeaderField.populationCeiling has it now. Off: base 120, town [0, 0].

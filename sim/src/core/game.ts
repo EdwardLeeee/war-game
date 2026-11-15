@@ -31,7 +31,7 @@ import { generateMap } from "./map.ts";
 import { generateRandomMap } from "./random-map.ts";
 import { twinRiversMap } from "./twin-rivers.ts";
 import { FieldCache } from "./paths.ts";
-import { AVENGE, CAV_FLANK, CAVALRY, OUTPOST, SIEGE, COUNTER_ATTACK, FIRE_BACK, GARRISON, GATE, KEEP, MARCH_ORDER, MARKET, SLOT_GIVE_UP, WALLS, WALL_SHIFT, PLUNDER_RECOVERY, START_REVEAL, TOWERS, TOWN_ONCE } from "./rules.ts";
+import { AVENGE, CAV_FLANK, CAVALRY, OUTPOST, SIEGE, COUNTER_ATTACK, FIRE_BACK, GARRISON, GATE, KEEP, MAIN_CITY_TOUGH, MARCH_ORDER, MARKET, SLOT_GIVE_UP, WALLS, WALL_SHIFT, PLUNDER_RECOVERY, START_REVEAL, TOWERS, TOWN_ONCE } from "./rules.ts";
 import { TownSystem } from "./towns.ts";
 import { autoTrain, mainCityCrystal } from "./training.ts";
 import { type ScenarioKey, setupScenario } from "./scenarios.ts";
@@ -294,6 +294,7 @@ export class Game {
     h = fnvWord(h, w.buildings.count);
     for (const name of w.buildings.names) {
       if (name === "soldiers" && !GARRISON.on) continue;
+      if (name === "toughRem" && !MAIN_CITY_TOUGH.on) continue;
       if (name === "provoker") {
         // Outposts' only (D-080): a game without one keeps the words it had before.
         const b = w.buildings.col;

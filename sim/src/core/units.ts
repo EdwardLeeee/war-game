@@ -56,6 +56,7 @@ import {
   LEASH,
   LOOSE_KEEP,
   MAIN_ARROW,
+  MAIN_CITY_TOUGH,
   MARCH_ORDER,
   MAX_PUSH,
   MULT_DEN,
@@ -178,6 +179,8 @@ export class UnitSystem {
   /** The same hits counted against a mage's shield (its own multipliers). */
   private shieldDamage = new Int32Array(256);
   private buildingDamage = new Int32Array(64);
+  /** Units' own attacks on main cities this tick, in full (MAIN_CITY_TOUGH scales the sum). */
+  private cityDamage = new Int32Array(64);
   /** Per unit and building slot, this tick: bit `1 << o` for each owner o whose hits landed (Hurt.by). */
   private unitHitBy = new Uint8Array(256);
   private buildingHitBy = new Uint8Array(64);
@@ -224,6 +227,7 @@ export class UnitSystem {
     if (this.buildingDamage.length < nb) {
       const c = Math.max(nb, this.buildingDamage.length * 2);
       this.buildingDamage = new Int32Array(c);
+      this.cityDamage = new Int32Array(c);
       this.buildingHitBy = new Uint8Array(c);
       this.deadBuildings = new Uint8Array(c);
     }
@@ -2938,6 +2942,7 @@ export class UnitSystem {
     this.unitDamage.fill(0, 0, count);
     this.shieldDamage.fill(0, 0, count);
     this.buildingDamage.fill(0, 0, w.buildings.count);
+    this.cityDamage.fill(0, 0, w.buildings.count);
     this.unitHitBy.fill(0, 0, count);
     this.buildingHitBy.fill(0, 0, w.buildings.count);
     this.shots.length = 0;
@@ -2971,7 +2976,8 @@ export class UnitSystem {
       } else {
         const bs = w.building(tid);
         if (bs >= 0) {
-          this.buildingDamage[bs] += b.type[bs] === BuildingType.Gate ? gateDamage(info.attack, u.type[i]) : b.type[bs] === BuildingType.Outpost && OUTPOST_HIDE.on ? outpostDamage(info.attack, u.type[i]) : info.attack;
+          if (MAIN_CITY_TOUGH.on && b.type[bs] === BuildingType.MainCity) this.cityDamage[bs] += info.attack;
+          else this.buildingDamage[bs] += b.type[bs] === BuildingType.Gate ? gateDamage(info.attack, u.type[i]) : b.type[bs] === BuildingType.Outpost && OUTPOST_HIDE.on ? outpostDamage(info.attack, u.type[i]) : info.attack;
           this.buildingHitBy[bs] |= 1 << u.owner[i];
         }
         // An outpost under attack sends its guards after the attacker (D-080).
@@ -3065,6 +3071,13 @@ export class UnitSystem {
       }
     }
     for (let s = 0; s < w.buildings.count; s++) {
+      // D-141: units' attacks on a main city at MAIN_CITY_TOUGH.num / den, what is left of a point carried.
+      if (MAIN_CITY_TOUGH.on && this.cityDamage[s] > 0) {
+        const all = this.cityDamage[s] * MAIN_CITY_TOUGH.num + b.toughRem[s];
+        const whole = Math.trunc(all / MAIN_CITY_TOUGH.den);
+        b.toughRem[s] = all - whole * MAIN_CITY_TOUGH.den;
+        this.buildingDamage[s] += whole;
+      }
       const dmg = this.buildingDamage[s];
       if (dmg === 0) continue;
       b.hp[s] -= dmg;
