@@ -3190,6 +3190,11 @@ export interface HardPlan {
    */
   fortLockOver: number;
   /**
+   * D-141 follow-up (ceo 2026-11-15; with the main city 2/5 hard broke off at the enemy's main city more): at the enemy's
+   * main city it presses on, whatever the front, once that city's hp is this percent or less (40: PRESS_ON_HP, as before).
+   */
+  pressOnHp: number;
+  /**
    * D-139 (the user's 64a27f8a): the enemy's main city guessed only from a building near a corner (no town's), a corner
    * found empty ruled out and the guess moved on, its scout past corners ruled out (false: as before, for measuring).
    */
@@ -3330,6 +3335,7 @@ export const HARD: HardPlan = {
   fortArmyBy: 13,
   fortIntel: 4,
   fortLockOver: 0,
+  pressOnHp: PRESS_ON_HP,
   cornerGuess: true,
   mageHallFirst: 10,
   // D-131 (the user 2026-11-06; ceo 2026-11-07; docs/research/2026-11-ai-tactics.md): against hard without it, new seeds,
@@ -5491,7 +5497,7 @@ function createHardAi(player: number, seed: number, know: AiKnowledge, slot: num
           const front = army.filter((u) => marched.has(u.id));
           const frontIds = front.filter((u) => !detached(u.id)).map((u) => u.id);
           const fc = centre(front, ac.x, ac.y);
-          const cityLow = enemyCityHp >= 0 && enemyCityHp * 100 <= rules.buildings[BuildingType.MainCity].hp * PRESS_ON_HP;
+          const cityLow = enemyCityHp >= 0 && enemyCityHp * 100 <= rules.buildings[BuildingType.MainCity].hp * plan.pressOnHp;
           // It breaks off only when outmatched where the front stands (not because the city's arrows
           // thinned it: with nobody left to defend it, the city falls), or when too few are left.
           const atCity = front.filter((u) => dist2(u.x, u.y, enemyHome.cellX, enemyHome.cellY) <= 14 * 14);
