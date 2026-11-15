@@ -2753,6 +2753,101 @@ test("D-086 A4 (plan.charge): cavalry charge an enemy ranged unit in sight; not 
   assert.ok(!charged(chargeAt(4, 0, { charge: false })), "off: no charge, as before");
 });
 
+// --- D-099: hard's siege engines; its cavalry after the enemy's --------------------------------------------------
+
+test("D-099 (plan.siegeUse): with 6 enemy towers known, hard puts up a siege works; 5, or off, none", () => {
+  const works = (towers: number, siegeUse: boolean) => {
+    const g = behindGame(0);
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    // Towers in sight of a farmer of its own, away from its buildings.
+    for (let k = 0; k < towers; k++) {
+      w.addBuilding(1, BuildingType.ArrowTower, s0.cellX + 20 + 3 * (k % 3), s0.cellY - 20 + 3 * Math.trunc(k / 3), 600, 1000);
+      put(g, 0, UnitType.Farmer, s0.cellX + 20 + 3 * (k % 3), s0.cellY - 17 + 3 * Math.trunc(k / 3));
+    }
+    w.res.set([900, 900, 900, 0], 0);
+    g.fog.update(w);
+    return hardAi(g, { dodge: false, goldCavalry: 0, siegeUse }).think(buildView(g, 0)).some((c) => c.c === "build" && c.type === BuildingType.SiegeWorks);
+  };
+  assert.equal(works(6, true), true, "6 towers: a siege works");
+  assert.equal(works(5, true), false, "5: none yet");
+  assert.equal(works(6, false), false, "off: none, as before");
+});
+
+test("D-141 follow-up (plan.siegeCity): broken off by the enemy's main city, hard puts up a siege works; not before, nor off", () => {
+  /** 30 spearmen march, are met by 40 enemy spearmen within 30 cells of the enemy's main city and break off; does it put up a works then? */
+  const works = (siegeCity: number) => {
+    const g = behindGame(0, 30);
+    const w = g.w;
+    const s1 = w.map.spawns[1];
+    const ai = hardAi(g, { dodge: false, goldCavalry: 0, siegeCity, pushArmy: 20, peekFirst: 0, townArmy: 99, bigArmy: 99 });
+    const build = (out: CommandBody[]) => out.some((c) => c.c === "build" && c.type === BuildingType.SiegeWorks);
+    const first = ai.think(buildView(g, 0));
+    assert.ok(!build(first), "not before it has broken off there");
+    assert.ok(first.some((c) => c.c === "move" && c.u.length === 30), "it marches");
+    // The army by the enemy's main city, toward the map's centre; 40 enemy spearmen on it.
+    const dx = Math.sign(w.map.size / 2 - s1.cellX);
+    const dy = Math.sign(w.map.size / 2 - s1.cellY);
+    const u = w.units.col;
+    let k = 0;
+    for (let i = 0; i < w.units.count; i++) {
+      if (u.owner[i] !== 0 || u.type[i] !== UnitType.Spearman) continue;
+      u.x[i] = (s1.cellX + dx * (16 + (k % 6))) << 10;
+      u.y[i] = (s1.cellY + dy * (16 + Math.trunc(k / 6))) << 10;
+      k++;
+    }
+    for (let j = 0; j < 40; j++) put(g, 1, UnitType.Spearman, s1.cellX + dx * (12 + (j % 8)), s1.cellY + dy * (12 + Math.trunc(j / 8)));
+    w.tick += 10;
+    g.fog.update(w);
+    assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "retreat"), "outnumbered by the city: it breaks off");
+    w.tick += 10;
+    g.fog.update(w);
+    return build(ai.think(buildView(g, 0))) || build(((w.tick += 10), g.fog.update(w), ai.think(buildView(g, 0))));
+  };
+  assert.equal(works(3), true, "on: a siege works");
+  assert.equal(works(0), false, "off: none, as before");
+});
+
+test("D-099 (plan.cavalryHunt): cavalry charge an enemy siege engine before a ranged unit by it; off, the ranged unit", () => {
+  const hunt = (cavalryHunt: boolean) => {
+    const g = emptyGame();
+    const w = g.w;
+    const s0 = w.map.spawns[0];
+    const x = s0.cellX + 8;
+    const y = s0.cellY - 12;
+    const ids: number[] = [];
+    for (let k = 0; k < 4; k++) ids.push(put(g, 0, UnitType.Cavalry, x + k, y));
+    const ranged = put(g, 1, UnitType.Ranged, x + 1, y - 5);
+    const engine = put(g, 1, UnitType.Siege, x + 2, y - 6);
+    g.fog.update(w);
+    const out = hardAi(g, { dodge: false, charge: true, cavalryHunt }).think(buildView(g, 0));
+    const c = out.find((x) => x.c === "attack" && ids.every((id) => x.u.includes(id))) as { target: number } | undefined;
+    return c === undefined ? -1 : c.target === engine ? 1 : c.target === ranged ? 0 : -1;
+  };
+  assert.equal(hunt(true), 1, "on: the engine");
+  assert.equal(hunt(false), 0, "off: the ranged unit, as before");
+});
+
+test("D-099: an enemy siege engine in sight counts in the enemy's strength (it summed to NaN, and hard never broke off for it)", switchedOff([KEEP, RULES.RICH, RULES.MARKET], () => {
+  // Keeps off, as the D-081 town-trip test (with keeps a town asks keepTownArmy); the siege rules on.
+  const backs = (engine: boolean) => {
+  const g = emptyGame();
+  const w = g.w;
+  for (let k = 0; k < 14; k++) put(g, 0, UnitType.Spearman, 40 + (k % 7), 60 + Math.trunc(k / 7));
+  g.fog.update(w);
+  const ai = hardAi(g, { dodge: false, townArmy: 99 });
+  assert.ok(ai.think(buildView(g, 0)).some((c) => c.c === "move" && c.u.length === 14), "off to a town");
+  for (let k = 0; k < 14; k++) put(g, 1, UnitType.Spearman, 44 + (k % 5), 54 + Math.trunc(k / 5));
+  // In sight of its spearmen (6 cells).
+  if (engine) put(g, 1, UnitType.Siege, 46, 57);
+  w.tick += 10;
+  g.fog.update(w);
+  return ai.think(buildView(g, 0)).some((c) => c.c === "retreat" && c.u.length === 14);
+  };
+  assert.equal(backs(false), false, "14 against 14: on");
+  assert.equal(backs(true), true, "14 and an engine against 14: stronger, back");
+}));
+
 test("D-086 A4 (plan.towers): hard's arrow towers in a 15-minute game leave 2 cells open round its main city and production buildings, and none is refused for its place (gates' lanes, crossings)", () => {
   const g = new Game({ seed: 3, scenario: "standard" });
   const w = g.w;
