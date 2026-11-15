@@ -63,6 +63,7 @@ import { openLine } from "./steer.ts";
 import { mages, queuedUnits } from "./training.ts";
 import { rectDist2, startCast } from "./units.ts";
 import type { World } from "./world.ts";
+import { repairTicks, tutorialEvent } from "./tutorial.ts";
 
 export interface CommandContext {
   w: World;
@@ -525,8 +526,8 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       w.townSpellCost[t] = c.food + c.wood + c.gold + c.crystal;
       w.townSpellIncome[t] = 0;
       w.townState[t] = TownState.Repairing;
-      w.townTimer[t] = rule.repairTicks;
-      w.townTimerTotal[t] = rule.repairTicks;
+      w.townTimer[t] = repairTicks(w, rule.repairTicks);
+      w.townTimerTotal[t] = repairTicks(w, rule.repairTicks);
       return 0;
     }
     case "garrison": {
@@ -696,6 +697,8 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       w.endReason = GameOverReason.Surrender;
       return 0;
     }
+    case "tutorial":
+      return tutorialEvent(ctx, p, cmd.event);
     default:
       return Reject.NotAvailable;
   }

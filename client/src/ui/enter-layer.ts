@@ -99,6 +99,9 @@ export class EnterLayer {
         const tag = document.createElement("div");
         const chip = document.createElement("div");
         chip.className = "enter-chip";
+        // Which place (b12, t0): 新手教學 frames its town's tag (R25 8d).
+        tag.dataset.place = place.id;
+        chip.dataset.place = place.id;
         const line = document.createElementNS(SVG, "line");
         this.lines.append(line);
         this.root.append(tag, chip);

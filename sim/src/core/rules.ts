@@ -176,11 +176,13 @@ export const QUEUE_MAX = 7;
  * own size (GameMap.towerSize: 3 x 3 on random maps with adjacent starts, D-074), the tower's
  * row says so; every other value is the same for every game.
  */
-export function rules(map?: { towerSize?: number } & Partial<CastleMap>): Required<Rules> {
+export function rules(map?: { towerSize?: number; tutorial?: unknown } & Partial<CastleMap>): Required<Rules> {
   const towerSize = map?.towerSize;
   const same = towerSize === undefined || towerSize === BUILDINGS[BuildingType.TownTower].size;
   // D-099: the siege engine and the siege works only while SIEGE is on (they are the last of each).
-  const units = SIEGE.on ? UNITS : UNITS.slice(0, UnitType.Siege);
+  const all = SIEGE.on ? UNITS : UNITS.slice(0, UnitType.Siege);
+  // R25: the tutorial's training ticks (TUTORIAL_TRAIN), as the game plays them.
+  const units = map?.tutorial !== undefined ? all.map((u) => ({ ...u, trainTicks: trainTicksOn(map, u.type) })) : all;
   // D-101: the market only while MARKET is on. Each by its own switch (ceo 2026-10-29: so one of the batch can be
   // turned off alone): SIEGE off with MARKET on leaves the siege works' row empty (null in JSON).
   const off = (t: number) => (t === BuildingType.SiegeWorks && !SIEGE.on) || (t === BuildingType.Market && !MARKET.on);
@@ -675,8 +677,18 @@ export function townIncomePermille(plundered: number, recovered: number): number
 }
 
 /** A town's rules as sent in `Rules.towns`. */
-function townInfo(size: number, map?: { towerSize?: number } & Partial<CastleMap>): TownInfo {
-  const t = TOWNS[size];
+/** The tutorial's town (R25, tutorial.ts): militia (6 in a game; 5 spearmen beat these), and repair ticks (45 s in a game; a beginner would wait). */
+export const TUTORIAL_TOWN = { militia: 3, repairTicks: 10 * S };
+/** The tutorial's training ticks by UnitType where they differ (R25, ceo 2026-11-15: a siege engine 15 s, 40 s in a game; step 9 trains two). */
+export const TUTORIAL_TRAIN: Readonly<Partial<Record<number, number>>> = { [UnitType.Siege]: 15 * S };
+
+/** Ticks to train a unit of `type` on this map (the tutorial's shorter, TUTORIAL_TRAIN). */
+export function trainTicksOn(map: { tutorial?: unknown } | undefined, type: number): number {
+  return (map?.tutorial !== undefined ? TUTORIAL_TRAIN[type] : undefined) ?? UNITS[type].trainTicks;
+}
+
+function townInfo(size: number, map?: { towerSize?: number; tutorial?: unknown } & Partial<CastleMap>): TownInfo {
+  const t = map?.tutorial !== undefined ? { ...TOWNS[size], ...TUTORIAL_TOWN } : TOWNS[size];
   // The castle on this map (D-089): the big city's is centred on this map's tower.
   const castles = map?.tower !== undefined && map.towns !== undefined ? (map as CastleMap) : undefined;
   const c = castleOf(size as TownSize, castles);

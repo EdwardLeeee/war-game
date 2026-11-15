@@ -26,7 +26,9 @@ import {
   TICKS_PER_SECOND,
   type SimEvent,
   TownChoice,
+  TownField,
   TownSize,
+  TownState,
   UNIT_STRIDE,
   UnitField,
   UnitType,
@@ -75,6 +77,8 @@ const MAP_ALARM_BLINK_MS = 400;
 export interface HudLifecycle {
   restart(): void;
   toStart(): void;
+  /** 新手教學 (R25): leave this game (kept for 繼續上一局) and start the tutorial. */
+  tutorial?(): void;
   /** Start a game of this perf scenario that measures itself (量測, D-083). */
   perf(scenario: PerfScenario): void;
 }
@@ -476,7 +480,8 @@ export class Hud {
         // result): the town waits for a choice as the player's would (tapping it still opens this);
         // nothing is sent, nothing said. The enemy's: said.
         if (ev.by !== me) this.game.toast("敵方攻下了一座城鎮");
-        else if (!this.game.measuring) this.openTownChoice(ev.town);
+        // Not when it is already governed or being repaired: 新手教學's town (R25, core's `town` event) comes governed at once.
+        else if (!this.game.measuring && !this.townPastChoice(ev.town)) this.openTownChoice(ev.town);
         break;
       case "town_plundered":
         this.game.toast(ev.by === me ? `搶完了：糧 ${ev.food}、金 ${ev.gold}${this.crystal ? `、魔晶 ${ev.crystal}` : ""}` : "敵方搶完了一座城鎮");
@@ -544,6 +549,17 @@ export class Hud {
       if (nearFootprint({ x: x0, y: y0, w: size, h: size }, x, y, HOME_CELLS)) return true;
     }
     return false;
+  }
+
+  /** 新手教學 (R25): 軍團畫面 folded once step 6 is done (its card says what comes next, in full). */
+  foldGroupPanel(): void {
+    this.groupCollapsed = true;
+  }
+
+  /** 新手教學 (R25): step 1 opened it to teach it; put away after, as the player had it. */
+  closeMinimap(): void {
+    this.setMinimap(false);
+    this.minimapAuto = false;
   }
 
   private toggleMinimap(): void {
@@ -779,8 +795,10 @@ export class Hud {
     if (now - this.keepOffAt < 250) return this.keepOff;
     this.keepOffAt = now;
     const out: { left: number; right: number; top: number; bottom: number }[] = [];
-    for (const e of this.root.querySelectorAll<HTMLElement>("button, canvas")) {
-      if (e.closest(".alert-arrows") !== null || e.closest(".sel-info") !== null) continue;
+    // 新手教學's card (R25) too: an arrow under it could not be tapped. And its frame: an arrow there took the tap meant
+    // for what is framed (8a: on the town after 帶我去看, the camera off to the main city, ceo 2026-11-15).
+    for (const e of this.root.querySelectorAll<HTMLElement>("button, canvas, .tut-card:not([hidden]), .tut-ring")) {
+      if (e.closest(".alert-arrows") !== null || e.closest(".sel-info") !== null || (e.tagName === "BUTTON" && e.closest(".tut-card") !== null)) continue;
       const r = e.getBoundingClientRect();
       // Not the battlefield's own canvas (the whole screen).
       if (r.width > 0 && r.height > 0 && r.width < innerWidth * 0.8) out.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom });
@@ -831,11 +849,15 @@ export class Hud {
       const boxes = this.arrowKeepOff(now);
       let x = cx + dx * k;
       let y = cy + dy * k;
-      for (let f = k, i = 0; i < 24 && boxes.some((b) => x + ARROW_HALF > b.left && x - ARROW_HALF < b.right && y + ARROW_HALF > b.top && y - ARROW_HALF < b.bottom); i++) {
+      const over = () => boxes.some((b) => x + ARROW_HALF > b.left && x - ARROW_HALF < b.right && y + ARROW_HALF > b.top && y - ARROW_HALF < b.bottom);
+      for (let f = k, i = 0; i < 24 && over(); i++) {
         f *= 0.93;
         x = cx + dx * f;
         y = cy + dy * f;
       }
+      // No free place along that line: none this time rather than one on top of a button or the tutorial's frame (it
+      // would take their taps). The minimap still flashes.
+      a.arrow.style.display = over() ? "none" : "";
       a.arrow.style.transform = `translate(${x - 26}px, ${y - 26}px)`;
       (a.arrow.firstElementChild as HTMLElement).style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
     }
@@ -973,11 +995,14 @@ export class Hud {
       this.closeDialog();
       this.game.lab.show();
     }, "secondary");
-    btn(list, "重來（開新的一局）", () => {
-      this.closeDialog();
-      this.life.restart();
-    }, "secondary");
-    btn(list, "投降", () => this.confirmSurrender(), "secondary");
+    // 新手教學 (R25): no 重來 or 投降 in it (✕ on its card leaves it; 回開局畫面 too).
+    if (this.game.tutor === null) {
+      btn(list, "重來（開新的一局）", () => {
+        this.closeDialog();
+        this.life.restart();
+      }, "secondary");
+      btn(list, "投降", () => this.confirmSurrender(), "secondary");
+    }
     btn(list, "回開局畫面", () => {
       this.closeDialog();
       this.life.toStart();
@@ -1039,8 +1064,22 @@ export class Hud {
       this.openSettings();
     }, "secondary town-hint-pref");
     hb.setAttribute("aria-pressed", hintOff ? "false" : "true");
+    // 新手教學 (R25 共用元件): beside 開局提示, not in the tutorial itself.
+    if (this.life.tutorial !== undefined && this.game.tutor === null) btn(end, "新手教學", () => this.askTutorial(), "secondary tutorial-entry").prepend(icon("book"));
     btn(end, "回選單", () => this.openMenu(), "secondary");
     btn(end, "關閉", () => this.closeDialog());
+  }
+
+  /** 新手教學 from a game: leave it first (it is kept for 繼續上一局), R25 共用元件's words. */
+  private askTutorial(): void {
+    const card = this.openDialog("開始新手教學？", "menu");
+    el("p", card, "", "先離開這一局。這一局會存著，教學完回開局畫面按「繼續上一局」就接得上。");
+    const row = el("div", card, "dialog-buttons");
+    btn(row, "取消", () => this.openSettings(), "secondary");
+    btn(row, "開始教學", () => {
+      this.closeDialog();
+      this.life.tutorial?.();
+    });
   }
 
   /**
@@ -1128,6 +1167,16 @@ export class Hud {
    * cost come from the rules; without the cost, 治理 says what is missing in red and still works:
    * the soldiers stay and 治理 starts by itself once it is there (等錢治理, ceo 2026-10-21).
    */
+  /** Our town is past 搶 or 治理: being repaired or governed (its snapshot state). */
+  private townPastChoice(town: number): boolean {
+    const view = this.game.view;
+    const t = view?.curr?.snap.towns;
+    const row = view === null || view === undefined ? -1 : view.townRow(town);
+    if (t === undefined || row < 0 || t[row + TownField.owner] !== view?.me) return false;
+    const state = t[row + TownField.state];
+    return state === TownState.Repairing || state === TownState.Governed;
+  }
+
   openTownChoice(town: number): void {
     const size = this.game.view?.knownTowns.get(town)?.size;
     const big = size === TownSize.Large;
@@ -1152,6 +1201,11 @@ export class Hud {
     el("span", govern, "", `${cost === null ? "投入金和木" : `投入 ${costText(cost)}，`}修繕 ${sec(rule?.repairTicks, big ? 60 : 45)} 秒，之後每分鐘產出、加人口；要留兵駐守`);
     const short = el("span", govern, "choice-short");
     const showShort = () => {
+      // Governed or being repaired already (新手教學's town, or chosen elsewhere): no choice left to make.
+      if (this.townPastChoice(town)) {
+        this.closeDialog();
+        return;
+      }
       const missing = this.game.governShortfall(town);
       const text = missing === null ? "" : costText(missing);
       const line = text === "" ? "" : `還差 ${text}`;

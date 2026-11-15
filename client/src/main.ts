@@ -39,6 +39,7 @@ import { battlefieldRes, setBattlefieldRes } from "./battlefield-res.ts";
 import { applyTheme, loadTheme } from "./theme.ts";
 import { tickRateText } from "./ui/controls.ts";
 import { applyFormalUi, FORMAL_UI_DEFAULT, formalUi } from "./ui/formal.ts";
+import { Tutor, type TutorState } from "./tutorial/tutor.ts";
 import { watchPresses } from "./ui/press.ts";
 import { deployedCommit, isNewer, updateHref } from "./version.ts";
 
@@ -66,6 +67,8 @@ export interface ProtoHook {
   lastSave: SaveCost | null;
   /** 開一局要等多久 (D-091): the last start's load times. */
   loadTimes: () => LoadReport | null;
+  /** 新手教學 (R25): where the tutorial is, or null when none runs. */
+  tutorial: () => TutorState | null;
 }
 
 /** What the last save for 繼續上一局 cost (ms): export_log's round trip (the Worker's work), and on the page's main thread building it and IndexedDB's put. */
@@ -129,11 +132,15 @@ if (import.meta.env.PROD && __ART_TAG__ !== null && "serviceWorker" in navigator
   navigator.serviceWorker.register(`sw.js?tag=${encodeURIComponent(__ART_TAG__)}`).catch((err: unknown) => console.warn(`service worker: ${String(err)}`));
 }
 
-const hook: ProtoHook = { commit: __COMMIT__, screen: "start", ready: false, recordCode: code, logs: () => logs.list(), simBuild: __SIM_BUILD__, saved: () => saveStore.load(), lastSave: null, loadTimes: () => loadTimes.report };
+const hook: ProtoHook = { commit: __COMMIT__, screen: "start", ready: false, recordCode: code, logs: () => logs.list(), simBuild: __SIM_BUILD__, saved: () => saveStore.load(), lastSave: null, loadTimes: () => loadTimes.report, tutorial: () => tutor?.state() ?? null };
 if (params.test) window.__proto = hook;
 
 let app: Application | null = null;
 let game: Game | null = null;
+/** 新手教學 (R25) over the game on screen, while it is the tutorial's. */
+let tutor: Tutor | null = null;
+/** The tutorial's game (sim PROTOCOL 3.12): never kept, never uploaded, no crash note (R25 brief). */
+const isTutorial = (g: Game | null): boolean => g !== null && g.initSent?.scenario === "tutorial";
 
 /** The canvas, made the first time a game starts; its renders timed while a start is measured. */
 async function stage(): Promise<Application> {
@@ -314,7 +321,7 @@ $("record-code").textContent = `紀錄代號 ${code}`;
  * Worker may be stopped) and the save is written; uploading goes on by itself, off the game's
  * frames. The fake world, 量測 and watching are not kept.
  */
-type KeepWhy = "hidden" | "minute" | "end" | "restart";
+type KeepWhy = "hidden" | "minute" | "end" | "restart" | "leave";
 interface Kept {
   /** The game's key among the phone's records. */
   game: string;
@@ -335,14 +342,16 @@ function keptOf(g: Game): Kept {
 }
 function keepGame(g: Game, why: KeepWhy): Promise<void> {
   const init = g.initSent;
-  // Not kept: the fake world, 量測 (perf, perf200, perf360), and watching the computer play itself (test pages).
-  if (params.mock || params.watch || init === null || init.scenario.startsWith("perf")) return Promise.resolve();
+  // Not kept: the fake world, 量測 (perf, perf200, perf360), watching the computer play itself (test pages), and 新手教學 (R25).
+  if (params.mock || params.watch || init === null || init.scenario.startsWith("perf") || init.scenario === "tutorial") return Promise.resolve();
   const over = g.over;
   const ticks = over === null ? g.currentTick() : over.ticks;
-  if (over === null && ticks < MIN_ABANDONED_TICKS) return Promise.resolve();
+  // 新手教學 opened in a game (R25: 「這一局會存著，教學完…按『繼續上一局』就接得上」): kept however short, uploaded as away.
+  if (over === null && ticks < MIN_ABANDONED_TICKS && why !== "leave") return Promise.resolve();
   const k = keptOf(g);
-  const upload = why !== "minute" && (over !== null ? !k.ended : ticks > k.uploaded);
-  const save = over === null && (why === "hidden" || why === "minute") && ticks > k.saved;
+  // A game over is sent however short; one still going from a minute on (a shorter one kept for 新手教學 is not sent).
+  const upload = why !== "minute" && (over !== null || ticks >= MIN_ABANDONED_TICKS) && (over !== null ? !k.ended : ticks > k.uploaded);
+  const save = over === null && (why === "hidden" || why === "minute" || why === "leave") && ticks > k.saved;
   // Nothing new since the last time: no export, no write, no upload.
   if (!upload && !save) return k.job;
   if (upload) {
@@ -357,7 +366,7 @@ function keepGame(g: Game, why: KeepWhy): Promise<void> {
       if (log === null || log.jsonl === "") return;
       const got = performance.now();
       if (upload) {
-        const end = over !== null ? { result: resultFor(over.winner, init.human ?? 0), reason: reasonName(over.reason), ticks } : { result: "abandoned" as const, reason: why === "hidden" ? "hidden" : "", ticks };
+        const end = over !== null ? { result: resultFor(over.winner, init.human ?? 0), reason: reasonName(over.reason), ticks } : { result: "abandoned" as const, reason: why === "hidden" || why === "leave" ? "hidden" : "", ticks };
         // 美術 and 介面 in use, and the note of the page that last died with a game on screen (once, logs/heartbeat.ts).
         const record = makeRecord({ id: crypto.randomUUID(), code, commit: __COMMIT__, protocol: PROTOCOL_VERSION, scenario: init.scenario, difficulty: init.difficulty?.[1] ?? "normal", end, lastHash: g.lastHash, log: log.jsonl, art: artInUse(), ui: formalUi() ? "r6" : "proto", crash: heartbeat.takeCrash() });
         void logs.keep(record, k.game);
@@ -388,6 +397,8 @@ function keepGame(g: Game, why: KeepWhy): Promise<void> {
 /** The game is over, or another takes its place: its record as above, then no 繼續上一局 for it. */
 function forgetGame(g: Game, why: "end" | "restart"): Promise<void> {
   const k = keptOf(g);
+  // 新手教學: the game kept before it stays kept (R25).
+  if (isTutorial(g)) return k.job;
   return keepGame(g, why).then(() => {
     k.job = k.job.then(() => saveStore.clear());
     return k.job;
@@ -421,7 +432,8 @@ window.addEventListener("unhandledrejection", (e) => {
 /** Every BEAT_EVERY_MS while a game is on screen and seen: what it is doing (logs/heartbeat.ts). */
 function beatNow(): void {
   const g = game;
-  if (g === null || !hook.ready || hook.screen !== "battle" || g.over !== null || document.visibilityState === "hidden") {
+  // 新手教學: no crash note for it (the next record would carry one about a game never sent).
+  if (g === null || !hook.ready || hook.screen !== "battle" || g.over !== null || document.visibilityState === "hidden" || isTutorial(g)) {
     heartbeat.leave(g === null || g.over !== null ? "ended" : "away");
     return;
   }
@@ -472,6 +484,9 @@ $("start-game").addEventListener("click", () => {
 $("restart-game").addEventListener("click", () => {
   void newGame().catch(showError);
 });
+// 新手教學 (R25): under 開始, 正式介面 only (ceo 2026-11-15: the prototype has none).
+$("tutorial-start").hidden = !formalUi();
+$("tutorial-start").addEventListener("click", () => startTutorial());
 
 /**
  * Start a game, ending the one on screen if there is one (開始, 重來). `measure`: the perf
@@ -487,10 +502,15 @@ async function newGame(scenario: ScenarioName = "standard", measure = false, var
   hook.ready = false;
   const app = await stage();
   // 重來 leaves the game on screen: keep its record first (D-056). A new game takes the place
-  // of the one kept for 繼續上一局 (D-083).
-  if (game !== null) await forgetGame(game, "restart");
-  else await saveStore.clear();
+  // of the one kept for 繼續上一局 (D-083). 新手教學 (R25) takes nobody's place: a game on screen is
+  // kept for 繼續上一局 (however short), the one kept before stays; a game after the tutorial is new.
+  const tutorial = scenario === "tutorial";
+  if (game !== null && isTutorial(game)) {
+    if (!tutorial) await saveStore.clear();
+  } else if (game !== null) await (tutorial ? keepGame(game, "leave") : forgetGame(game, "restart"));
+  else if (!tutorial) await saveStore.clear();
   hideSaved();
+  endTutor();
   game?.destroy();
   const port = params.mock ? new MockPort(params.round7, params.map ?? mapMode, params.outpostHide ? "hide" : params.outpost, params.gallery, params.mine, params.walls, params.siege, params.keep, params.market) : createSimPort(showError);
   // Players get the chosen 難度 and no time limit (D-024); 量測 always plays 普通 with the
@@ -537,10 +557,17 @@ async function newGame(scenario: ScenarioName = "standard", measure = false, var
   });
   game = g;
   if (params.test) hook.game = gameHook(g);
+  // 新手教學 (R25): 自動村民 paused before the first snapshot (core 2026-11-15: they would eat the food 5 spearmen need).
+  if (tutorial) g.autoArmy.villagersPaused = true;
   g.start();
   await g.whenReady();
   if (game !== g) return;
   hook.ready = true;
+  if (tutorial) {
+    // 新手教學 (R25): no 開局提示.
+    tutor = new Tutor(g, $("hud"), { leave: () => endTutorial("start"), finish: (next) => endTutorial(next) });
+    return;
+  }
   // 開局提示 (D-044): once per game, here at its start (重來 is a new game; 繼續這局 is not),
   // unless the player chose 不再提示; 選單 → 魔晶怎麼拿 still opens it.
   if (!measure && params.hint && !loadTownHintOff()) g.showTownHint();
@@ -551,6 +578,39 @@ async function newGame(scenario: ScenarioName = "standard", measure = false, var
     const windowMs = variant === null ? undefined : seconds !== null ? seconds * 1000 : ART_MEASURE_MS;
     g.lab.startMeasure(performance.now(), windowMs, variant ?? undefined);
   }
+}
+
+function endTutor(): void {
+  tutor?.destroy();
+  tutor = null;
+}
+
+/** 新手教學 (R25): from the start screen, or from 設定 in a game (that game kept for 繼續上一局 first). */
+function startTutorial(): void {
+  void newGame("tutorial").catch(showError);
+}
+
+/**
+ * The tutorial left (✕ → 離開), or over (開始第一局, 回開局畫面): its game gone, the start screen as when the page
+ * opened, 繼續上一局 offered again if a game was kept.
+ */
+function endTutorial(next: "first" | "start"): void {
+  endTutor();
+  game?.destroy();
+  game = null;
+  hook.game = undefined;
+  if (next === "first") {
+    void newGame("standard").catch(showError);
+    return;
+  }
+  hook.screen = "start";
+  $("difficulty-note").hidden = true;
+  $("about-note").hidden = false;
+  $("start-game").textContent = "開始";
+  $("restart-game").hidden = true;
+  $("start").classList.remove("over-battle");
+  $("start").hidden = false;
+  void showSaved();
 }
 
 /** 地面快取 switched in the 量測 panel (render/ground-cache.ts): kept in the address (the art-v7 量測 pages it opens), test pages only. */
@@ -791,7 +851,9 @@ function artCost(): Omit<ArtCost, "ground"> {
 /** 重來, 回開局畫面 and 量測, from the game's menu. */
 const life: HudLifecycle = {
   restart: () => void newGame().catch(showError),
-  toStart: showStart,
+  // 新手教學's 回開局畫面 (the result's, the menu's): the tutorial over.
+  toStart: () => (isTutorial(game) ? endTutorial("start") : showStart()),
+  tutorial: () => startTutorial(),
   perf: (s) => void newGame(s, true).catch(showError),
 };
 

@@ -97,6 +97,16 @@ export class TownSystem {
         this.capture(w, t, 1 - p);
         continue;
       }
+      // R25: the tutorial's "town" event: captured, so governed at once (its repair done).
+      if (state === TownState.AwaitingChoice && w.tutorialTown === t && p === 0) {
+        w.tutorialTown = -1;
+        w.townState[t] = TownState.Governed;
+        w.governed[p]++;
+        this.allGates(w, t);
+        if (KEEP.on && !tower) addKeep(w, t, p);
+        this.tell(w, t, { k: "town_repaired", town: t, by: p }, [p]);
+        continue;
+      }
       const manned = present[p] >= rule.garrisonNeeded;
       switch (state) {
         case TownState.Plundering:

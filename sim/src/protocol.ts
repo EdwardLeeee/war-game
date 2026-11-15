@@ -590,9 +590,22 @@ export const HEADER_LENGTH = 28;
  * - perf200, perf360 (D-083): perf with both sides at 200 / 360 population (the cap and ceiling
  *   held there), for measuring D-083's higher population on the iPhone.
  */
-export const Scenario = { Standard: 0, E2e: 1, Perf: 2, Perf200: 3, Perf360: 4, WallShift: 5 } as const;
+export const Scenario = { Standard: 0, E2e: 1, Perf: 2, Perf200: 3, Perf360: 4, WallShift: 5, Tutorial: 6 } as const;
 export type Scenario = (typeof Scenario)[keyof typeof Scenario];
-export type ScenarioName = "standard" | "e2e" | "perf" | "perf200" | "perf360" | "wallshift";
+/**
+ * "tutorial" (R25, D-150): the tutorial's own 65 x 65 map (whatever `map` says), player 1 never thinks, `tutorial`
+ * commands set the scene (PROTOCOL.md 3.12). A game of it is not saved nor uploaded (the screen's rule).
+ */
+export type ScenarioName = "standard" | "e2e" | "perf" | "perf200" | "perf360" | "wallshift" | "tutorial";
+
+/**
+ * What a `tutorial` command puts in the tutorial's game (R25; PROTOCOL.md 3.12): "houses" a finished house and barracks
+ * by player 0's main city, "spears" 5 spearmen there, "town" the town governed by player 0, "near_home" a few of player
+ * 1's spearmen sent at player 0's main city, "siege" a finished siege works and what 2 engines cost, "engines" 2 siege
+ * engines by player 0's main city, "near_home_clear" near_home's squad gone (step 7 skipped).
+ */
+export const TUTORIAL_EVENTS = ["houses", "spears", "town", "near_home", "siege", "engines", "near_home_clear"] as const;
+export type TutorialEvent = (typeof TUTORIAL_EVENTS)[number];
 
 /**
  * Which map a game is played on (D-074). "fixed": the prototype's 96 x 96 map, the same every
@@ -860,6 +873,8 @@ export interface MapInfo {
   towns: { id: number; size: TownSize; cellX: number; cellY: number; radius: number }[];
   /** Absent: "fixed" (D-074). */
   mode?: MapMode;
+  /** The "tutorial" scenario's map only (R25): the cell the screen asks the player to move the soldiers to (step 5). */
+  tutorial?: { rally: { x: number; y: number } };
 }
 
 export interface Rules {
@@ -1018,7 +1033,9 @@ export type CommandBody =
    * finished market of one's own (else NoMarket); all or nothing (CannotAfford).
    */
   | { c: "trade"; resource: number; buy: boolean; lots: number }
-  | { c: "surrender" };
+  | { c: "surrender" }
+  /** R25: player 0 in the "tutorial" scenario only, else NotAvailable; see TutorialEvent. */
+  | { c: "tutorial"; event: TutorialEvent };
 
 export type Command = CommandBase & CommandBody;
 export type CommandKind = CommandBody["c"];
@@ -1055,6 +1072,7 @@ export const COMMAND_KINDS = [
   "outpost_mode",
   "trade",
   "surrender",
+  "tutorial",
 ] as const satisfies readonly CommandKind[];
 type MissingCommand = Exclude<CommandKind, (typeof COMMAND_KINDS)[number]>;
 export const COMMAND_KINDS_COMPLETE: [MissingCommand] extends [never] ? true : MissingCommand = true;

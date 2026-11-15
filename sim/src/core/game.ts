@@ -30,6 +30,7 @@ import { Fog } from "./fog.ts";
 import { generateMap } from "./map.ts";
 import { generateRandomMap } from "./random-map.ts";
 import { twinRiversMap } from "./twin-rivers.ts";
+import { isTutorial, revealTutorial, tutorialMap } from "./tutorial.ts";
 import { FieldCache } from "./paths.ts";
 import { AVENGE, CAV_FLANK, CAVALRY, OUTPOST, SIEGE, COUNTER_ATTACK, FIRE_BACK, GARRISON, GATE, KEEP, MAIN_CITY_TOUGH, MARCH_ORDER, MARKET, SLOT_GIVE_UP, WALLS, WALL_SHIFT, PLUNDER_RECOVERY, START_REVEAL, TOWERS, TOWN_ONCE } from "./rules.ts";
 import { TownSystem } from "./towns.ts";
@@ -91,12 +92,15 @@ export class Game {
 
   constructor(config: GameConfig) {
     this.config = config;
-    const map = config.map === "random" ? generateRandomMap(config.seed) : config.map === "twin-rivers" ? twinRiversMap(config.seed) : generateMap();
+    // R25: the tutorial is played on its own map, whatever `map` says.
+    const map =
+      config.scenario === "tutorial" ? tutorialMap(config.seed) : config.map === "random" ? generateRandomMap(config.seed) : config.map === "twin-rivers" ? twinRiversMap(config.seed) : generateMap();
     this.w = new World(map);
     for (let p = 0; p < PLAYER_COUNT; p++) this.w.autoTrain[p] = config.autoTrain?.[p] === true ? 1 : 0;
     setupScenario(this.w, config.scenario);
     this.fog = new Fog(this.w);
     this.fog.reveal(this.w, START_REVEAL);
+    if (isTutorial(this.w)) revealTutorial(this.fog, this.w);
     this.fog.update(this.w);
     this.units = new UnitSystem(this.w.size);
     this.econ = new Economy(this.w, this.fog, (to, ev) => this.events.push({ to, ev }));
@@ -280,6 +284,12 @@ export class Game {
     if (MARKET.on) {
       h = fnvInt32(h, w.marketPrice);
       h = fnvInt32(h, w.marketLots);
+    }
+    // The tutorial's events (R25), only on its map.
+    if (isTutorial(w)) {
+      h = fnvWord(h, w.tutorialUsed);
+      h = fnvWord(h, w.tutorialTown);
+      for (const id of w.tutorialSquad) h = fnvWord(h, id);
     }
     // Siege engines' stones in the air (D-099), only while they are on.
     if (SIEGE.on) {

@@ -78,6 +78,7 @@ import { type Frame, IDENTITY, fromCanon, toCanon } from "../frame.ts";
 import { openLine, steerDirect, steerTo } from "./steer.ts";
 import { wallStretch, wayFrame, wayNext, wayPick, waySteps } from "./wall-walk.ts";
 import { HitCause, STONE, UNIT_KINDS, type World } from "./world.ts";
+import { mainCityFloor } from "./tutorial.ts";
 
 const TICKS = TICKS_PER_SECOND;
 
@@ -3081,6 +3082,8 @@ export class UnitSystem {
       const dmg = this.buildingDamage[s];
       if (dmg === 0) continue;
       b.hp[s] -= dmg;
+      // R25: in the tutorial player 0's main city keeps half its hp.
+      if (b.type[s] === BuildingType.MainCity) b.hp[s] = Math.max(b.hp[s], mainCityFloor(w, b.owner[s]));
       b.lastHurt[s] = w.tick;
       hurt.push({
         owner: b.owner[s],

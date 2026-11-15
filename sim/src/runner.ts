@@ -60,7 +60,8 @@ export class Runner {
     for (let p = 0; p < PLAYER_COUNT; p++) {
       const slot = cfg.swap === true ? 1 - p : p;
       const know = aiKnowledge(this.game.w.map, p, this.maxTicks, this.difficulty[p]);
-      this.ais.push(cfg.replay === undefined && cfg.ai[p] ? createAi(p, cfg.seed, know, slot, cfg.styles?.[slot]) : null);
+      // R25: nobody thinks in the tutorial (its enemies come when the screen asks).
+      this.ais.push(cfg.replay === undefined && cfg.ai[p] && cfg.scenario !== "tutorial" ? createAi(p, cfg.seed, know, slot, cfg.styles?.[slot]) : null);
     }
     if (cfg.replay !== undefined) for (const c of cfg.replay) this.game.push(c);
     this.hashes.push({ tick: 0, hash: this.game.hash() });

@@ -53,7 +53,7 @@ import type { Game } from "../core/game.ts";
 import type { GameMap } from "../core/map.ts";
 import { onWall } from "../core/units.ts";
 import { wallStretch, wayFrame, wayGates, wayGatesDown } from "../core/wall-walk.ts";
-import { BUILDINGS, CANNON, FARMLAND_REACH, MAGE_CAP, MAIN_CITY_REPAIR_LOCK, MARKET, OUTPOST, OUTPOST_HIDE, TOWER_REACH, TOWERS, UNITS } from "../core/rules.ts";
+import { BUILDINGS, CANNON, FARMLAND_REACH, MAGE_CAP, MAIN_CITY_REPAIR_LOCK, MARKET, OUTPOST, OUTPOST_HIDE, TOWER_REACH, TOWERS, trainTicksOn } from "../core/rules.ts";
 
 export interface PlayerView {
   /** The viewing player, or null for a spectator. */
@@ -97,7 +97,7 @@ export interface RunnerInfo {
 export function mapInfo(map: GameMap, player: number | null): MapInfo {
   const mode = map.mode ?? "fixed";
   if (mode === "fixed" || player === null) {
-    return { seed: map.seed, size: map.size, terrain: map.terrain.slice(), spawns: map.spawns, towns: map.towns, mode };
+    return { seed: map.seed, size: map.size, terrain: map.terrain.slice(), spawns: map.spawns, towns: map.towns, mode, ...(map.tutorial !== undefined ? { tutorial: { rally: { ...map.tutorial.rally } } } : {}) };
   }
   return {
     seed: map.seed,
@@ -116,6 +116,7 @@ const SCENARIO_ID: Record<string, number> = {
   perf200: Scenario.Perf200,
   perf360: Scenario.Perf360,
   wallshift: Scenario.WallShift,
+  tutorial: Scenario.Tutorial,
 };
 
 /** R14-07: within this many cells (Chebyshev) of a wall stretch an enemy soldier counts as at it (WallShiftField.foes). */
@@ -296,7 +297,7 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
       for (let k = 0; k < b.queueLength[s]; k++) packed |= (q[k] & 15) << (4 * k);
       row[BuildingField.queueLength] = b.queueLength[s];
       row[BuildingField.queuePacked] = packed;
-      const head = b.queueLength[s] > 0 ? UNITS[b.q0[s]].trainTicks : 0;
+      const head = b.queueLength[s] > 0 ? trainTicksOn(w.map, b.q0[s]) : 0;
       row[BuildingField.queueProgress] = head > 0 ? Math.trunc((b.queueTicks[s] * 1000) / head) : 0;
       row[BuildingField.rallyX] = b.rallyX[s];
       row[BuildingField.rallyY] = b.rallyY[s];

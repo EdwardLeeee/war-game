@@ -2193,3 +2193,409 @@
 :root[data-ui="r6"] #proto-label {
   display: none;
 }
+
+/* --- 新手教學 (R25, D-151; ui's design/r25/common/tutorial-page.js) -------------------------------------- */
+
+/* Over a dialog (30), under the message strip (40): the dim and the frame (33); the card (38); its confirm (39). */
+:root[data-ui="r6"] {
+  --tut-gold: #f2c862;
+  --tut-green: #7fdc78;
+}
+
+:root[data-ui="r6"] #hud .tut-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 33;
+  pointer-events: none;
+}
+
+:root[data-ui="r6"] .tut-dim {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+:root[data-ui="r6"] .tut-dim .tut-shade {
+  fill: rgba(10, 8, 6, 0.58);
+}
+
+/* What to press: a gold frame, its light breathing (opacity only: an animated filter hung CI's WebKit). */
+:root[data-ui="r6"] .tut-ring {
+  position: absolute;
+  box-sizing: border-box;
+  border: 3px solid var(--tut-gold);
+  border-radius: 10px;
+  box-shadow:
+    0 0 0 2px rgba(40, 24, 8, 0.85),
+    0 0 14px 4px rgba(242, 200, 98, 0.55);
+  animation: tut-breathe 1.4s ease-in-out infinite;
+}
+
+:root[data-ui="r6"] .tut-ring.round {
+  border-radius: 50%;
+}
+
+/* A tap kept off (ceo 2026-11-15: no words): the frame flashes. */
+:root[data-ui="r6"] .tut-ring.flash {
+  border-color: #fff3d6;
+  animation: tut-flash 0.3s ease-in-out 2;
+}
+
+@keyframes tut-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@keyframes tut-flash {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-ui="r6"] .tut-ring,
+  :root[data-ui="r6"] .tut-ring.flash {
+    animation: none;
+  }
+}
+
+/* A place off the screen: a gold tag at the edge, pointing at it. */
+:root[data-ui="r6"] .tut-edge {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 6px 6px;
+  border: 2px solid var(--tut-gold);
+  border-radius: 22px;
+  background: rgba(30, 20, 10, 0.9);
+  color: #fff3d6;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+:root[data-ui="r6"] .tut-edge svg {
+  width: 26px;
+  height: 26px;
+  fill: var(--tut-gold);
+}
+
+/* A finger and the way it goes (drag, pinch; a long press then a box). */
+:root[data-ui="r6"] .tut-hand {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+}
+
+:root[data-ui="r6"] .tut-hand .tip {
+  fill: rgba(255, 255, 255, 0.9);
+  stroke: #2a1806;
+  stroke-width: 2.5;
+}
+
+:root[data-ui="r6"] .tut-hand .tip-ring {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.55);
+  stroke-width: 2;
+}
+
+:root[data-ui="r6"] .tut-hand .trail {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 3;
+  stroke-dasharray: 7 6;
+  stroke-linecap: round;
+}
+
+:root[data-ui="r6"] .tut-hand .box {
+  fill: rgba(255, 255, 255, 0.1);
+  stroke: #fff;
+  stroke-width: 2.5;
+  stroke-dasharray: 8 6;
+}
+
+:root[data-ui="r6"] .tut-hand .say {
+  fill: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  stroke: #2a1806;
+  stroke-width: 3;
+  paint-order: stroke;
+}
+
+/* The card: under the resource bar, left of 編隊 (390 wide, narrower where that does not fit); at most 3 lines. */
+:root[data-ui="r6"] #hud .tut-card {
+  position: absolute;
+  z-index: 38;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+:root[data-ui="r6"] #hud .tut-card.top,
+:root[data-ui="r6"] #hud .tut-card.slim {
+  left: calc(var(--safe-l) + 241px);
+  top: calc(var(--safe-t) + 44px);
+  width: min(390px, calc(100vw - var(--safe-l) - var(--safe-r) - 355px));
+}
+
+/* A dialog in the middle (搶或治理, 結算): at the left, over 閒置 and 地圖. */
+:root[data-ui="r6"] #hud .tut-card.side {
+  left: calc(var(--safe-l) + 4px);
+  top: calc(var(--safe-t) + 46px);
+  width: 168px;
+}
+
+:root[data-ui="r6"] .tut-card .tut-prog {
+  position: absolute;
+  top: 4px;
+  left: 10px;
+  right: 10px;
+  display: flex;
+  gap: 3px;
+}
+
+:root[data-ui="r6"] .tut-card .tut-prog i {
+  flex: 1;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 225, 170, 0.18);
+}
+
+:root[data-ui="r6"] .tut-card .tut-prog i.on {
+  background: var(--tut-gold);
+}
+
+:root[data-ui="r6"] .tut-card .tut-prog i.now {
+  background: rgba(242, 200, 98, 0.55);
+}
+
+:root[data-ui="r6"] .tut-card .tut-head {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+:root[data-ui="r6"] .tut-card .tut-step {
+  padding: 0 8px 0 12px;
+  color: var(--tut-gold);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+:root[data-ui="r6"] .tut-card .tut-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The head's buttons flat, edge to edge, a line before each (as the R24 bar's). */
+:root[data-ui="r6"] .tut-card .tut-head .b {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 9px;
+  border-left: 1px solid var(--bar-line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 12px;
+}
+
+:root[data-ui="r6"] .tut-card .tut-head .b::before,
+:root[data-ui="r6"] .tut-card .tut-head .b::after {
+  display: none;
+}
+
+:root[data-ui="r6"] .tut-card .tut-head .b .ic {
+  width: 16px;
+  height: 16px;
+}
+
+:root[data-ui="r6"] .tut-card .tut-body {
+  padding: 0 12px 10px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+:root[data-ui="r6"] .tut-card .tut-body b {
+  color: var(--tut-gold);
+}
+
+:root[data-ui="r6"] .tut-card .tut-body small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+:root[data-ui="r6"] .tut-card .tut-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 2px;
+}
+
+:root[data-ui="r6"] .tut-card .tut-list span {
+  white-space: nowrap;
+}
+
+:root[data-ui="r6"] .tut-card .tut-list span::before {
+  content: "";
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  margin-right: 5px;
+  border: 1.5px solid rgba(255, 225, 170, 0.6);
+  border-radius: 50%;
+  vertical-align: -1px;
+}
+
+:root[data-ui="r6"] .tut-card .tut-list span.ok {
+  color: var(--tut-green);
+}
+
+:root[data-ui="r6"] .tut-card .tut-list span.ok::before {
+  border-color: var(--tut-green);
+  background: var(--tut-green);
+}
+
+:root[data-ui="r6"] .tut-card .tut-wait {
+  height: 6px;
+  margin-top: 5px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+:root[data-ui="r6"] .tut-card .tut-wait i {
+  display: block;
+  height: 100%;
+  background: var(--tut-gold);
+}
+
+:root[data-ui="r6"] .tut-card .tut-go {
+  margin-top: 6px;
+  min-height: 44px;
+}
+
+/* Done: green, a check, 下一步. */
+:root[data-ui="r6"] #hud .tut-card.done {
+  box-shadow:
+    inset 0 0 0 2px var(--tut-green),
+    0 3px 8px rgba(0, 0, 0, 0.45);
+}
+
+:root[data-ui="r6"] .tut-card.done .tut-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--tut-green);
+}
+
+:root[data-ui="r6"] .tut-card .tut-ok {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--tut-green);
+  color: #142012;
+}
+
+:root[data-ui="r6"] .tut-card .tut-ok .ic {
+  width: 14px;
+  height: 14px;
+  stroke-width: 3;
+}
+
+:root[data-ui="r6"] .tut-card.side .tut-head {
+  flex-wrap: wrap;
+  min-height: 0;
+  padding-top: 12px;
+}
+
+:root[data-ui="r6"] .tut-card.side .tut-step {
+  flex: 1;
+  padding-top: 2px;
+}
+
+:root[data-ui="r6"] .tut-card.side .tut-title {
+  flex-basis: 100%;
+  order: 3;
+  padding: 0 12px 4px;
+  white-space: normal;
+}
+
+:root[data-ui="r6"] .tut-card .tut-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 10px 10px;
+}
+
+:root[data-ui="r6"] .tut-card .tut-btns.row {
+  flex-direction: row;
+  padding: 0 12px 10px;
+}
+
+:root[data-ui="r6"] .tut-card .tut-btns .b {
+  width: 100%;
+  min-height: 44px;
+  font-size: 13px;
+}
+
+/* ✕'s 離開新手教學？ over everything but the strip. */
+:root[data-ui="r6"] #hud .tut-confirm {
+  position: absolute;
+  inset: 0;
+  z-index: 39;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: var(--safe-t) var(--safe-r) var(--safe-b) var(--safe-l);
+  background: rgba(10, 8, 6, 0.55);
+  pointer-events: auto;
+}
+
+:root[data-ui="r6"] .tut-confirm .dialog-card {
+  width: min(380px, calc(100vw - var(--safe-l) - var(--safe-r) - 24px));
+}
+
+/* 新手教學 on the start screen, under 開始. */
+:root:not([data-ui="r6"]) #tutorial-start {
+  display: none;
+}
+
+/* The result page hides the interface under it (stats.css): not the tutorial's last card (9e), at its left, the page beside it. */
+:root[data-ui="r6"] #hud:has(> .dialog.stats-page:not([hidden])) > .tut-card {
+  visibility: visible;
+}
+
+:root[data-ui="r6"] #hud:has(> .tut-card.side:not([hidden])) .stats-page .stats-card {
+  left: calc(var(--safe-l) + 180px);
+}
+
+/* Narrower beside it: 雙方數字 keeps the room its numbers need, 關鍵時刻 wraps. */
+:root[data-ui="r6"] #hud:has(> .tut-card.side:not([hidden])) .stats-page .st-two {
+  grid-template-columns: minmax(0, 230fr) minmax(0, 346fr);
+}
