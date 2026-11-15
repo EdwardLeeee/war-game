@@ -480,8 +480,8 @@ export class Hud {
         // result): the town waits for a choice as the player's would (tapping it still opens this);
         // nothing is sent, nothing said. The enemy's: said.
         if (ev.by !== me) this.game.toast("敵方攻下了一座城鎮");
-        // Only while it waits for one: 新手教學's town (R25, core's `town` event) comes governed at once.
-        else if (!this.game.measuring && this.townAwaits(ev.town)) this.openTownChoice(ev.town);
+        // Not when it is already governed or being repaired: 新手教學's town (R25, core's `town` event) comes governed at once.
+        else if (!this.game.measuring && !this.townPastChoice(ev.town)) this.openTownChoice(ev.town);
         break;
       case "town_plundered":
         this.game.toast(ev.by === me ? `搶完了：糧 ${ev.food}、金 ${ev.gold}${this.crystal ? `、魔晶 ${ev.crystal}` : ""}` : "敵方搶完了一座城鎮");
@@ -1162,12 +1162,14 @@ export class Hud {
    * cost come from the rules; without the cost, 治理 says what is missing in red and still works:
    * the soldiers stay and 治理 starts by itself once it is there (等錢治理, ceo 2026-10-21).
    */
-  /** Our town waits for 搶 or 治理 (its snapshot state). */
-  private townAwaits(town: number): boolean {
+  /** Our town is past 搶 or 治理: being repaired or governed (its snapshot state). */
+  private townPastChoice(town: number): boolean {
     const view = this.game.view;
     const t = view?.curr?.snap.towns;
     const row = view === null || view === undefined ? -1 : view.townRow(town);
-    return t !== undefined && row >= 0 && t[row + TownField.state] === TownState.AwaitingChoice && t[row + TownField.owner] === view?.me;
+    if (t === undefined || row < 0 || t[row + TownField.owner] !== view?.me) return false;
+    const state = t[row + TownField.state];
+    return state === TownState.Repairing || state === TownState.Governed;
   }
 
   openTownChoice(town: number): void {
@@ -1194,8 +1196,8 @@ export class Hud {
     el("span", govern, "", `${cost === null ? "投入金和木" : `投入 ${costText(cost)}，`}修繕 ${sec(rule?.repairTicks, big ? 60 : 45)} 秒，之後每分鐘產出、加人口；要留兵駐守`);
     const short = el("span", govern, "choice-short");
     const showShort = () => {
-      // Chosen elsewhere, or not waiting any more (governed at once, lost): no choice left to make.
-      if (!this.townAwaits(town)) {
+      // Governed or being repaired already (新手教學's town, or chosen elsewhere): no choice left to make.
+      if (this.townPastChoice(town)) {
         this.closeDialog();
         return;
       }

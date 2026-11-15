@@ -349,7 +349,8 @@ function keepGame(g: Game, why: KeepWhy): Promise<void> {
   // 新手教學 opened in a game (R25: 「這一局會存著，教學完…按『繼續上一局』就接得上」): kept however short, uploaded as away.
   if (over === null && ticks < MIN_ABANDONED_TICKS && why !== "leave") return Promise.resolve();
   const k = keptOf(g);
-  const upload = why !== "minute" && ticks >= MIN_ABANDONED_TICKS && (over !== null ? !k.ended : ticks > k.uploaded);
+  // A game over is sent however short; one still going from a minute on (a shorter one kept for 新手教學 is not sent).
+  const upload = why !== "minute" && (over !== null || ticks >= MIN_ABANDONED_TICKS) && (over !== null ? !k.ended : ticks > k.uploaded);
   const save = over === null && (why === "hidden" || why === "minute" || why === "leave") && ticks > k.saved;
   // Nothing new since the last time: no export, no write, no upload.
   if (!upload && !save) return k.job;

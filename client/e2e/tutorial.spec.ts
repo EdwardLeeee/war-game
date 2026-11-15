@@ -358,8 +358,14 @@ test("九步照做到打下對手主城（R25，真模擬）：蓋兵營、練�
   await expect.poll(async () => (await state(page))?.target ?? null).not.toBeNull();
   await tapTarget(page);
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.mode())).toBe("enter");
-  await inSight(page);
-  await tapTarget(page);
+  // The town's tag (進 N 名全進城): the guard order sent, else once more (as at the town, 8a).
+  const sentBefore = await page.evaluate(() => window.__proto?.game?.sent().length ?? 0);
+  const guarded = () => page.evaluate((n) => (window.__proto?.game?.sent() ?? []).slice(n).some((c) => (c as { c: string }).c === "guard"), sentBefore);
+  for (let k = 0; k < 3; k++) {
+    await inSight(page);
+    await tapTarget(page);
+    if (await expect.poll(guarded, { timeout: 3_000 }).toBe(true).then(() => true, () => false)) break;
+  }
   await done(page, 8, 60_000);
   // 9: core's siege works; two engines; everyone (全軍) to the computer's main city.
   await phase(page, "9a");
