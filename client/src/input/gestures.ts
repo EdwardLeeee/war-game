@@ -9,13 +9,19 @@
 //   - lifted before that without moving                  -> tap (count 2 if it follows a tap
 //     within DOUBLE_TAP_MS and DOUBLE_TAP_SLOP_PX; the first tap is reported at once)
 //   The times are the events' own: a page busy past LONG_PRESS_MS (a long frame) may start a box or
-//   the wheel before it reads a lift that came sooner; that lift then undoes it and taps.
+//   the wheel before it reads a lift that came sooner; that lift then undoes it and taps. So does a
+//   long press that did nothing (ignored: a building, an enemy under the finger).
 // Two fingers: pinch zoom with two-finger pan, from any state; a box in progress is cancelled.
 // After a pinch the remaining finger does nothing until every finger is up.
 
 import { DOUBLE_TAP_MS, DOUBLE_TAP_SLOP_PX, INERTIA_SAMPLE_MS, LONG_PRESS_MS, PRESS_CUE_DELAY_MS, TAP_SLOP_PX } from "../tuning.ts";
 
-export type LongPressResult = "box" | "wheel" | "none";
+/**
+ * What a long press became. none: the host did something with it itself (the minimap's move, 閒置's), so lifting the
+ * finger is no tap. ignored: nothing happened (a building or an enemy under the finger), so a lift that came before
+ * LONG_PRESS_MS by the events' own times (a busy page read it late) is still the tap it was.
+ */
+export type LongPressResult = "box" | "wheel" | "none" | "ignored";
 export type BoxPhase = "start" | "move" | "end" | "cancel";
 
 export interface GestureHost {
@@ -57,6 +63,8 @@ export class GestureRecognizer {
   private cue: { x: number; y: number } | null = null;
   /** This press may not become a tap (it stopped a fling). */
   private noTap = false;
+  /** The long press did nothing (ignored): an early lift taps. */
+  private heldIgnored = false;
   private samples: { x: number; y: number; t: number }[] = [];
   private lastTap: { x: number; y: number; t: number } | null = null;
   private pinchDist = 1;
@@ -147,6 +155,7 @@ export class GestureRecognizer {
         this.host.box(f.startX, f.startY, f.x, f.y, "start");
       } else {
         this.state = kind === "wheel" ? "wheel" : "held";
+        this.heldIgnored = kind === "ignored";
       }
     } else if (held >= PRESS_CUE_DELAY_MS && this.cue === null) {
       this.cue = { x: f.startX, y: f.startY };
@@ -162,10 +171,10 @@ export class GestureRecognizer {
     this.fingers.delete(id);
     // Up, by the events' own times, before the press was long (the page was late to read it: a
     // frame or the timer ran first, ceo 2026-11-06): the box or the wheel it began is undone, and it
-    // taps. Not "held": a host that acts on the long press itself (the minimap's move, 閒置's) has
-    // done it, and a tap on top would do a second thing.
+    // taps; so does a long press that did nothing (ignored). Not one the host acted on itself (none:
+    // the minimap's move, 閒置's): a tap on top would do a second thing.
     const early = !cancelled && t - f.startT < LONG_PRESS_MS && Math.hypot(x - f.startX, y - f.startY) <= TAP_SLOP_PX;
-    if (early && (this.state === "box" || this.state === "wheel")) {
+    if (early && (this.state === "box" || this.state === "wheel" || (this.state === "held" && this.heldIgnored))) {
       if (this.state === "box") this.host.box(f.startX, f.startY, x, y, "cancel");
       if (this.state === "wheel") this.host.closeWheel?.();
       this.state = "press";
