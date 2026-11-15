@@ -8,7 +8,7 @@
 //       last round are kept (candidates.json). Every plan of a cycle plays the same seeds, so they are compared on equal
 //       games; each job (--seed) has its own seeds.
 //   node src/ai/learn/exam.ts check --from DIR[,DIR...] --out DIR [--games 200] [--seed-from 6000001] [--top 12]
-//                                    [--shard K --shards N] [--cap 90] [--qualify 25]
+//                                    [--shard K --shards N] [--cap 90] [--qualify 25] [--least 20]
 //       The best plan of each kind across the searches (candidates.json under each DIR), the best `top` kinds, each
 //       `games` games on fresh seeds; examiners.json lists them, qualified with `qualify` percent wins or more.
 // Every mode writes summary.md (Markdown) and its files under --out; never commits.
@@ -132,15 +132,25 @@ async function search(): Promise<void> {
     // Every cycle its own seeds, so a plan is never kept for one set's luck alone.
     const base = seedBase + cycle * 200;
     let alive = pool;
+    let cut = false;
     for (let k = 0; k < rounds.length; k++) {
       games += await playUpTo(alive, rounds[k], base);
       alive.sort((a, b) => score(b) - score(a) || a.id.localeCompare(b.id));
-      if (k < rounds.length - 1) alive = alive.slice(0, Math.max(2, Math.ceil(alive.length / 3)));
+      if (k < rounds.length - 1) {
+        alive = alive.slice(0, Math.max(2, Math.ceil(alive.length / 3)));
+        // Out of time before the next round (a cycle of long games, ceo's job limit): those alive are kept as they are.
+        const per = hours() / Math.max(1, games);
+        if (hours() + per * alive.length * (rounds[k + 1] - rounds[k]) > H) {
+          cut = true;
+          break;
+        }
+      }
     }
     kept.push(...alive);
     const top = alive[0];
-    summary(`- 第 ${cycle + 1} 輪：${pool.length} 個打法，最好的 ${top.id} 贏 ${wins(top)}/${top.games.length}（${kind(top)}；${top.map}）；累計 ${games} 局、${hours().toFixed(2)} 小時`);
+    summary(`- 第 ${cycle + 1} 輪：${pool.length} 個打法，最好的 ${top.id} 贏 ${wins(top)}/${top.games.length}（${kind(top)}；${top.map}）；累計 ${games} 局、${hours().toFixed(2)} 小時${cut ? "（時間到，這輪沒打完）" : ""}`);
     writeFileSync(`${out}/candidates.json`, JSON.stringify({ seed, cap, rounds, games, hours: hours(), kept }, null, 0));
+    if (cut) break;
   }
   kept.sort((a, b) => score(b) - score(a));
   summary(`\n## 留下的打法（最後一輪 ${rounds[rounds.length - 1]} 局），依種類的第一名\n`);
@@ -179,7 +189,8 @@ async function check(): Promise<void> {
   const shards = Number(arg("shards", "1"));
   const qualify = Number(arg("qualify", "25"));
   const all: Cand[] = [];
-  for (const f of findCandidates(dirs)) all.push(...(JSON.parse(readFileSync(f, "utf8")).kept as Cand[]));
+  const least = Number(arg("least", "20"));
+  for (const f of findCandidates(dirs)) all.push(...(JSON.parse(readFileSync(f, "utf8")).kept as Cand[]).filter((c) => c.games.length >= least));
   // The best of each kind, by its search's win share (searches played different seeds: shares, not counts).
   const share = (c: Cand) => wins(c) / Math.max(1, c.games.length);
   const best = new Map<string, Cand>();
