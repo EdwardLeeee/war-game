@@ -1,7 +1,7 @@
 // The tutorial (R25; D-150, D-151; the user's boards in war-game-worktrees/ui/design/r25): scenario "tutorial", its own
 // 65 x 65 map (tutorial-data.ts, made by src/tutorial-freeze.ts), known whole as the fixed map is. Player 1 never thinks
 // (runner.ts): it has its main city and nothing else, and its soldiers come only when the screen asks ("near_home").
-// The screen moves the lesson on with `tutorial` commands (PROTOCOL.md 3.11), each putting the outcome of a step in the
+// The screen moves the lesson on with `tutorial` commands (PROTOCOL.md 3.12), each putting the outcome of a step in the
 // game: so a step can be skipped, and the soldiers step 7 needs come when it begins. They go into the game's log as
 // every command does, so a tutorial replays. Player 0 cannot lose: its main city keeps half its hp (units.ts).
 
@@ -195,15 +195,16 @@ function addBuilt(w: World, type: BuildingType, x: number, y: number): boolean {
 }
 
 /**
- * A `tutorial` command (R25; PROTOCOL.md 3.11): 0 if done, else why not. Player 0 in the tutorial's game only; "houses",
- * "spears", "town", "siege" and "engines" once a game, "near_home" not while its last squad lives.
+ * A `tutorial` command (R25; PROTOCOL.md 3.12): 0 if done, else why not. Player 0 in the tutorial's game only; "houses",
+ * "spears", "town", "siege" and "engines" once a game, "near_home" not while its last squad lives, "near_home_clear"
+ * only while it does.
  */
 export function tutorialEvent(ctx: CommandContext, p: number, event: TutorialEvent): number {
   const { w } = ctx;
   if (!isTutorial(w) || p !== 0) return Reject.NotAvailable;
   const bit = TUTORIAL_EVENTS.indexOf(event);
   if (bit < 0) return Reject.InvalidTarget;
-  const once = event !== "near_home";
+  const once = event !== "near_home" && event !== "near_home_clear";
   if (once && (w.tutorialUsed & (1 << bit)) !== 0) return Reject.NotAvailable;
   // Things of player 0's go up on its main city's side toward the map's middle (the map's anchors, tutorial-freeze.ts).
   const by = w.map.tutorial!.own;
@@ -236,6 +237,13 @@ export function tutorialEvent(ctx: CommandContext, p: number, event: TutorialEve
       for (let s = 0; s < w.buildings.count; s++) if (b.type[s] === BuildingType.Keep && b.town[s] === t && b.owner[s] !== 0) b.hp[s] = 0;
       addUnits(w, 0, UnitType.Spearman, TUTORIAL_RULES.townGuards, w.townX[t], w.townY[t] + 2);
       w.tutorialTown = t;
+      break;
+    }
+    case "near_home_clear": {
+      // Step 7 skipped (client): near_home's squad falls (the ordinary deaths, this tick).
+      const alive = w.tutorialSquad.filter((id) => w.unit(id) >= 0);
+      if (alive.length === 0) return Reject.NotAvailable;
+      for (const id of alive) w.units.col.hp[w.unit(id)] = 0;
       break;
     }
     case "near_home": {

@@ -594,17 +594,17 @@ export const Scenario = { Standard: 0, E2e: 1, Perf: 2, Perf200: 3, Perf360: 4, 
 export type Scenario = (typeof Scenario)[keyof typeof Scenario];
 /**
  * "tutorial" (R25, D-150): the tutorial's own 65 x 65 map (whatever `map` says), player 1 never thinks, `tutorial`
- * commands set the scene (PROTOCOL.md 3.11). A game of it is not saved nor uploaded (the screen's rule).
+ * commands set the scene (PROTOCOL.md 3.12). A game of it is not saved nor uploaded (the screen's rule).
  */
 export type ScenarioName = "standard" | "e2e" | "perf" | "perf200" | "perf360" | "wallshift" | "tutorial";
 
 /**
- * What a `tutorial` command puts in the tutorial's game (R25; PROTOCOL.md 3.11): "houses" a finished house and barracks
+ * What a `tutorial` command puts in the tutorial's game (R25; PROTOCOL.md 3.12): "houses" a finished house and barracks
  * by player 0's main city, "spears" 5 spearmen there, "town" the town governed by player 0, "near_home" a few of player
  * 1's spearmen sent at player 0's main city, "siege" a finished siege works and what 2 engines cost, "engines" 2 siege
- * engines by player 0's main city.
+ * engines by player 0's main city, "near_home_clear" near_home's squad gone (step 7 skipped).
  */
-export const TUTORIAL_EVENTS = ["houses", "spears", "town", "near_home", "siege", "engines"] as const;
+export const TUTORIAL_EVENTS = ["houses", "spears", "town", "near_home", "siege", "engines", "near_home_clear"] as const;
 export type TutorialEvent = (typeof TUTORIAL_EVENTS)[number];
 
 /**
