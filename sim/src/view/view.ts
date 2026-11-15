@@ -53,7 +53,7 @@ import type { Game } from "../core/game.ts";
 import type { GameMap } from "../core/map.ts";
 import { onWall } from "../core/units.ts";
 import { wallStretch, wayFrame, wayGates, wayGatesDown } from "../core/wall-walk.ts";
-import { BUILDINGS, CANNON, FARMLAND_REACH, MAGE_CAP, MAIN_CITY_REPAIR_LOCK, MARKET, OUTPOST, OUTPOST_HIDE, TOWER_REACH, TOWERS, UNITS } from "../core/rules.ts";
+import { BUILDINGS, CANNON, FARMLAND_REACH, MAGE_CAP, MAIN_CITY_REPAIR_LOCK, MARKET, OUTPOST, OUTPOST_HIDE, TOWER_REACH, TOWERS, trainTicksOn } from "../core/rules.ts";
 
 export interface PlayerView {
   /** The viewing player, or null for a spectator. */
@@ -297,7 +297,7 @@ export function buildView(game: Game, player: number | null, info?: RunnerInfo):
       for (let k = 0; k < b.queueLength[s]; k++) packed |= (q[k] & 15) << (4 * k);
       row[BuildingField.queueLength] = b.queueLength[s];
       row[BuildingField.queuePacked] = packed;
-      const head = b.queueLength[s] > 0 ? UNITS[b.q0[s]].trainTicks : 0;
+      const head = b.queueLength[s] > 0 ? trainTicksOn(w.map, b.q0[s]) : 0;
       row[BuildingField.queueProgress] = head > 0 ? Math.trunc((b.queueTicks[s] * 1000) / head) : 0;
       row[BuildingField.rallyX] = b.rallyX[s];
       row[BuildingField.rallyY] = b.rallyY[s];

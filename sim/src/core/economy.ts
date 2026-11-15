@@ -40,6 +40,7 @@ import {
   MAIN_CITY_REPAIR_LOCK,
   NEXT_NODE_RADIUS,
   REPAIR_PER_SECOND,
+  trainTicksOn,
   UNITS,
   WORK_REACH,
 } from "./rules.ts";
@@ -986,8 +987,9 @@ export class Economy {
       const p = b.owner[s];
       const type = b.q0[s] as UnitType;
       const info = UNITS[type];
-      if (b.queueTicks[s] < info.trainTicks) b.queueTicks[s]++;
-      if (b.queueTicks[s] < info.trainTicks || pop[p] + info.population > cap[p]) continue;
+      const ticks = trainTicksOn(w.map, type);
+      if (b.queueTicks[s] < ticks) b.queueTicks[s]++;
+      if (b.queueTicks[s] < ticks || pop[p] + info.population > cap[p]) continue;
       this.spawn(w, s, type);
       pop[p] += info.population;
       shiftQueue(w, s, 0);

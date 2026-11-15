@@ -56,6 +56,9 @@ test("the tutorial's map and start: 65 x 65, known whole, one town with 3 militi
   assert.equal(rules(w.map).towns[0].militia, 3);
   assert.equal(rules(w.map).towns[0].repairTicks, 10 * 20);
   assert.equal(rules().towns[0].repairTicks, 45 * 20, "a game's as before");
+  assert.equal(rules(w.map).units[UnitType.Siege].trainTicks, 15 * 20, "a siege engine in 15 s (ceo 2026-11-15)");
+  assert.equal(rules().units[UnitType.Siege].trainTicks, 40 * 20, "a game's as before");
+  assert.equal(rules(w.map).units[UnitType.Spearman].trainTicks, rules().units[UnitType.Spearman].trainTicks);
   assert.equal(owned(r, 0, UnitType.Farmer).length, 5);
   assert.equal(owned(r, 1, UnitType.Farmer).length, 0);
   const u = w.units.col;
@@ -173,7 +176,9 @@ test("the nine steps with plain commands: the army out at the rally point when s
   // Step 9: the siege works given, 2 engines trained, the enemy's main city taken.
   assert.equal(cmd({ c: "tutorial", event: "siege" }), 0);
   assert.equal(cmd({ c: "train", building: b.id[buildingOf(r, 0, BuildingType.SiegeWorks)], type: UnitType.Siege, n: 2 }), 0);
+  const trainFrom = w.tick;
   while (owned(r, 0, UnitType.Siege).length < 2) step(20);
+  assert.ok(w.tick - trainFrom <= 32 * 20, `2 engines in ${(w.tick - trainFrom) / 20} s`);
   cmd({ c: "attack", u: [...owned(r, 0, UnitType.Siege), ...alive()], target: b.id[buildingOf(r, 1, BuildingType.MainCity)] });
   step(6 * MIN);
   assert.ok(w.over && w.winner === 0, "won");
