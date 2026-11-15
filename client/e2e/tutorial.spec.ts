@@ -7,7 +7,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import type { GameRecord } from "../../services/game-logs/src/record.ts";
 import { injectSafeArea, watchErrors } from "./helpers.ts";
-import { drag, pinch } from "./touch.ts";
+import { drag, longPress, pinch } from "./touch.ts";
 
 const LOGS = "https://game-logs.test/logs";
 const state = (page: Page) => page.evaluate(() => window.__proto?.tutorial() ?? null);
@@ -213,4 +213,133 @@ test("對局中從設定開新手教學（R25）：先問；這一局存著（�
   await resume.tap();
   await page.waitForFunction(() => window.__proto?.ready === true && window.__proto.screen === "battle", null, { timeout: 60_000 });
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().tick ?? 0)).toBe(kept?.tick);
+});
+
+/** The step's phase, after it changed (at most `ms`). */
+async function phase(page: Page, id: string, ms = 60_000): Promise<void> {
+  await expect.poll(async () => (await state(page))?.phase, { timeout: ms }).toBe(id);
+}
+
+/** Its target on the screen: 帶我去看 first when it is off it. */
+async function inSight(page: Page): Promise<void> {
+  const go = page.locator(".tut-card").getByRole("button", { name: "帶我去看" });
+  if (await go.isVisible()) {
+    await go.tap();
+    await page.waitForTimeout(300);
+  }
+}
+
+/** A step done by hand, then the next one by itself. */
+async function done(page: Page, step: number, ms = 90_000): Promise<void> {
+  await expect.poll(async () => {
+    const s = await state(page);
+    return s === null ? -1 : s.finished ? 99 : s.step;
+  }, { timeout: ms }).toBeGreaterThan(step);
+}
+
+test("九步照做到打下對手主城（R25，真模擬）：蓋兵營、練兵、拉框選兵走到集合點、編軍團、守家、打小鎮治理進駐、練砲打主城，最後是教學完成", async ({ page }) => {
+  test.setTimeout(900_000);
+  const check = watchErrors(page);
+  await open(page, "&tps=100");
+  await startTutorial(page);
+  for (let s = 1; s <= 2; s++) await skip(page);
+  // 3 蓋兵營: 建造, 兵營, a good spot, ✓; the card away while the game's prompt says it; then built.
+  await phase(page, "3a");
+  await tapTarget(page);
+  await phase(page, "3b");
+  await tapTarget(page);
+  await phase(page, "3c");
+  await expect(page.locator(".tut-card")).toBeHidden();
+  const spot = await page.evaluate(() => {
+    const g = window.__proto?.game;
+    const home = g?.buildings().find((b) => b.owner === g.me() && b.type === 0);
+    const c = g?.buildSpotNear(6, (home?.cx ?? 16) + 6, (home?.cy ?? 18) + 4) ?? null;
+    return c === null ? null : g?.cellToScreen(c.x + 1, c.y + 1) ?? null;
+  });
+  if (spot === null) throw new Error("no spot for the barracks");
+  await page.touchscreen.tap(spot.x, spot.y);
+  await tapTarget(page);
+  await phase(page, "3d");
+  await done(page, 3);
+  // 4 練兵: the barracks, then 訓練槍兵 five times; trained.
+  await phase(page, "4a");
+  await tapTarget(page);
+  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.selection().building ?? null)) !== null).toBe(true);
+  for (let i = 0; i < 5; i++) await tapTarget(page);
+  await phase(page, "4b");
+  await done(page, 4, 180_000);
+  // 5 選兵和移動: a box round them, then the glowing spot; there.
+  await phase(page, "5a");
+  await expect.poll(async () => (await state(page))?.target ?? null).not.toBeNull();
+  const box = (await state(page))?.target?.box;
+  if (box == null) throw new Error("no box");
+  // From a corner on open ground (nothing to pick there) to the one across.
+  const corners = [
+    [{ x: box.x + 6, y: box.y + 6 }, { x: box.x + box.w - 6, y: box.y + box.h - 6 }],
+    [{ x: box.x + box.w - 6, y: box.y + box.h - 6 }, { x: box.x + 6, y: box.y + 6 }],
+    [{ x: box.x + box.w - 6, y: box.y + 6 }, { x: box.x + 6, y: box.y + box.h - 6 }],
+    [{ x: box.x + 6, y: box.y + box.h - 6 }, { x: box.x + box.w - 6, y: box.y + 6 }],
+  ];
+  let from = corners[0];
+  for (const c of corners) if ((await page.evaluate(([x, y]) => window.__proto?.game?.pickAt(x, y) ?? null, [c[0].x, c[0].y] as const)) === null) {
+    from = c;
+    break;
+  }
+  await longPress(page, from[0], from[1]);
+  await phase(page, "5b");
+  await tapTarget(page);
+  await done(page, 5, 120_000);
+  // 6 編軍團: 1, then 改成剛才選的 (its title line only over 軍團畫面).
+  await phase(page, "6a");
+  await tapTarget(page);
+  await phase(page, "6b");
+  await expect.poll(async () => (await state(page))?.place).toBe("slim");
+  await tapTarget(page);
+  await done(page, 6);
+  // 7 守家: near_home's squad; 全軍撤退, then at them.
+  await phase(page, "7a");
+  expect(await sentTutorial(page)).toContain("near_home");
+  await tapTarget(page);
+  await phase(page, "7b", 120_000);
+  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.units() ?? [])).filter((u) => u.owner === 1).length, { timeout: 60_000 }).toBeGreaterThan(0);
+  await expect.poll(async () => {
+    await inSight(page);
+    return (await state(page))?.target ?? null;
+  }, { timeout: 60_000 }).not.toBeNull();
+  await tapTarget(page);
+  await done(page, 7, 180_000);
+  // 8 打城鎮: to the town (帶我去看), at it; 治理 with the card at the left; repaired; 進駐.
+  await phase(page, "8a");
+  await inSight(page);
+  await tapTarget(page);
+  await phase(page, "8b", 180_000);
+  await expect.poll(async () => (await state(page))?.place).toBe("side");
+  await tapTarget(page);
+  await phase(page, "8c");
+  await phase(page, "8d", 60_000);
+  await expect.poll(async () => (await state(page))?.target ?? null).not.toBeNull();
+  await tapTarget(page);
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.mode())).toBe("enter");
+  await inSight(page);
+  await tapTarget(page);
+  await done(page, 8, 60_000);
+  // 9: core's siege works; two engines; everyone (全軍) to the computer's main city.
+  await phase(page, "9a");
+  await expect.poll(async () => (await state(page))?.target ?? null, { timeout: 30_000 }).not.toBeNull();
+  await tapTarget(page);
+  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.selection().building ?? null)) !== null).toBe(true);
+  for (let i = 0; i < 2; i++) await tapTarget(page);
+  await phase(page, "9c", 120_000);
+  await page.locator(".army-btn").tap();
+  await inSight(page);
+  await tapTarget(page);
+  await expect.poll(async () => (await state(page))?.finished, { timeout: 300_000 }).toBe(true);
+  await expect(page.locator(".tut-card")).toContainText("教學完成！");
+  // At the left of the result (R25 9e), its two buttons there.
+  await expect.poll(async () => (await state(page))?.place).toBe("side");
+  await expect(page.locator(".tut-card").getByRole("button", { name: "開始第一局" })).toBeVisible();
+  const [card, result] = await Promise.all([page.locator(".tut-card").boundingBox(), page.locator(".stats-card").boundingBox()]);
+  expect((card?.x ?? 0) + (card?.width ?? 0), "the card left of the result").toBeLessThanOrEqual(result?.x ?? 0);
+  await page.screenshot({ path: test.info().outputPath("tutorial-9e.png") });
+  check();
 });

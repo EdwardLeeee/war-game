@@ -432,10 +432,11 @@ export class Tutor implements TutorHooks {
     if ("units" in spec) {
       const pts = spec.units.map((u) => this.w.spot(u.x, u.y, 0.5)).filter((s): s is Spot => s !== null);
       if (pts.length === 0) return null;
-      const x0 = Math.min(...pts.map((p) => p.cx)) - 26;
-      const y0 = Math.min(...pts.map((p) => p.cy)) - 40;
-      const x1 = Math.max(...pts.map((p) => p.cx)) + 26;
-      const y1 = Math.max(...pts.map((p) => p.cy)) + 16;
+      // Room round them to start a box on open ground.
+      const x0 = Math.min(...pts.map((p) => p.cx)) - 44;
+      const y0 = Math.min(...pts.map((p) => p.cy)) - 56;
+      const x1 = Math.max(...pts.map((p) => p.cx)) + 44;
+      const y1 = Math.max(...pts.map((p) => p.cy)) + 30;
       return { box: { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, round: false };
     }
     const s = this.w.spot(spec.cell.x, spec.cell.y, spec.cell.r);

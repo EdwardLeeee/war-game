@@ -277,6 +277,8 @@ export const PHASES: readonly Phase[] = [
     step: 5,
     title: "選兵和移動",
     body: () => "在空地上<b>長按</b>一下，拖出框把兵框起來。",
+    // From nothing selected: the barracks' panel (step 4) would cover them.
+    enter: (c) => c.game.apply([{ kind: "clear" }]),
     target: (c) => ({ units: soldiersToBox(c) }),
     block: false,
     gesture: "press-box",

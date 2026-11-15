@@ -2585,3 +2585,17 @@
 :root:not([data-ui="r6"]) #tutorial-start {
   display: none;
 }
+
+/* The result page hides the interface under it (stats.css): not the tutorial's last card (9e), at its left, the page beside it. */
+:root[data-ui="r6"] #hud:has(> .dialog.stats-page:not([hidden])) > .tut-card {
+  visibility: visible;
+}
+
+:root[data-ui="r6"] #hud:has(> .tut-card.side:not([hidden])) .stats-page .stats-card {
+  left: calc(var(--safe-l) + 180px);
+}
+
+/* Narrower beside it: 雙方數字 keeps the room its numbers need, 關鍵時刻 wraps. */
+:root[data-ui="r6"] #hud:has(> .tut-card.side:not([hidden])) .stats-page .st-two {
+  grid-template-columns: minmax(0, 230fr) minmax(0, 346fr);
+}
