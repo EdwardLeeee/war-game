@@ -1,0 +1,88 @@
+{
+ "tag": "art-v7.11",
+ "view": "diamond",
+ "note": "art-v7.10 改倒下和幾個小項（R19 的第 8–11、13–15 項；使用者 2026-11-11 核准 R22、選了 R23）：倒下一開始兩臂不再平舉成 T 字（步兵、法師、東陸攻城砲的拽手）；倒地後腰刀貼著大腿（槍兵、騎兵）；遠程兵待機、走路時右臂自然垂下並擺動；法師護盾的碎片改成護盾的淡青色；西陸農民加玩家色圍裙；東陸法師手前的法陣換成八卦，領子和袖口加玩家色。每個動作的格數、每秒幾格、打中那一格不變。units/ 裡除了 siege_w 都變，其他和 art-v7.10 一樣。",
+ "units": {
+  "farmer_e": {
+   "run": 42958870709,
+   "artifact": "r7-v8u-farmer_e"
+  },
+  "spear_e": {
+   "run": 42958870709,
+   "artifact": "r7-v8u-spear_e"
+  },
+  "bow_e": {
+   "run": 42958870709,
+   "artifact": "r7-v8u-bow_e"
+  },
+  "hcav_e": {
+   "run": 42958870709,
+   "artifact": "r7-v8u-hcav_e"
+  },
+  "siege_e": {
+   "run": 42958870709,
+   "artifact": "r7-v8u-siege_e"
+  },
+  "mage_e": {
+   "run": 42958870709,
+   "artifact": "r7-v8u-mage_e"
+  },
+  "farmer_w": {
+   "run": 42958870709,
+   "artifact": "r7-v8u-farmer_w"
+  },
+  "pike_w": {
+   "run": 42958870709,
+   "artifact": "r7-v8u-pike_w"
+  },
+  "bow_w": {
+   "run": 42958870709,
+   "artifact": "r7-v8u-bow_w"
+  },
+  "knight_w": {
+   "run": 42958870709,
+   "artifact": "r7-v8u-knight_w"
+  },
+  "siege_w": {
+   "run": 42913238310,
+   "artifact": "r7-v8u-siege_w"
+  },
+  "mage_w": {
+   "run": 42958870709,
+   "artifact": "r7-v8u-mage_w"
+  }
+ },
+ "effects": {
+  "run": 42057471775,
+  "artifact": "production-effects-atlas"
+ },
+ "buildings": {
+  "run": 42088643559,
+  "artifact": "production-buildings"
+ },
+ "castle_src": {
+  "run": 42226591262,
+  "artifact": "production-buildings"
+ },
+ "buildings_json_src": {
+  "run": 42226591262,
+  "artifact": "production-buildings"
+ },
+ "ground_src": {
+  "run": 42392868785,
+  "artifact": "production-buildings"
+ },
+ "nodes_src": {
+  "run": 42766967447,
+  "artifact": "production-buildings"
+ },
+ "edge_json_src": {
+  "run": 42766967447,
+  "artifact": "production-buildings"
+ },
+ "castle": true,
+ "terrain": true,
+ "ground": true,
+ "edge": true,
+ "astc": true
+}

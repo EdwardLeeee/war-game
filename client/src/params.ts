@@ -86,7 +86,10 @@ export interface PageParams {
   gallery: "units" | "buildings" | null;
   /** `?test=1&view=diamond|oblique|top`: how the ground lies instead of the default (camera/projection.ts; D-088). */
   view: "diamond" | "oblique" | "top" | null;
-  /** `?test=1&ui=r6|proto`: 正式介面 (R6) on or off instead of its default (ui/formal.ts). */
+  /**
+   * `?ui=r6|proto`: 正式介面 (R6) on or off instead of its default (ui/formal.ts). Any page, not only test ones (R24-01, ceo
+   * 2026-11-15): the player can play a real game in it, its log sent and its save kept as always.
+   */
   ui: "r6" | "proto" | null;
   /**
    * `?test=1&loadtimes=1`: where starting a game spends its time (D-091: download, decode, the
@@ -155,7 +158,7 @@ export function parseParams(search: string): PageParams {
   const view = test && (v === "diamond" || v === "oblique" || v === "top") ? v : null;
   const ghost = test && q.get("ghost") === "outline" ? "outline" : null;
   const u = q.get("ui");
-  const ui = test && (u === "r6" || u === "proto") ? u : null;
+  const ui = u === "r6" || u === "proto" ? u : null;
   const t = q.get("tex");
   const tex = t === "png" || t === "astc" ? t : null;
   const measure = artVariant(q.get("measure"))?.id ?? null;

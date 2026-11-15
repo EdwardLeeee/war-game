@@ -41,7 +41,13 @@ test("test=1 turns on the hook and allows a faster tick rate and the fake world"
   assert.equal(parseParams("?test=1&view=oblique").view, "oblique");
   assert.equal(parseParams("?view=oblique").view, null, "test pages only");
   assert.equal(parseParams("?test=1&ui=r6").ui, "r6");
-  assert.equal(parseParams("?ui=r6").ui, null, "test pages only");
+  // Any page (R24-01): a real game in 正式介面, its log sent (not a test page: logs, hint, ground as always).
+  assert.equal(parseParams("?ui=r6").ui, "r6");
+  assert.equal(parseParams("?ui=proto").ui, "proto");
+  assert.equal(parseParams("?ui=r7").ui, null);
+  assert.equal(parseParams("?ui=r6").test, false);
+  assert.equal(parseParams("?ui=r6").hint, true);
+  assert.equal(parseParams("?ui=r6").ground, "real");
   assert.equal(parseParams("?test=1&loadtimes=1").loadTimes, true);
   assert.equal(parseParams("?loadtimes=1").loadTimes, false, "test pages only");
   assert.equal(parseParams("?test=1&ground=real").ground, "real");

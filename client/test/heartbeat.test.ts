@@ -58,7 +58,7 @@ test("心跳：切到背景、回開局畫面或對局結束就不算意外結�
   assert.equal(none.takeCrash(), null);
 });
 
-test("紀錄：帶著用的美術（x3、x2、off）和上一次意外結束的線索；收紀錄的 Worker 照樣收", () => {
+test("紀錄：帶著用的美術（x3、x2、off）、介面（r6、proto）和上一次意外結束的線索；收紀錄的 Worker 照樣收", () => {
   const base = { id: "00000000-0000-4000-8000-000000000001", code: "ab12cd34", commit: "f4348fa", protocol: 1, scenario: "standard", difficulty: "hard", end: { result: "win" as const, reason: "main_city", ticks: 93007 }, lastHash: { tick: 93000, hash: "591e8f1a" }, log: '{"protocol":1,"seed":1,"scenario":"standard","ai":[false,true]}\n' };
   const note = crashOf({ v: 1, state: "playing", at: 5_000, ...BEAT });
   const r = makeRecord({ ...base, art: "x3", crash: note });
@@ -68,4 +68,11 @@ test("紀錄：帶著用的美術（x3、x2、off）和上一次意外結束的�
   const plain = makeRecord({ ...base, art: "x2", crash: null });
   assert.equal(plain.art, "x2");
   assert.equal("crash" in plain, false, "no note: no field");
+  // 介面 (R24-01): 正式介面 or 原型.
+  for (const ui of ["r6", "proto"] as const) {
+    const r6 = makeRecord({ ...base, ui });
+    assert.equal(r6.ui, ui);
+    assert.equal(typeof checkRecord(r6), "object", "the Worker takes it");
+  }
+  assert.equal("ui" in plain, false);
 });

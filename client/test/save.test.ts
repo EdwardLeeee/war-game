@@ -135,7 +135,7 @@ test("開局畫面和快轉的字；能不能接著打看模擬（protocol 和 b
   assert.equal(screenUsable(saved({ screenVersion: SCREEN_VERSION + 1 })), false);
   // Two kinds of words (ceo 2026-10-17).
   assert.equal(failureText("protocol", 0), UPDATED_TEXT);
-  assert.equal(failureText("build", 0), "網站已經更新，這一局不能繼續");
+  assert.equal(failureText("build", 0), "網站已經更新，這一局不能繼續，請開新局");
   for (const reason of ["log", "commands", "hash"] as const) assert.equal(failureText(reason, 15_000), "紀錄對不上（第 12 分），這一局不能繼續");
 });
 

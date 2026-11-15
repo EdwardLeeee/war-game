@@ -306,23 +306,21 @@ def dress_farmer(u):
     return u
 
 
-# R23 (D-142, R19's item 14: the circle before the East mage's hand is the West's, a hexagram in rings): options for
-# the user. D-018 put a circle before his hand; only its figure changes. R23_SIGIL=A: the eight trigrams between
-# the rings (Tang mirrors cast with them: Cleveland Museum of Art 1995.351, mid to late 700s, 「中列八卦，備著陰陽」;
-# Kyoto National Museum 日月貞明八卦鏡; Saint Louis Art Museum, 8th-9th century), in the later-heaven order. B: the
-# Northern Dipper, its seven stars joined (a Tang Taoist mirror with the Dipper and Polaris drawn in its field:
-# Early China, "A Tang Taoist Mirror"). Unset: the hexagram. The taiji (yin-yang) figure is Song and later: not used.
+# R23 (D-142, R19's item 14: the circle before the East mage's hand was the West's, a hexagram in rings). D-018 put
+# a circle before his hand; only its figure changes. The user chose A (2026-11-11): the eight trigrams between the
+# rings (Tang mirrors cast with them: Cleveland Museum of Art 1995.351, mid to late 700s, 「中列八卦，備著陰陽」;
+# Kyoto National Museum 日月貞明八卦鏡; Saint Louis Art Museum, 8th-9th century), in the later-heaven order. Not B,
+# the Northern Dipper. The taiji (yin-yang) figure is Song and later: not used. From art-v7.11; R23_SIGIL=0: the
+# hexagram.
 TRIGRAMS = ("101", "000", "110", "111", "010", "001", "100", "011")       # 離 坤 兌 乾 坎 艮 震 巽, inner line first
-DIPPER = [(-0.27, 0.10), (-0.17, 0.17), (-0.07, 0.12), (0.03, 0.06), (0.05, -0.08), (0.20, -0.11), (0.23, 0.05)]
 
 
 def _sigil_r23(kind):
-    opt = os.environ.get("R23_SIGIL", "")
     spin = bpy.data.objects.get("fx_sigil_spin")
-    if opt not in ("A", "B") or spin is None:
+    if os.environ.get("R23_SIGIL") == "0" or spin is None:
         return
     sm = bpy.data.materials["fx_sigil"]
-    gone = [f"fx_hex{k}" for k in range(6)] + (["fx_ring1"] if opt == "A" else ["fx_ring2"])
+    gone = [f"fx_hex{k}" for k in range(6)] + ["fx_ring1"]
     for name in gone:
         ob = bpy.data.objects.get(name)
         if ob is not None:
@@ -330,22 +328,15 @@ def _sigil_r23(kind):
             for parts in (lib.ALL_PARTS, lib.FX_PARTS):
                 if ob in parts:
                     parts.remove(ob)
-    if opt == "A":                         # the figure in the XZ plane (lib.ring: it faces +Y)
-        for k, bits in enumerate(TRIGRAMS):
-            a = math.pi / 2 - 2 * math.pi * k / 8
-            rad, tan = (math.cos(a), math.sin(a)), (-math.sin(a), math.cos(a))
-            for line, bit in enumerate(bits):
-                rr = 0.255 + 0.045 * line
-                for s0, s1 in ([(-0.062, 0.062)] if bit == "1" else [(-0.062, -0.014), (0.014, 0.062)]):
-                    p0 = (rad[0] * rr + tan[0] * s0, 0, rad[1] * rr + tan[1] * s0)
-                    p1 = (rad[0] * rr + tan[0] * s1, 0, rad[1] * rr + tan[1] * s1)
-                    rod(f"fx_gua{k}_{line}_{int(s0 * 1000)}", p0, p1, 0.009, sm, parent=spin, fx=True, segs=6)
-    else:
-        for k, (x, z) in enumerate(DIPPER):
-            cyl(f"fx_star{k}", 0.03, 0.006, sm, spin, loc=(x, -0.003, z), rot=(-90, 0, 0), fx=True, segs=12)
-            if k:
-                x0, z0 = DIPPER[k - 1]
-                rod(f"fx_starline{k}", (x0, 0, z0), (x, 0, z), 0.006, sm, parent=spin, fx=True, segs=6)
+    for k, bits in enumerate(TRIGRAMS):          # the figure in the XZ plane (lib.ring: it faces +Y)
+        a = math.pi / 2 - 2 * math.pi * k / 8
+        rad, tan = (math.cos(a), math.sin(a)), (-math.sin(a), math.cos(a))
+        for line, bit in enumerate(bits):
+            rr = 0.255 + 0.045 * line
+            for s0, s1 in ([(-0.062, 0.062)] if bit == "1" else [(-0.062, -0.014), (0.014, 0.062)]):
+                p0 = (rad[0] * rr + tan[0] * s0, 0, rad[1] * rr + tan[1] * s0)
+                p1 = (rad[0] * rr + tan[0] * s1, 0, rad[1] * rr + tan[1] * s1)
+                rod(f"fx_gua{k}_{line}_{int(s0 * 1000)}", p0, p1, 0.009, sm, parent=spin, fx=True, segs=6)
 
 
 def dress_mage(u):
@@ -374,12 +365,11 @@ def dress_mage(u):
     pts = [(0.11, 0.215, 0.55), (0.115, 0.19, 0.8), (0.12, 0.17, 1.05), (0.125, 0.163, 1.3), (0.125, 0.07, 1.5),
            (0.1, -0.09, 1.49), (0.0, -0.155, 1.44)]
     path = pts + [(-x, y, z) for x, y, z in reversed(pts[:-1])]
+    mage4.ribbon(f"{kind}_r8pei", path, 0.12, M["team"], r, tb + lg)
     # R23 (D-142, R19's item 15: the player's colour only the 帔's two strips, 2 pt each on the phone, inside the
-    # shield): options for the user. R23_MAGE_E=A: the 帔 nearly twice as wide; B: the 帔 as it is, and the robe's
-    # collar and the cuffs of its wide sleeves in the player's colour too. Unset: as he is.
-    opt = os.environ.get("R23_MAGE_E", "")
-    mage4.ribbon(f"{kind}_r8pei", path, 0.22 if opt == "A" else 0.12, M["team"], r, tb + lg)
-    if opt == "B":
+    # shield). The user chose B (2026-11-11): the 帔 as it is, and the robe's collar and the cuffs of its wide sleeves
+    # in the player's colour too (not A, the 帔 nearly twice as wide). From art-v7.11; R23_MAGE_E=0: without them.
+    if os.environ.get("R23_MAGE_E") != "0":
         h2.skinned_lathe(f"{kind}_r23collar", [(0.098, 1.43), (0.106, 1.47), (0.094, 1.515)], M["team"], r, tb,
                          scale=(1, 0.92, 1))
         for side in "RL":                  # a band 20 cm deep round the sleeve's mouth (mage4._wide_sleeves' cuff is 9)

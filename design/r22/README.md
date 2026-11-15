@@ -5,14 +5,14 @@
 - **第 8 項**：倒下一開始兩三格兩臂向兩側平舉成 T 字。這個倒下是 P2-03 核准過的（D-029），步兵和法師共用同一組關鍵格（`anims.FALL_KEYS`）。只改第一個關鍵格（後仰那一下）的手臂：右臂彎起來抬到胸前，左臂垂在身側。時間和落地那一格不變。
 - **第 9 項**：倒地後腰上的刀還照站著的角度固定在腰上（槍兵仰躺：插進地裡；騎兵趴著：朝天豎著）。倒下的 35%–70% 之間把刀鞘轉到貼著大腿（`anims._lay_swords`，`SWORD_LIES`）。有腰刀的是槍兵東陸、槍兵西陸、騎兵東陸、騎兵西陸。
 
-**使用者 2026-11-11 核准**（「可以，照改後的做」）。程式在 `design/production/blender/anims.py`，現在還是 **`R22=1` 才打開**：照計畫等第 4 批（R23）的選項定了，一起把預設改成開、一起算圖、一起發 art-v7.11（兩批動到的兵種重疊，每個兵種只算一次）。東陸攻城砲的拽手也用這組倒下的動作，所以那台也要重算。
+**使用者 2026-11-11 核准**（「可以，照改後的做」）。程式在 `design/production/blender/anims.py`，從 art-v7.11 起預設打開；`R22=0` 畫回 art-v7.10 的倒下，用來做改前的圖。東陸攻城砲的拽手也用這組倒下的動作。
 
 ## 稿（`build/out/`，不在 repo）
 
 ```bash
-bash design/r22/build/run_drafts.sh      # 本機草稿（改後，R22=1；不在 repo）：下面這種指令，六個兵種
-R22=1 R21_SS=2 R21_SAMPLES=48 python3 design/r21/common/render_r21.py spear_e design/r22/build/draft/spear_e_new sN death:0-9:7 death:1,2,9:6 death:9:0
-R22=1 R21_FRAME=9,7,0.5,0.6 R21_SS=2 R21_SAMPLES=48 python3 design/r21/common/render_r21.py hcav_e design/r22/build/draft/hcav_e_new hN death:0-9:7 death:9:0,1
+bash design/r22/build/run_drafts.sh      # 本機草稿（改後；不在 repo；當時要設 R22=1，現在是預設）：下面這種指令，六個兵種
+R21_SS=2 R21_SAMPLES=48 python3 design/r21/common/render_r21.py spear_e design/r22/build/draft/spear_e_new sN death:0-9:7 death:1,2,9:6 death:9:0
+R21_FRAME=9,7,0.5,0.6 R21_SS=2 R21_SAMPLES=48 python3 design/r21/common/render_r21.py hcav_e design/r22/build/draft/hcav_e_new hN death:0-9:7 death:9:0,1
 python3 design/r22/common/boards_r22.py design/r22/build/draft ART_X3 design/r22/build/out      # ART_X3：已發布的 art-v7.9 的 x3
 ```
 

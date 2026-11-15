@@ -172,7 +172,7 @@ test("網站已經更新（模擬的 build 不同）：「繼續上一局」變�
   const resume = page.getByRole("button", { name: /^繼續上一局/ });
   await expect(resume).toBeVisible();
   await expect(resume).toBeDisabled();
-  await expect(page.locator("#continue-note")).toHaveText("網站已經更新，這一局不能繼續");
+  await expect(page.locator("#continue-note")).toHaveText("網站已經更新，這一局不能繼續，請開新局");
   await expect(page.locator("#start-game")).not.toHaveClass(/secondary/);
   await shot(page, info, "d083-continue-blocked");
   await page.getByRole("button", { name: "開始" }).tap();
