@@ -113,6 +113,11 @@ test("the events: each step's outcome; the once-only ones once; near_home not wh
   assert.equal(cmd({ c: "tutorial", event: "near_home" }), 0);
   assert.equal(owned(r, 1, UnitType.Spearman).length, 4);
   assert.equal(cmd({ c: "tutorial", event: "near_home" }), Reject.NotAvailable);
+  // Step 7 skipped: the squad falls; then nothing to clear, and a new squad may come.
+  assert.equal(cmd({ c: "tutorial", event: "near_home_clear" }), 0);
+  assert.equal(owned(r, 1, UnitType.Spearman).length, 0);
+  assert.equal(cmd({ c: "tutorial", event: "near_home_clear" }), Reject.NotAvailable);
+  assert.equal(cmd({ c: "tutorial", event: "near_home" }), 0);
 });
 
 test("the nine steps with plain commands: the army out at the rally point when step 7's squad comes, a win in time, no farmer lost", () => {

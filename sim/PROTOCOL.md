@@ -243,7 +243,7 @@
 | `outpost_mode` | `building`、`hold` | 哨所切換攻擊（`hold` false）或堅守（true），見 3.4。D-080 預設攻擊；D-119（`features.outpostHide`）起新蓋的哨所預設堅守 | D-080 |
 | `trade` | `resource`、`buy`、`lots` | 在自己的市場買賣糧或木（D-101，3.11）。拒絕：`NotAvailable`（市場關著）、`NoMarket`、`CannotAfford`、`InvalidTarget` | D-101 |
 | `surrender` | — | 投降 | PR-4 |
-| `tutorial` | `event` | 新手教學放進某一步的結果（`houses`、`spears`、`town`、`near_home`、`siege`、`engines`，3.12）。只收玩家 0、只在 `tutorial` 場景。拒絕：`NotAvailable`（不是教學、不是玩家 0、只能一次的用過了、上一隊還活著）、`BadPlacement` | R25 |
+| `tutorial` | `event` | 新手教學放進某一步的結果（`houses`、`spears`、`town`、`near_home`、`near_home_clear`、`siege`、`engines`，3.12）。只收玩家 0、只在 `tutorial` 場景。拒絕：`NotAvailable`（不是教學、不是玩家 0、只能一次的用過了、上一隊還活著）、`BadPlacement` | R25 |
 
 ### 3.1 經濟指令的細節（PR-3）
 
@@ -707,10 +707,11 @@ D-096 起城門會關、可以打破，持有的人可以上城牆，見 3.7（`
     - 這個 tick：民兵和中立的主堡倒下（照一般的死亡），城裡站 2 名玩家 0 的槍兵。
     - 下一個 tick：照一般規則判給玩家 0，接著直接是治理好的（事件 `town_captured`、`town_repaired`，主堡是玩家 0 的）。
     - 小鎮已經是玩家 0 的，回 `NotAvailable`。
-  - `near_home`：玩家 1 的 4 名槍兵，攻擊玩家 0 的主城，約 30 秒走到。上一隊還有人活著時回 `NotAvailable`。
+  - `near_home`：玩家 1 的 4 名槍兵，攻擊玩家 0 的主城，約 35 秒走到。上一隊還有人活著時回 `NotAvailable`。
+  - `near_home_clear`：`near_home` 的小隊倒下（照一般的死亡），跳過第 7 步用。沒有活著的小隊時回 `NotAvailable`。
   - `siege`：蓋好的砲坊，加剛好練 2 門攻城砲的錢（木 300、金 200）。
   - `engines`：2 門攻城砲。
-  - `near_home` 以外，每局各一次，第二次回 `NotAvailable`。
+  - `near_home`、`near_home_clear` 以外，每局各一次，第二次回 `NotAvailable`。
   - 放不下（附近沒有空地）回 `BadPlacement`。
 - **雜湊**：教學用的狀態（用過哪些事件、小隊、`town` 等著治理的城）只在教學地圖算進雜湊，其他局的雜湊不變。
 
