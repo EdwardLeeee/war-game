@@ -455,10 +455,10 @@ export const PHASES: readonly Phase[] = [
     target: (c) => {
       const t = town(c);
       if (c.game.mode === "enter") {
-        // Its tag, as the game's prompt says (點亮起來的建築：標籤寫誰進去); the town while the tag is not up.
+        // Its tag, as the game's prompt says (點亮起來的建築：標籤寫誰進去); nothing framed until the tag is up (a frame
+        // on the town's middle meanwhile asked for a tap that 進駐 does not take, and moved off it as the tag came).
         const tag = t === null ? null : c.el(`.enter-tag[data-place="t${t.id}"]:not(.off), .enter-chip[data-place="t${t.id}"]`);
-        if (tag !== null) return { el: tag };
-        return t === null ? null : { cell: { x: t.cellX + 0.5, y: t.cellY + 0.5, r: Math.max(2, t.radius * 0.7) }, label: "小鎮" };
+        return tag === null ? null : { el: tag };
       }
       if (c.w.selectedSoldiers().length > 0) return { el: c.el(".cmds button", /^進駐/) };
       return { el: c.el(".groups > button:nth-child(1)") };

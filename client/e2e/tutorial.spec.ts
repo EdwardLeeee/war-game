@@ -35,11 +35,19 @@ async function startTutorial(page: Page): Promise<void> {
   await expect.poll(async () => (await state(page))?.phase).toBe("1");
 }
 
+/**
+ * Two animation frames drawn. What follows the battlefield on the screen (✓ and ✗ by the preview, 進駐's tags) is put
+ * in place in a frame, and a busy WebKit can draw none for seconds: a place read meanwhile is where it was.
+ */
+const frames = (page: Page) => page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
+
 /** A tap in the middle of what the tutorial frames (a button, or a place on the battlefield). */
 async function tapTarget(page: Page): Promise<void> {
-  // Where it is now and stays (the frame follows each animation frame; a villager walks; the camera may bring it into reach).
+  // Where it is now and stays, a frame drawn between the looks (the frame follows each animation frame; a villager
+  // walks; the camera may bring it into reach; 3c's ✓ once moved after it was read, the page drawing nothing for 4 s).
   let last = "";
   await expect.poll(async () => {
+    await frames(page);
     const t = (await state(page))?.target ?? null;
     const now = JSON.stringify(t === null ? null : [Math.round(t.box.x), Math.round(t.box.y), Math.round(t.box.w), Math.round(t.box.h)]);
     const same = t !== null && now === last;
@@ -341,15 +349,12 @@ test("九步照做到打下對手主城（R25，真模擬）：蓋兵營、練�
   // Selected, and the frame gone from 全軍 to the target (or 帶我去看).
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.selection().units.length ?? 0)).toBeGreaterThan(0);
   await expect.poll(async () => (await state(page))?.target?.box.x ?? 0).toBeLessThan(700);
-  // At the town: the order (攻擊移動 to its keep) sent; else the camera there again and once more (WebKit on a busy
-  // machine lost the tap now and then, the camera back home after it: 1 in 6 runs, not understood yet).
+  // At the town: the order (攻擊移動 to its keep) sent at the first tap. (Step 7's alert arrow, pointing home, once sat in
+  // the frame on the town and took this tap, the camera off to the main city: 10 runs in 12. It keeps off the frame now.)
   const before = await page.evaluate(() => window.__proto?.game?.sent().length ?? 0);
-  const ordered = () => page.evaluate((n) => (window.__proto?.game?.sent() ?? []).slice(n).some((c) => (c as { c: string; auto?: boolean }).auto !== true && ["move", "attack"].includes((c as { c: string }).c)), before);
-  for (let k = 0; k < 3; k++) {
-    await inSight(page);
-    await tapTarget(page);
-    if (await expect.poll(ordered, { timeout: 3_000 }).toBe(true).then(() => true, () => false)) break;
-  }
+  await inSight(page);
+  await tapTarget(page);
+  await expect.poll(() => page.evaluate((n) => (window.__proto?.game?.sent() ?? []).slice(n).some((c) => (c as { c: string; auto?: boolean }).auto !== true && ["move", "attack"].includes((c as { c: string }).c)), before), { timeout: 3_000 }).toBe(true);
   await phase(page, "8b", 180_000);
   await expect.poll(async () => (await state(page))?.place).toBe("side");
   await tapTarget(page);
@@ -358,14 +363,12 @@ test("九步照做到打下對手主城（R25，真模擬）：蓋兵營、練�
   await expect.poll(async () => (await state(page))?.target ?? null).not.toBeNull();
   await tapTarget(page);
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.mode())).toBe("enter");
-  // The town's tag (進 N 名全進城): the guard order sent, else once more (as at the town, 8a).
+  // The town's tag (進 N 名全進城): the guard order sent at the first tap. (The town's middle was framed until the tag
+  // was drawn, and a busy WebKit tapped it just as the frame went to the tag. Only the tag is framed now.)
   const sentBefore = await page.evaluate(() => window.__proto?.game?.sent().length ?? 0);
-  const guarded = () => page.evaluate((n) => (window.__proto?.game?.sent() ?? []).slice(n).some((c) => (c as { c: string }).c === "guard"), sentBefore);
-  for (let k = 0; k < 3; k++) {
-    await inSight(page);
-    await tapTarget(page);
-    if (await expect.poll(guarded, { timeout: 3_000 }).toBe(true).then(() => true, () => false)) break;
-  }
+  await inSight(page);
+  await tapTarget(page);
+  await expect.poll(() => page.evaluate((n) => (window.__proto?.game?.sent() ?? []).slice(n).some((c) => (c as { c: string }).c === "guard"), sentBefore), { timeout: 3_000 }).toBe(true);
   await done(page, 8, 60_000);
   // 9: core's siege works; two engines; everyone (全軍) to the computer's main city.
   await phase(page, "9a");

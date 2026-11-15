@@ -795,8 +795,9 @@ export class Hud {
     if (now - this.keepOffAt < 250) return this.keepOff;
     this.keepOffAt = now;
     const out: { left: number; right: number; top: number; bottom: number }[] = [];
-    // 新手教學's card (R25) too: an arrow under it could not be tapped.
-    for (const e of this.root.querySelectorAll<HTMLElement>("button, canvas, .tut-card:not([hidden])")) {
+    // 新手教學's card (R25) too: an arrow under it could not be tapped. And its frame: an arrow there took the tap meant
+    // for what is framed (8a: on the town after 帶我去看, the camera off to the main city, ceo 2026-11-15).
+    for (const e of this.root.querySelectorAll<HTMLElement>("button, canvas, .tut-card:not([hidden]), .tut-ring")) {
       if (e.closest(".alert-arrows") !== null || e.closest(".sel-info") !== null || (e.tagName === "BUTTON" && e.closest(".tut-card") !== null)) continue;
       const r = e.getBoundingClientRect();
       // Not the battlefield's own canvas (the whole screen).
@@ -848,11 +849,15 @@ export class Hud {
       const boxes = this.arrowKeepOff(now);
       let x = cx + dx * k;
       let y = cy + dy * k;
-      for (let f = k, i = 0; i < 24 && boxes.some((b) => x + ARROW_HALF > b.left && x - ARROW_HALF < b.right && y + ARROW_HALF > b.top && y - ARROW_HALF < b.bottom); i++) {
+      const over = () => boxes.some((b) => x + ARROW_HALF > b.left && x - ARROW_HALF < b.right && y + ARROW_HALF > b.top && y - ARROW_HALF < b.bottom);
+      for (let f = k, i = 0; i < 24 && over(); i++) {
         f *= 0.93;
         x = cx + dx * f;
         y = cy + dy * f;
       }
+      // No free place along that line: none this time rather than one on top of a button or the tutorial's frame (it
+      // would take their taps). The minimap still flashes.
+      a.arrow.style.display = over() ? "none" : "";
       a.arrow.style.transform = `translate(${x - 26}px, ${y - 26}px)`;
       (a.arrow.firstElementChild as HTMLElement).style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
     }
