@@ -61,8 +61,14 @@ for (const [ui, name] of [["", "原型"], ["&ui=r6", "正式介面"]] as const) 
     await centre(page, 14, 72, 0.8);
     // R13-01 state 3: spearmen only.
     await selectForCommands(page, spears);
+    // 正式介面 (R24-02): ？'s explanation over the bar shut by the tap on 進駐 (a tap outside it), the bar there.
+    if (ui !== "") await page.locator(".sel-bar").getByRole("button", { name: "說明" }).tap();
     await pick(page);
-    await expect(page.locator(".sel-info").getByRole("button", { name: "展開選取資訊" })).toBeVisible();
+    if (ui === "") await expect(page.locator(".sel-info").getByRole("button", { name: "展開選取資訊" })).toBeVisible();
+    else {
+      await expect(page.locator(".sel-help")).toBeHidden();
+      await expect(page.locator(".sel-bar")).toBeVisible();
+    }
     let s = await enterState(page);
     expect(s.prompt).toBe("點亮起來的建築：標籤寫誰進去、誰留下");
     expect(s.tags.find((t) => t.id === `b${city.id}`)).toMatchObject({ head: "槍兵進不去", off: true });
@@ -77,7 +83,8 @@ for (const [ui, name] of [["", "原型"], ["&ui=r6", "正式介面"]] as const) 
     expect((await sent(page)).slice(before).filter((c) => c.auto !== true)).toEqual([]);
     await page.locator(".cmds").getByRole("button", { name: /^取消\s*進駐/ }).tap();
     await expect.poll(() => mode(page)).toBe("normal");
-    await expect(page.locator(".sel-info").getByRole("button", { name: "收起選取資訊" })).toBeVisible();
+    if (ui === "") await expect(page.locator(".sel-info").getByRole("button", { name: "收起選取資訊" })).toBeVisible();
+    else await expect(page.locator(".sel-bar")).toBeVisible();
     // R13-01 state 4: everyone.
     const all = await own(page, [1, 2, 3]);
     await selectForCommands(page, all);

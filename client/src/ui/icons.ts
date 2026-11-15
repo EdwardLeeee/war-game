@@ -30,6 +30,8 @@ const ICON = {
   reform: '<path d="M5 4v16"/><path d="M9 7h10M9 12h8M9 17h11"/>',
   unfold: '<path d="M6 10l6 6 6-6"/>',
   army: '<path d="M4 18l4-10 4 6 4-6 4 10z"/>',
+  // 更多 (R24-03): the commands used least, in a row over the others.
+  more: '<circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/>',
   map: '<path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/>',
 } as const;

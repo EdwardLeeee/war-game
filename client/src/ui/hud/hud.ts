@@ -313,6 +313,9 @@ export class Hud {
         if (game.groupView !== null) this.groupCollapsed = !this.groupCollapsed;
         else this.collapsed = !this.collapsed;
       },
+      foldGroup: () => {
+        this.groupCollapsed = true;
+      },
       openReserve: () => this.openReserve(),
     };
     this.minimap = new Minimap(root, {
@@ -349,6 +352,8 @@ export class Hud {
 
   destroy(): void {
     for (const c of this.cleanups) c();
+    this.info.destroy();
+    this.cmds.destroy();
   }
 
   /** Every frame: text at most 10 times a second; alert arrows follow the camera. */
@@ -437,9 +442,10 @@ export class Hud {
     this.cmds.update();
     this.warnPopulationFull();
     // The message strip sits above the selection info, which grows with what is selected
-    // (the stance lines, the group panel; D-026, D-054), so that neither covers the other.
-    const panel = this.info.frame.hidden ? null : this.info.frame.getBoundingClientRect();
-    const above = panel === null ? 0 : Math.ceil(this.root.getBoundingClientRect().bottom - panel.top + 8);
+    // (the stance lines, the group panel; D-026, D-054), so that neither covers the other; and
+    // above the bar (R24-02) and what opens over it.
+    const tops = [this.info.frame, this.info.bar, ...this.root.querySelectorAll<HTMLElement>(".sel-help")].filter((e): e is HTMLElement => e !== null && !e.hidden).map((e) => e.getBoundingClientRect().top);
+    const above = tops.length === 0 ? 0 : Math.ceil(this.root.getBoundingClientRect().bottom - Math.min(...tops) + 8);
     if (above !== this.toastAbove) {
       this.toastAbove = above;
       this.root.style.setProperty("--toast-above", `${above}px`);

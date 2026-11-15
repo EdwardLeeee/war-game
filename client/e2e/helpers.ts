@@ -92,7 +92,6 @@ export async function openBox(page: Page, points: { x: number; y: number }[], ma
 export async function saveGroup(page: Page, button: string): Promise<void> {
   await tapOn(page, button);
   const panel = page.locator(".sel-info");
-  await expect(panel.locator(".sel-head")).toContainText(/^編隊 \d/);
   await openPanel(page);
   await panel.getByRole("button", { name: /^改成剛才選的 \d+ 名$/ }).tap();
   // Saved: nothing selected before any more, and the group selected (a message such as 人口滿了 may take the strip).
@@ -106,6 +105,17 @@ export async function saveGroup(page: Page, button: string): Promise<void> {
  */
 export async function openPanel(page: Page): Promise<void> {
   const panel = page.locator(".sel-info");
+  if (await formalOn(page)) {
+    // R24-02 (正式介面): the bar says which group; its 軍團 opens 軍團畫面 over it (open at once with nobody to order).
+    const bar = page.locator(".sel-bar");
+    await expect(bar.locator(".bar-title")).toContainText(/^編隊 \d/);
+    const legion = bar.getByRole("button", { name: "軍團畫面" });
+    const selected = await page.evaluate(() => window.__proto?.game?.selection().units.length ?? 0);
+    if (selected > 0) await legion.tap();
+    await expect(legion).toHaveAttribute("aria-expanded", "true");
+    await expect(panel).toBeVisible();
+    return;
+  }
   await expect(panel.locator(".sel-head")).toContainText(/^編隊 \d/);
   const selected = await page.evaluate(() => window.__proto?.game?.selection().units.length ?? 0);
   if (selected > 0) await panel.getByRole("button", { name: "展開選取資訊" }).tap();

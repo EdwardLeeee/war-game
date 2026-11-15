@@ -155,7 +155,7 @@ export class EnterLayer {
     const left = seen(".side-left > *, .minimap:not(.closed)");
     const right = seen(".groups, .army-btn, .top-right");
     const top = seen(".res-bar, .prompt");
-    const low = seen(".sel-info, .cmds, .bottom-build");
+    const low = seen(".sel-info, .sel-bar, .sel-help, .cmds, .cmds-more, .bottom-build");
     this.blockers = [...left, ...right, ...top, ...low, ...seen(".retreat-all-btn, .paused-banner")];
     const hud = this.hud.getBoundingClientRect();
     this.frameBox = { x: hud.left, y: hud.top, w: hud.width, h: hud.height };

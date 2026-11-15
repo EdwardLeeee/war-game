@@ -3929,7 +3929,7 @@ export class Game implements GestureHost {
     const r = p.rect();
     const tl = cam.worldToScreen(r.x, r.y);
     // Keep ✓ and ✗ off the interface panels (the preview can be dragged under any of them).
-    const avoid = [...this.hudRoot.querySelectorAll<HTMLElement>(".top-right, .res-bar, .side-left, .side-right, .minimap, .sel-info, .cmds, .prompt")]
+    const avoid = [...this.hudRoot.querySelectorAll<HTMLElement>(".top-right, .res-bar, .side-left, .side-right, .minimap, .sel-info, .sel-bar, .sel-help, .cmds, .cmds-more, .prompt")]
       .filter((e) => !e.hidden && e.offsetParent !== null)
       .map((e) => e.getBoundingClientRect());
     this.overlays.showPlace(
