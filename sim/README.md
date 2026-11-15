@@ -326,6 +326,36 @@
   - `--late-siege`（push-late-siege，D-115）：照使用者 8d02b76f 的後期打法：村民、箭樓照那局的時間表，治理 1–4 座城，第 60 分以後或箭樓 31 座時蓋砲坊，3 門攻城砲、兵 60 名就帶砲出門（ceo 2026-11-03 放寬，原本還要箭樓到數、兵 100 名）。每局記攻城砲的事（`siege-watch.ts`）：砲坊、第一門砲、出門時的兵和砲、每門砲的結局（何時、被什麼打掉）、打死的兵、拆掉的箭樓，以及雙方第 30、45、60、90 分的村民、箭樓、各兵種、治理的城。
     - `--takeover N`（ceo 2026-11-03）：腳本玩家先對普通打到第 N 分；第 N−3 分起 `--difficulty` 的電腦跟著看（照常想，指令丟掉），第 N 分起接手普通那一方，打到上限。困難接手的是普通的家當，所以量的是困難在後期遇到砲怎麼反應，不是整局強弱。
     - 共用的部分在 `late-start.ts`（沒有副作用，給 war-game-ai 的 learn/ 用）：`lateStart`（建局、`step`、`runTo`、`takeOver(ai, at)`）、`AiSeat`（在 Runner 外面下玩家 1 的指令，和 Runner 逐局相同）、`Bonus`、`latePlanFor`。
+  - `--plan '<JSON>'` 或 `--plan 檔名`（D-147，war-game-ai 要自動找會贏困難的打法）：用 JSON 給 Plan 的部分欄位，在上面所有選項處理完之後蓋上去。
+    - 打法的常數也能設，放在 `tune` 底下，巢狀寫：
+      - `tune.fort.{from, dist, towers, holdUntil}`
+      - `tune.harass.{from, far, rest}`
+      - `tune.rush.{dist, builders}`
+      - `tune.homeTowerAt`
+      - `tune.turtle.*`、`tune.crush.*`、`tune.lateSiege.*`
+    - 例：`--plan '{"fortress": true, "tune": {"fort": {"dist": 30}}}'`。
+    - 這些常數跟著 plan 走（`Plan.tune`，沒給就用 `TUNE`），同一個行程跑很多種打法也不會互相干擾。
+    - 每個欄位的型別、範圍、單位，要哪個欄位開著才有作用、是否只限固定地圖、該不該拿來搜尋，都在 `src/plan-space.ts` 的 `PLAN_SPACE`；不能同時開的組合在 `PLAN_CONFLICTS`。
+    - 單位照程式原本的：時間是 tick（每分 1200）、距離是格、比例是 %，`crush.ratio` 是十分之一倍。
+    - 時間表（`turtle.towers`、`turtle.outposts`、`turtle.boomFood`、`lateSiege.farmers`、`lateSiege.towers`）可以設、會檢查，但標成不搜尋。
+    - 下面這些都會報錯結束：
+      - 不認得的欄位、型別不對、超出範圍；
+      - 要的欄位沒開、值卻和預設不同；
+      - 隨機地圖用了只限固定地圖的欄位；
+      - 不能同時開的組合。
+    - `validatePlan(plan, map)` 回傳錯誤清單，不用開局就能檢查。
+    - 紀錄裡完整的 `plan` 原樣餵回去一定會過，打出同一局。
+    - 不建議搜尋的欄位：`mageReserve`、`vein`（拿掉魔晶以後沒作用）、`staticRatio`（量測用）。
+  - 程式呼叫：`src/scripted-play.ts` 的 `playScripted({ seed, plan, difficulty, map, style, think, cap, trace, takeover, bonus, probe, probeFrom, hard? })` 回傳一局的紀錄。
+    - import 這個檔不會自己開跑。
+    - 命令列的選項怎麼變成 plan，在 `src/scripted-args.ts` 的 `scriptedArgs(argv)`。
+    - `hard`：原樣交給困難當 `AiKnowledge.hard`，用來讓候選的困難對同一批打法。
+      - 給了以後，電腦改由 `AiSeat` 在 Runner 外面下指令（`--takeover` 也是這樣）。
+      - `hard: {}` 和不給逐局相同。
+      - Worker 裡的檔沒有改，sim build id 不變。
+  - 每局紀錄多記：
+    - `plan`：完整，含 `tune`。
+    - `forts`：玩家蓋好的哨所和箭樓各幾座；第一座各在第幾 tick，離電腦主城、離自己主城幾格（中心到中心，四捨五入）。
 - **輸出**：Markdown。
   - 每局：電腦的性格、攻下小鎮、雙方第一名法師、主城第一次被打（當時電腦有幾名兵和法師）、第一次出發打電腦主城、勝負和時間。
   - 到上限（`--cap`，預設 120 分，D-115 以前 50 分）還沒分出勝負的局另外算，列出雙方的主城血量和兵數。
