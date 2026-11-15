@@ -87,6 +87,11 @@ export class AiSeat {
     this.at = at;
   }
 
+  /** The AI playing now. */
+  get playing(): Ai {
+    return this.ai;
+  }
+
   /** The seq the next order gets. */
   seq(): number {
     return this.nextSeq;
