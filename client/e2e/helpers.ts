@@ -133,6 +133,54 @@ export async function selectForCommands(page: Page, ids: number[]): Promise<void
   await expect(page.locator(".cmds")).toHaveAttribute("data-selection", sorted.join(","));
 }
 
+/**
+ * The selection's title, whichever interface: 正式介面's bar with soldiers selected (R24-02: 編隊 1 12/12, 已選 12,
+ * 槍兵), else the panel's title line (a building, a town; the prototype's always).
+ */
+export const selTitle = (page: Page): Locator => page.locator(".sel-bar:not([hidden]) .bar-title, .sel-info:not(.legion-pop):not([hidden]) .sel-head");
+
+/** 軍團畫面 folded after a tap on a group with soldiers (the user 2026-10-31): 正式介面's 軍團 on the bar (R24-02), the prototype's 展開. */
+export async function expectGroupFolded(page: Page): Promise<void> {
+  if (await formalOn(page)) await expect(page.locator(".sel-bar").getByRole("button", { name: "軍團畫面" })).toHaveAttribute("aria-expanded", "false");
+  else await expect(page.locator(".sel-info").getByRole("button", { name: "展開選取資訊" })).toBeVisible();
+}
+
+/** 軍團畫面 unfolded (正式介面: 軍團 on the bar; the prototype: 展開) or folded again. */
+export async function foldGroup(page: Page, open: boolean): Promise<void> {
+  if (await formalOn(page)) {
+    const legion = page.locator(".sel-bar").getByRole("button", { name: "軍團畫面" });
+    await expect(legion).toHaveAttribute("aria-expanded", open ? "false" : "true");
+    await legion.tap();
+    await expect(legion).toHaveAttribute("aria-expanded", open ? "true" : "false");
+    return;
+  }
+  await page.locator(".sel-info").getByRole("button", { name: open ? "展開選取資訊" : "收起選取資訊" }).tap();
+}
+
+/**
+ * What the orders mean, under the selection (the prototype's panel), or in ？ over the bar (正式介面, R24-02),
+ * opened for it: the box the lines are in.
+ */
+export async function orderHelp(page: Page): Promise<Locator> {
+  if (!(await formalOn(page))) return page.locator(".sel-info");
+  const help = page.locator(".sel-help");
+  if (await help.isHidden()) await page.locator(".sel-bar").getByRole("button", { name: "說明" }).tap();
+  await expect(help).toBeVisible();
+  return help;
+}
+
+/**
+ * A command by its words: in the command area, or (正式介面 with soldiers selected, R24-03) in 更多, opened
+ * for 隊形, 堅守, 整理隊形 and 停止.
+ */
+export async function command(page: Page, name: string | RegExp): Promise<Locator> {
+  const cmds = page.locator(".cmds");
+  const more = cmds.locator(":scope > .more-btn");
+  const words = typeof name === "string" ? name : name.source.replace(/^\^/, "");
+  if (/^(隊形|堅守|整理隊形|停止)/.test(words) && (await more.count()) > 0 && (await more.getAttribute("aria-expanded")) !== "true") await more.tap();
+  return cmds.getByRole("button", { name });
+}
+
 /** 全軍, whose label says how many soldiers it selects (全軍 24; ceo 2026-10-03). */
 export const armyButton = (page: Page) => page.getByRole("button", { name: /^全軍 \d+$/ });
 
@@ -348,6 +396,7 @@ export async function resetAll(page: Page): Promise<void> {
   }
   const cancelPlace = page.getByRole("button", { name: "取消放建築" });
   if (await cancelPlace.isVisible()) await cancelPlace.tap();
-  const close = page.locator(".sel-info").getByRole("button", { name: "取消選取" });
+  // The ✕ on the bar with units selected (R24-02), else on the panel.
+  const close = page.locator(".sel-bar:not([hidden]), .sel-info:not([hidden])").getByRole("button", { name: "取消選取" }).first();
   if (await close.isVisible()) await close.tap();
 }

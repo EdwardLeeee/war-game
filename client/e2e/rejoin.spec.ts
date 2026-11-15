@@ -8,7 +8,7 @@
 // the town is left short. The pictures for the user.
 
 import { expect, type Page, test } from "@playwright/test";
-import { formalOn, saveGroup, selectForCommands, shot, watchErrors } from "./helpers.ts";
+import { command, expectGroupFolded, foldGroup, formalOn, saveGroup, selectForCommands, selTitle, shot, watchErrors } from "./helpers.ts";
 import { tap } from "./touch.ts";
 
 const RANGED = 2;
@@ -28,7 +28,6 @@ const centre = (page: Page, x: number, y: number, scale = 1) => page.evaluate(([
 const garrison = (page: Page) => page.evaluate((t) => window.__proto?.game?.garrison(t) ?? [], OUR_TOWN.id);
 const group1 = async (page: Page) => (await page.evaluate(() => window.__proto?.game?.groupInfo() ?? []))[0];
 const selected = (page: Page) => page.evaluate(() => window.__proto?.game?.selection().units ?? []);
-const panel = (page: Page) => page.locator(".sel-info");
 
 async function ownIds(page: Page, type: number, n: number): Promise<number[]> {
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
@@ -77,7 +76,7 @@ test("出城歸隊：整個編隊 1 駐軍後還是編隊 1 的（5/5、駐5、�
   // 進駐 from 軍團畫面 (D-125), the panel put away by itself to see the town.
   await page.locator(".cmds").getByRole("button", { name: /^進駐/ }).tap();
   // The selection info folds by itself while picking (R13-01 B).
-  await expect(page.locator(".sel-info").getByRole("button", { name: "展開選取資訊" })).toBeVisible();
+  await expectGroupFolded(page);
   await tap(page, await at(page, { x: OUR_TOWN.x + 0.5, y: OUR_TOWN.y + 0.5 }));
   await expect.poll(said).toContain("5 名駐軍在小鎮");
   expect(await garrison(page)).toEqual(ids);
@@ -91,9 +90,9 @@ test("出城歸隊：整個編隊 1 駐軍後還是編隊 1 的（5/5、駐5、�
   await page.evaluate(() => window.__proto?.game?.select([]));
   await page.locator(GROUP_1).tap();
   const panel = page.locator(".sel-info");
-  await expect(panel.locator(".sel-head")).toContainText(/^編隊 1/);
+  await expect(selTitle(page)).toContainText(/^編隊 1/);
   await expect.poll(async () => [...(await selected(page))].sort((a, b) => a - b)).toEqual(ids);
-  await panel.getByRole("button", { name: "展開選取資訊" }).tap();
+  await foldGroup(page, true);
   await expect(panel.locator(".group-place", { hasText: "小鎮" })).toHaveAttribute("aria-label", "小鎮 5 名（留守）");
   await centre(page, OUR_TOWN.x, OUR_TOWN.y + 3, 1.2);
   await shot(page, info, "rejoin-1-group-screen-stationed");
@@ -153,15 +152,17 @@ test("編隊按鈕選得到駐守的兵（收起）：點地板整隊出城，�
   await page.evaluate(() => window.__proto?.game?.select([]));
   await page.locator(GROUP_1).tap();
   await expect.poll(async () => [...(await selected(page))].sort((a, b) => a - b)).toEqual(ids);
-  await expect(page.locator(".sel-info").getByRole("button", { name: "展開選取資訊" })).toBeVisible();
+  await expectGroupFolded(page);
   await shot(page, info, "rejoin-5-group-button-selects-stationed");
   // 堅守 and 停止 are not for those in the town; a tap on the ground takes all out but the 1 it keeps, a ranged on its wall.
-  await panel(page).getByRole("button", { name: "展開選取資訊" }).tap();
+  // (正式介面: 停止 in 更多, R24-03; 軍團畫面 stays folded.)
+  const formal = await formalOn(page);
+  if (!formal) await foldGroup(page, true);
   const before = (await sent(page)).length;
-  await page.locator(".cmds").getByRole("button", { name: "停止" }).tap();
+  await (await command(page, "停止")).tap();
   await expect.poll(said).toContain("駐守的兵留在城裡");
   expect((await sent(page)).slice(before).filter((c) => c.auto !== true)).toEqual([]);
-  await panel(page).getByRole("button", { name: "收起選取資訊" }).tap();
+  if (!formal) await foldGroup(page, false);
   await tap(page, await emptyGround(page));
   await expect.poll(said).toContain("4 名出發，留 1 名守城");
   const order = (await sent(page)).slice(before).find((c) => c.auto !== true && c.c === "retreat");
@@ -199,7 +200,7 @@ test("新兵補進全部駐守的編隊就走進那座城當留守；編隊再�
   await saveGroup(page, GROUP_1);
   await page.locator(".cmds").getByRole("button", { name: /^進駐/ }).tap();
   // The selection info folds by itself while picking (R13-01 B).
-  await expect(page.locator(".sel-info").getByRole("button", { name: "展開選取資訊" })).toBeVisible();
+  await expectGroupFolded(page);
   await tap(page, await at(page, { x: OUR_TOWN.x + 0.5, y: OUR_TOWN.y + 0.5 }));
   await expect.poll(said).toContain("4 名駐軍在小鎮");
   // One falls; the barracks' next spearman fills the group and walks in.

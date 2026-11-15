@@ -11,7 +11,7 @@
 // and villagers up to 40) until step 8d pauses the barracks, so the counts before that say "at least".
 
 import { expect, type Page, test } from "@playwright/test";
-import { armyButton, formalOn, keepControls, openBox, openPanel, resetAll, resText, saveGroup, selectForCommands, shot, watchErrors } from "./helpers.ts";
+import { armyButton, command, foldGroup, formalOn, keepControls, openBox, openPanel, orderHelp, resetAll, resText, saveGroup, selectForCommands, selTitle, shot, watchErrors } from "./helpers.ts";
 import { doubleTap, longPress, tap, tapOn } from "./touch.ts";
 
 const FARMER = 0;
@@ -168,21 +168,24 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   expect((await groups(page))[0], "saved as group 1").toEqual(squadIds);
 
   // 5b. 堅守（D-050）：選取資訊寫著三顆按鈕的意思；按了停下並改成堅守。下一步點地面是移動，改回積極（D-094）。
-  const hold = page.getByRole("button", { name: /^堅守/ });
+  // 正式介面 (R24-02, R24-03): what they do on the bar, the meanings in ？, 堅守 in 更多.
+  const formal = await formalOn(page);
+  const hold = () => command(page, /^堅守/);
   const stanceOfSquad = async () => [...new Set((await units(page)).filter((u) => squadIds.includes(u.id)).map((u) => u.stance))];
-  const now = page.locator(".sel-info .order-now");
+  const now = page.locator(formal ? ".sel-bar .bar-title .t2" : ".sel-info .order-now");
+  const nowText = (word: string) => (formal ? word : `目前：${word} ${squadIds.length}`);
   // Saved, the group's panel shows (D-054); the squad selected as such shows its states.
   await selectForCommands(page, squadIds);
-  await expect(now).toHaveText(`目前：待命 ${squadIds.length}`);
+  await expect(now).toHaveText(nowText("待命"));
   // 正式介面 sets 堅守 apart as a tag, no 「：」 (panels.ts meaning).
-  await expect(page.locator(".sel-info")).toContainText(`堅守${(await formalOn(page)) ? "" : "："}停在原地，敵人進到射程就打，不追出去`);
-  await hold.tap();
+  await expect(await orderHelp(page)).toContainText(`堅守${formal ? "" : "："}停在原地，敵人進到射程就打，不追出去`);
+  await (await hold()).tap();
   await expect.poll(async () => (await sent(page)).slice(-2)).toMatchObject([{ c: "stop", u: squadIds }, { c: "stance", u: squadIds, stance: 1 }]);
   // An order given while paused runs when the game goes on.
   await resume(page);
   await expect.poll(stanceOfSquad).toEqual([1]);
-  await expect(now).toHaveText(`目前：堅守 ${squadIds.length}`);
-  await expect(hold).toHaveClass(/active/);
+  await expect(now).toHaveText(nowText("堅守"));
+  await expect(await hold()).toHaveClass(/active/);
   await shot(page, info, "5b-hold");
   await pause(page);
 
@@ -443,7 +446,7 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   await pause(page);
   await tapOn(page, ".groups > button:nth-child(1)");
   const panel = page.locator(".sel-info");
-  await expect(panel.locator(".sel-head")).toContainText("編隊 1");
+  await expect(selTitle(page)).toContainText("編隊 1");
   await openPanel(page);
   const g1Now = (await groupInfo(page))[0];
   // Those stationed in the town (8, 8c) too (the user 2026-10-31).
@@ -451,9 +454,9 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   await expect.poll(async () => (await selection(page))?.units.slice().sort((a, b) => a - b)).toEqual(g1Alive.slice().sort((a, b) => a - b));
   await expect(panel.getByRole("status", { name: "槍兵要幾名" })).toHaveText(`${g1Now.want[SPEARMAN] ?? 0}`);
   await shot(page, info, "9-group-panel");
-  await panel.getByRole("button", { name: "收起選取資訊" }).tap();
+  await foldGroup(page, false);
   await expect(panel.locator(".group-row").first()).toBeHidden();
-  await panel.getByRole("button", { name: "展開選取資訊" }).tap();
+  await foldGroup(page, true);
   await expect(panel.locator(".group-row").first()).toBeVisible();
   await resume(page);
 
@@ -462,14 +465,15 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   await armyButton(page).tap();
   await expect.poll(async () => (await selection(page))?.units.length ?? 0).toBeGreaterThan(3);
   const troops = (await selection(page))?.units ?? [];
-  const formation = page.getByRole("button", { name: /^隊形/ });
-  await expect(formation).toHaveText("隊形：密集按一下改成散開");
-  await formation.tap();
+  // (正式介面: 隊形 in 更多, its words now → after, R24-03.)
+  const formation = () => command(page, /^隊形/);
+  await expect(await formation()).toHaveText(formal ? "隊形密集→散開" : "隊形：密集按一下改成散開");
+  await (await formation()).tap();
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "formation", u: troops, loose: true });
   await expect.poll(async () => (await units(page)).filter((u) => troops.includes(u.id)).every((u) => u.loose)).toBe(true);
-  await expect(formation).toHaveText("隊形：散開按一下改成密集");
+  await expect(await formation()).toHaveText(formal ? "隊形散開→密集" : "隊形：散開按一下改成密集");
   // 正式介面 sets 散開 apart as a tag, no 「：」 (panels.ts meaning).
-  await expect(page.locator(".sel-info")).toContainText(`散開${(await formalOn(page)) ? "" : "："}站位間隔 2 格，站好時一發晶砲只炸得到 1 名`);
+  await expect(await orderHelp(page)).toContainText(`散開${formal ? "" : "："}站位間隔 2 格，站好時一發晶砲只炸得到 1 名`);
   // March them together to open ground south of where the squad started; tap where nothing stands.
   // 12 cells south: with 自動訓練 the army is some 16 strong, 8 by 8 cells loose, and 4 cells
   // south its north edge met the rocks at (19–25, 33–39). Loose soldiers pressed there never
