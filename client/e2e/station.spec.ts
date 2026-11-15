@@ -4,7 +4,7 @@
 // group's, the user 2026-10-26; 全軍 without them), the ranged up on its walls, the others in it. The pictures for the user.
 
 import { expect, type Page, test } from "@playwright/test";
-import { armyButton, expectSaid, saveGroup, selectForCommands, shot, watchErrors, watchToasts } from "./helpers.ts";
+import { armyButton, expectGroupFolded, expectSaid, saveGroup, selectForCommands, selTitle, shot, watchErrors, watchToasts } from "./helpers.ts";
 import { tap } from "./touch.ts";
 
 const RANGED = 2;
@@ -47,7 +47,7 @@ test("駐軍：從軍團畫面選整個軍團，按駐軍、點自己的城，�
   // 軍團畫面 (a tap on the group button): its soldiers selected, 進駐 beside it (D-125: 駐軍 in it).
   await page.evaluate(() => window.__proto?.game?.select([]));
   await page.locator(GROUP_1).tap();
-  await expect(page.locator(".sel-info .sel-head")).toContainText(/^編隊 1/);
+  await expect(selTitle(page)).toContainText(/^編隊 1/);
   const button = page.locator(".cmds").getByRole("button", { name: /^進駐/ });
   await expect(button).toHaveText("進駐點建築");
   await shot(page, info, "station-1-button-in-group-screen");
@@ -56,7 +56,7 @@ test("駐軍：從軍團畫面選整個軍團，按駐軍、點自己的城，�
   await expect(page.locator(".cmds").getByRole("button", { name: /^取消/ })).toBeVisible();
   await shot(page, info, "station-2-pick-a-town");
   // 軍團畫面 folded by the tap on the group (the user 2026-10-31): the map under it is free.
-  await expect(page.locator(".sel-info").getByRole("button", { name: "展開選取資訊" })).toBeVisible();
+  await expectGroupFolded(page);
   await expect(page.getByText("點亮起來的建築：標籤寫誰進去、誰留下")).toBeVisible();
   // Our town's tag: the whole group in (R13-01 B).
   await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.enter()))?.tags.find((t) => t.id === `t${OUR_TOWN.id}`)?.head).toBe("進 5 名全進城");
@@ -78,7 +78,8 @@ test("駐軍：從軍團畫面選整個軍團，按駐軍、點自己的城，�
   expect((await units(page)).filter((u) => ids.includes(u.id) && !ranged.includes(u.id)).every((u) => u.order === GUARD_ORDER)).toBe(true);
   expect((await sent(page)).filter((c) => c.c === "wall")).toEqual([]);
   await centre(page, OUR_TOWN.x, OUR_TOWN.y, 1.3);
-  await page.locator(".sel-info").getByRole("button", { name: "取消選取" }).tap().catch(() => undefined);
+  // The ✕ on the bar with units selected (正式介面, R24-02), else on the panel; none, nothing to do.
+  await page.locator(".sel-bar:not([hidden]), .sel-info:not([hidden])").getByRole("button", { name: "取消選取" }).first().tap({ timeout: 5_000 }).catch(() => undefined);
   await shot(page, info, "station-3-in-the-town");
   // The town's panel (R13-01 B 7c): its 留守 as squares, the ranged up on the walls, the spearmen inside.
   await tap(page, await at(page, { x: OUR_TOWN.x + 0.5, y: OUR_TOWN.y + 0.5 }));

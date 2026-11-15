@@ -275,6 +275,8 @@ export class Overlays {
     const H = this.root.clientHeight;
     const bw = 112;
     const bh = 52;
+    // Inside the safe area too (the iPhone's notch and home bar; ui 2026-11-15: ✓ and ✗ reached 10 under it).
+    const safe = this.safeInsets();
     const cx = rect.x + rect.w / 2;
     const cy = rect.y + rect.h / 2;
     const candidates = [
@@ -284,7 +286,7 @@ export class Overlays {
       { x: cx - bw / 2, y: rect.y - 10 - bh },
     ];
     const clear = (p: { x: number; y: number }) =>
-      p.x >= 8 && p.y >= 8 && p.x + bw <= W - 8 && p.y + bh <= H - 8 &&
+      p.x >= 8 + safe.left && p.y >= 8 + safe.top && p.x + bw <= W - 8 - safe.right && p.y + bh <= H - 8 - safe.bottom &&
       avoid.every((a) => p.x + bw <= a.left || p.x >= a.right || p.y + bh <= a.top || p.y >= a.bottom);
     const spot = candidates.find(clear) ?? { x: W / 2 - bw / 2, y: H / 2 - bh / 2 };
     this.place.style.left = `${spot.x}px`;
@@ -297,6 +299,20 @@ export class Overlays {
 
   hidePlace(): void {
     this.place.hidden = true;
+  }
+
+  /** The screen's safe-area insets in px (style.css --safe-*: env() on the phone), read from a box padded by them. */
+  private safeProbe: HTMLElement | null = null;
+  private safeInsets(): { top: number; right: number; bottom: number; left: number } {
+    if (this.safeProbe === null) {
+      const p = document.createElement("div");
+      p.setAttribute("aria-hidden", "true");
+      p.style.cssText = "position:fixed;inset:0;visibility:hidden;pointer-events:none;padding:var(--safe-t) var(--safe-r) var(--safe-b) var(--safe-l);box-sizing:border-box";
+      this.root.appendChild(p);
+      this.safeProbe = p;
+    }
+    const s = getComputedStyle(this.safeProbe);
+    return { top: parseFloat(s.paddingTop) || 0, right: parseFloat(s.paddingRight) || 0, bottom: parseFloat(s.paddingBottom) || 0, left: parseFloat(s.paddingLeft) || 0 };
   }
 
   /**

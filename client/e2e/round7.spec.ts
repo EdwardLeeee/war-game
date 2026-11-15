@@ -6,7 +6,7 @@
 // side is tested by core.
 
 import { expect, type Page, test } from "@playwright/test";
-import { armyButton, expectSaid, formalOn, FULL_SCREEN, injectSafeArea, INTERACTIVE, IPHONE_SAFE, meaningText, saveGroup, selectForCommands, shot, visibleBoxes, watchErrors, watchToasts } from "./helpers.ts";
+import { armyButton, command, expectSaid, formalOn, FULL_SCREEN, injectSafeArea, INTERACTIVE, IPHONE_SAFE, meaningText, openPanel, orderHelp, saveGroup, selectForCommands, shot, visibleBoxes, watchErrors, watchToasts } from "./helpers.ts";
 import { tap, tapOn } from "./touch.ts";
 
 // Fake-world layout with r7=1, in cells.
@@ -321,7 +321,9 @@ test("躲著的兵（D-083，使用者 2026-10-26 推翻 D083-1-A）：躲進去
   // Only those hiding selected: nothing sent, and how to get them out.
   const mark = (await sent(page)).length;
   await selectForCommands(page, hiding);
-  await expect(page.locator(".sel-info .order-now")).toHaveText(`目前：躲在建築裡 ${hiding.length}`);
+  // What they do: 正式介面's on the bar (R24-02), the prototype's 目前 line.
+  if (await formalOn(page)) await expect(page.locator(".sel-bar .bar-title .t2")).toHaveText("躲著");
+  else await expect(page.locator(".sel-info .order-now")).toHaveText(`目前：躲在建築裡 ${hiding.length}`);
   await page.locator(".cmds").getByRole("button", { name: /^攻擊/ }).tap();
   await tap(page, await at(page, { x: 18, y: 67 }));
   await expectSaid(page, HIDE_ERROR);
@@ -370,10 +372,8 @@ test("召回（使用者 2026-11-04，D-119）：兩個編隊躲在同一座主�
   await expect.poll(() => soldiersIn(page, city), TICKS).toBe(4);
   // Group 1's 軍團畫面: 躲著 with 召回, from out in the field (the main city nowhere near the screen).
   await tapOn(page, GROUP_1);
-  // Unfolded if it was folded, once the panel is drawn (no short limit: WebKit took longer than 1.5 s, PR 5).
-  const unfold = page.locator(".sel-info").getByRole("button", { name: "展開選取資訊" });
-  await expect(page.locator(".sel-info .sel-head")).toContainText("編隊 1");
-  if (await unfold.isVisible()) await unfold.tap();
+  // Unfolded (folded with soldiers selected, the user 2026-10-31), once the panel is drawn.
+  await openPanel(page);
   await expect(page.locator(".sel-info .group-place", { hasText: "主城" })).toHaveAttribute("aria-label", "主城 2 名");
   await expect(page.locator(".sel-info .group-places").getByRole("button", { name: "召回" })).toBeVisible();
   await shot(page, info, "d119-recall-button");
@@ -392,8 +392,7 @@ test("召回（使用者 2026-11-04，D-119）：兩個編隊躲在同一座主�
   // Group 2 (all of it hiding: its button selects nobody, 軍團畫面 stays open): 召回 too.
   await page.evaluate(() => window.__proto?.game?.select([]));
   await tapOn(page, ".groups > button:nth-child(2)");
-  await expect(page.locator(".sel-info .sel-head")).toContainText("編隊 2");
-  if (await unfold.isVisible()) await unfold.tap();
+  await openPanel(page);
   const mark2 = (await sent(page)).length;
   await page.locator(".sel-info").getByRole("button", { name: "召回" }).tap();
   await expect.poll(async () => (await sent(page)).slice(mark2).filter((c) => c.c === "leave")).toEqual([expect.objectContaining({ building: city, u: b })]);
@@ -505,17 +504,19 @@ test("剋／怕（D-097）：訓練鈕寫「剋：…／怕：…」，只選一
   // One kind selected, its line: the prototype's own with the kind's name, 正式介面's among the
   // explanation (R14: 剋怕 as its tag). Spearmen and ranged together: none (the chips; one tapped shows its own).
   const formal = await formalOn(page);
+  // 正式介面: among the explanation in ？ over the bar (R24-02), opened once (it stays open while the selection changes).
   const counterLine = async (name: string, short: string | null): Promise<void> => {
-    const line = page.locator(formal ? ".sel-info .counter-meaning" : ".sel-info .counter-short");
+    const line = page.locator(formal ? ".sel-help .counter-meaning" : ".sel-info .counter-short");
     if (short === null) await expect(line).toHaveCount(0);
     else if (formal) await expect.poll(() => meaningText(line)).toBe(`剋怕：${short}`);
     else await expect(line).toHaveText([`${name}　${short}`]);
   };
   await selectForCommands(page, await ownIds(page, [2]));
+  if (formal) await orderHelp(page);
   await counterLine("遠程兵", "剋：槍兵／怕：騎兵");
   await shot(page, info, "d097-selection");
   await selectForCommands(page, await ownIds(page, [1, 2]));
-  await expect(page.locator(".sel-info .sel-chips")).toBeVisible();
+  await expect(page.locator(formal ? ".sel-bar .bar-chip" : ".sel-info .sel-chips").first()).toBeVisible();
   await counterLine("", null);
   await selectForCommands(page, await ownIds(page, [1]));
   await counterLine("槍兵", "剋：騎兵／怕：遠程");
@@ -547,12 +548,13 @@ for (const viewport of [null, FULL_SCREEN]) {
     const { hiders, spear } = await army(page);
     await selectForCommands(page, [...spear, ...hiders].sort((a, b) => a - b));
     await expect(page.locator(".cmds").getByRole("button", { name: /^進駐/ })).toBeVisible();
-    await expect(page.locator(".sel-note")).toBeVisible();
+    await expect((await orderHelp(page)).locator(".sel-note")).toBeVisible();
     await checkLayout(page);
     // 攻擊、移動、堅守、停止, then 隊形 (two columns wide), 整理隊形 and 進駐 (D-095: no mage buttons;
     // D-125: 駐軍, 躲進去 and 駐守 one button, two rows as R13-01 B); checkLayout: nothing overlaps.
+    // 正式介面 (R24-03): one row, 攻擊、移動、進駐、更多.
     const rows = new Set((await visibleBoxes(page, ".cmds button")).map((b) => Math.round(b.y)));
-    expect(rows.size, "two rows of commands").toBe(2);
+    expect(rows.size, "rows of commands").toBe((await formalOn(page)) ? 1 : 2);
     const { width, height } = page.viewportSize() ?? { width: 0, height: 0 };
     await shot(page, info, `r7-layout-army-${width}x${height}`);
     await centre(page, MAIN_CITY.x + 2, MAIN_CITY.y + 2);
@@ -572,7 +574,7 @@ test("開關關著（沒有 r7）：沒有箭樓、馬廄、騎兵那一列、�
   await start(page, false);
   const { hiders, spear } = await army(page);
   await selectForCommands(page, [...spear, ...hiders].sort((a, b) => a - b));
-  await expect(page.locator(".cmds").getByRole("button", { name: /^隊形/ })).toBeVisible();
+  await expect(await command(page, /^隊形/)).toBeVisible();
   await expect(page.locator(".cmds").getByRole("button", { name: /^進駐/ })).toHaveCount(0);
   await selectForCommands(page, []);
   await page.getByRole("button", { name: "建造" }).tap();

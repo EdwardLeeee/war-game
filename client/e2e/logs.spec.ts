@@ -104,7 +104,7 @@ test("對局紀錄：投降後存在手機上並上傳；內容是這局的版�
   expect(Object.keys(rec).sort(), "nothing else: no account, no device name").toEqual(["art", "code", "commit", "difficulty", "id", "lastHash", "log", "protocol", "reason", "result", "scenario", "ticks", "ui", "v"]);
   // 美術 the game was drawn with (ceo 2026-10-22: the long games' crashes could not tell 3 倍 from 2 倍).
   expect(rec.art).toMatch(/^(x3|x2|off|test)$/);
-  expect(rec.ui, "原型, as the page opens by default").toBe("proto");
+  expect(rec.ui, "正式介面, as the page opens by default (R24-01)").toBe("r6");
   const lines = rec.log.trim().split("\n");
   expect(JSON.parse(lines[0])).toMatchObject({ protocol: rec.protocol, scenario: "e2e", ai: [false, false] });
   expect(lines.slice(1).map((l) => (JSON.parse(l) as { c: string }).c)).toEqual(expect.arrayContaining(["move", "surrender"]));
@@ -205,9 +205,11 @@ test("對局紀錄：切到背景就存一份「還在打」的紀錄並上傳�
   const check = watchErrors(page);
   const bodies = await catchUploads(page, [201]);
   await start(page, `tps=400&logs=${encodeURIComponent(LOGS)}`);
-  // Before a minute of game time: nothing.
-  await page.getByRole("button", { name: "暫停", exact: true }).tap();
+  // Before a minute of game time: nothing. (Paused at once from the test hook: at 400 ticks a second a minute of
+  // game time is 3 s, and a busy machine took longer than that to tap 暫停.)
+  await page.evaluate(() => window.__proto?.game?.pause());
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused)).toBe(true);
+  expect(await tick(page), "paused before a minute of game time").toBeLessThan(1200);
   await visibility(page, "hidden");
   await visibility(page, "visible");
   await page.waitForTimeout(500);

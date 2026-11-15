@@ -13,7 +13,7 @@ const OUR_TOWN = { id: 1, x: 18, y: 62 };
 const units = (page: Page) => page.evaluate(() => window.__proto?.game?.units() ?? []);
 const buildings = (page: Page) => page.evaluate(() => window.__proto?.game?.buildings() ?? []);
 
-for (const [ui, name] of [["", "原型"], ["&ui=r6", "正式介面"]] as const) {
+for (const [ui, name] of [["&ui=proto", "原型"], ["&ui=r6", "正式介面"]] as const) {
   test(`軍團畫面（${name}）：編隊有兵駐在城、躲在主城時，面板不超出畫面，× 在畫面內點得到；放不下時內容在面板裡捲，標題列留在上面`, async ({ page }) => {
     test.setTimeout(180_000);
     await injectSafeArea(page);
@@ -53,7 +53,7 @@ for (const [ui, name] of [["", "原型"], ["&ui=r6", "正式介面"]] as const) 
     await page.locator(GROUP_1).tap();
     const panel = page.locator(".sel-info");
     // 正式介面 (R24-02): opened from the bar's 軍團, its title and ✕ on the bar under it.
-    const formal = ui !== "";
+    const formal = ui === "&ui=r6";
     if (formal) await openPanel(page);
     else {
       await expect(panel.locator(".sel-head")).toContainText(/^編隊 1/);

@@ -24,7 +24,7 @@ const BATTLE = "#hud button, .res-bar, .paused-banner, .sel-info, .cmds, .prompt
 
 async function start(page: Page, size: { width: number; height: number }): Promise<void> {
   await page.setViewportSize(size);
-  await page.goto("./?test=1&mock=1&tps=20");
+  await page.goto("./?test=1&mock=1&tps=20&ui=proto");
   await injectSafeArea(page);
   await expect(page.locator("#proto-label")).toBeVisible();
 }

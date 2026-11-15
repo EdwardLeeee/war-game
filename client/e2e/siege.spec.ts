@@ -5,7 +5,7 @@
 // The pictures go to the user with art-v6, when the feature goes on.
 
 import { expect, type Page, test } from "@playwright/test";
-import { formalOn, meaningText, selectForCommands, shot, watchErrors } from "./helpers.ts";
+import { formalOn, meaningText, orderHelp, selectForCommands, shot, watchErrors } from "./helpers.ts";
 import { tap } from "./touch.ts";
 
 const SIEGE = 6;
@@ -46,13 +46,17 @@ test("攻城砲（D-099）：石頭從攻城砲飛到落點、看不到的攻城
   await expect.poll(async () => (await siege(page)).shots, { timeout: 60_000 }).toBeGreaterThanOrEqual(2);
   // Selected alone: its rings, its two reaches in words (D-115), and its 剋／怕 line.
   await selectForCommands(page, [engine.id]);
-  await expect.poll(() => meaningText(page.locator(".sel-info .siege-reach"))).toBe("射程：打建築 10 格、打兵 6 格，3 格內打不到");
+  // (正式介面: the explanation in ？ over the bar, R24-02.)
+  const help = await orderHelp(page);
+  await expect.poll(() => meaningText(help.locator(".siege-reach"))).toBe("射程：打建築 10 格、打兵 6 格，3 格內打不到");
   await expect.poll(async () => (await siege(page)).rings).toBe(1);
   // The one kind's 剋怕: the prototype's own line, 正式介面's among the explanation (R14).
-  if (await formalOn(page)) await expect.poll(() => meaningText(page.locator(".sel-info .counter-meaning"))).toBe("剋怕：剋：建築／怕：近身的兵、騎兵");
+  const formal = await formalOn(page);
+  if (formal) await expect.poll(() => meaningText(help.locator(".counter-meaning"))).toBe("剋怕：剋：建築／怕：近身的兵、騎兵");
   else await expect(page.locator(".sel-counters")).toHaveText("攻城砲　剋：建築／怕：近身的兵、騎兵");
-  // The panel folded, the way from the engine (28, 55) to the barracks (34–36, 58–60) in view.
-  await page.locator(".sel-info").getByRole("button", { name: "收起選取資訊" }).tap();
+  // The panel folded (正式介面: ？ shut), the way from the engine (28, 55) to the barracks (34–36, 58–60) in view.
+  if (formal) await page.locator(".sel-bar").getByRole("button", { name: "說明" }).tap();
+  else await page.locator(".sel-info").getByRole("button", { name: "收起選取資訊" }).tap();
   await centre(page, 31.5, 57, 1.4);
   // A stone in the air (half way: 10 ticks after a throw at a multiple of 60).
   await page.waitForFunction(() => (window.__proto?.game?.header().tick ?? 0) % 60 === 6, null, { timeout: 60_000, polling: 16 });

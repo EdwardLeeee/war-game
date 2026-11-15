@@ -8,7 +8,7 @@
 // (CI run 40222760397, WebKit).
 
 import { expect, type Page, test } from "@playwright/test";
-import { expectSaid, formalOn, keepControls, saveGroup, selectForCommands, watchErrors, watchToasts } from "./helpers.ts";
+import { expectSaid, foldGroup, formalOn, keepControls, saveGroup, selectForCommands, selTitle, watchErrors, watchToasts } from "./helpers.ts";
 import { tap } from "./touch.ts";
 
 const SMALL = 0;
@@ -94,9 +94,9 @@ test("真模擬：攻下小鎮、治理，整個編隊 1 駐軍；出城歸隊�
   // 出城歸隊: one stays.
   await page.evaluate(() => window.__proto?.game?.select([]));
   await page.locator(GROUP_1).tap();
-  await expect(panel.locator(".sel-head")).toContainText(/^編隊 1/);
+  await expect(selTitle(page)).toContainText(/^編隊 1/);
   // Its button selects those in the town too (the user 2026-10-31), the panel folded.
-  await panel.getByRole("button", { name: "展開選取資訊" }).tap();
+  await foldGroup(page, true);
   await panel.getByRole("button", { name: "出城歸隊" }).tap();
   // How many: 自動訓練 may have sent one more in by now.
   await expectSaid(page, /\d+ 名出城歸隊編隊 1，留 1 名守城/);
