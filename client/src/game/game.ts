@@ -3326,16 +3326,19 @@ export class Game implements GestureHost {
 
   longPress(x: number, y: number): LongPressResult {
     const view = this.view;
-    if (view === null || this.placement !== null) return "none";
+    if (view === null) return "none";
+    // Nothing done (placing a building; a building or an enemy under the finger): a quick tap that a busy page read
+    // late is still a tap (gestures.ts).
+    if (this.placement !== null) return "ignored";
     const w = this.world(x, y);
     const kind = longPressKind(view, w.x, w.y, this.hitRadius());
     if (kind === "wheel") {
       const pick = view.pick(w.x, w.y, this.hitRadius());
-      if (pick === null) return "none";
+      if (pick === null) return "ignored";
       if (!view.selection.units.includes(pick.id)) this.apply([{ kind: "select", units: [pick.id] }]);
       this.openWheel(x, y, pick.type);
     }
-    return kind;
+    return kind === "none" ? "ignored" : kind;
   }
 
   pressCue(x: number, y: number, on: boolean): void {

@@ -114,6 +114,23 @@ test("…and closes a wheel it opened, then taps; a press really held that long 
   assert.deepEqual(held.host.names().filter((n) => n !== "pressCue"), ["longPress"]);
 });
 
+test("…and a long press that did nothing (ignored: a building, an enemy) taps; held that long, it stays nothing", () => {
+  const { host, g } = setup();
+  host.longPressAnswer = "ignored";
+  g.down(1, 100, 100, 0);
+  g.update(LONG_PRESS_MS + 60);
+  assert.equal(g.state, "held");
+  g.up(1, 100, 100, 200);
+  assert.deepEqual(host.names().filter((n) => n !== "pressCue"), ["longPress", "tap"]);
+  assert.equal(g.state, "idle");
+  const held = setup();
+  held.host.longPressAnswer = "ignored";
+  held.g.down(1, 100, 100, 0);
+  held.g.update(LONG_PRESS_MS + 60);
+  held.g.up(1, 100, 100, LONG_PRESS_MS + 80);
+  assert.deepEqual(held.host.names().filter((n) => n !== "pressCue"), ["longPress"]);
+});
+
 test("…but a long press the host acted on itself (none: the minimap's move) stays one, with no tap on top", () => {
   const { host, g } = setup();
   host.longPressAnswer = "none";

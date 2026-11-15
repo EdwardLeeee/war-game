@@ -54,3 +54,38 @@ test("點地面時頁面忙 400 ms（掉格）：手指 60 ms 就放開，照樣
   expect(await page.evaluate(() => window.__proto?.game?.wheel() ?? null)).toBeNull();
   await expect(page.locator(".marquee")).toBeHidden();
 });
+
+// The same on a building (and on an enemy, anything a long press does nothing with): the long press read first did
+// nothing, so the lift that came sooner is the tap it was. R25's 8a and 8d (the town's keep, its 進駐 tag) lost one
+// in about six runs on a busy machine before this: the press stayed "held" and the lift did nothing.
+test("點建築時頁面忙 400 ms：手指 60 ms 就放開，照樣是點（選到主城），不是什麼都沒做的長按", async ({ page, browserName }) => {
+  test.skip(browserName !== "chromium", "CDP's touch events, with the finger's own times");
+  await page.goto("./?test=1&mock=1&tps=20");
+  await page.getByRole("button", { name: "開始" }).tap();
+  await page.waitForFunction(() => window.__proto?.ready === true);
+  await page.waitForFunction(() => (window.__proto?.game?.header().tick ?? 0) > 5);
+  const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
+  const city = (await page.evaluate(() => window.__proto?.game?.buildings() ?? [])).find((b) => b.owner === me && b.type === 0);
+  if (city === undefined) throw new Error("no main city");
+  // Its middle (cx, cy are its corner cell; the hook adds half a cell).
+  const mid = { x: city.cx + city.size / 2 - 0.5, y: city.cy + city.size / 2 - 0.5 };
+  await page.evaluate(([cx, cy]) => window.__proto?.game?.centerOn(cx, cy, 1), [mid.x, mid.y] as const);
+  await page.waitForTimeout(200);
+  const at = await page.evaluate(([cx, cy]) => window.__proto?.game?.cellToScreen(cx, cy) ?? { x: 0, y: 0 }, [mid.x, mid.y] as const);
+  expect(await page.evaluate(([sx, sy]) => document.elementFromPoint(sx, sy)?.tagName === "CANVAS" && window.__proto?.game?.pickAt(sx, sy), [at.x, at.y] as const), "the city under the finger").toBe("building");
+  expect((await page.evaluate(() => window.__proto?.game?.selection()))?.building ?? null).toBeNull();
+  const cdp = await page.context().newCDPSession(page);
+  const t0 = Date.now() / 1000;
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: at.x, y: at.y }], timestamp: t0 });
+  await page.evaluate(() => {
+    setTimeout(() => {
+      const t = performance.now();
+      while (performance.now() - t < 400) {
+        // a long frame
+      }
+    }, 0);
+  });
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [], timestamp: t0 + 0.06 });
+  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.selection()))?.building ?? null).toBe(city.id);
+  expect(await page.evaluate(() => window.__proto?.game?.wheel() ?? null)).toBeNull();
+});
