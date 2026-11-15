@@ -42,3 +42,12 @@ export function runAll(jobs: Job[], n = threads()): Promise<JobResult[]> {
     }
   });
 }
+
+/** runAll for play and record jobs (D-086 B): their outcomes are GameOutcome; a scripted job here is a mistake. */
+export async function runPlays(jobs: Job[], n = threads()): Promise<Exclude<JobResult, { kind: "scripted" }>[]> {
+  const res = await runAll(jobs, n);
+  return res.map((r) => {
+    if (r.kind === "scripted") throw new Error("runPlays: a scripted job (exam.ts plays those with runAll)");
+    return r;
+  });
+}
