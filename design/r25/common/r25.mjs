@@ -285,7 +285,7 @@ const FRAMES = {
     await G(p, () => window.__proto.game.centerOn(8, 84, 1.1));
     await p.waitForTimeout(300);
     await G(p, () => {
-      window.R25.card({ n: 8, title: "打城鎮", body: "中立的小鎮在右上：帶軍團去，打倒城裡的<b>民兵</b>。", go: "帶我去看" });
+      window.R25.card({ n: 8, title: "打城鎮", body: "中立的小鎮在<b>標籤指的方向</b>：帶軍團去，打倒城裡的民兵。", go: "帶我去看" });
       window.R25.edge([30, 66], "小鎮");
     });
   },
@@ -354,7 +354,7 @@ const FRAMES = {
     await G(p, () => window.__proto.game.centerOn(8, 84, 1.1));
     await p.waitForTimeout(300);
     await G(p, () => {
-      window.R25.card({ n: 9, title: "打下對手主城", body: "對手的主城在右上：選著攻城砲和軍團，一起帶過去。", go: "帶我去看" });
+      window.R25.card({ n: 9, title: "打下對手主城", body: "對手的主城在<b>標籤指的方向</b>：選著攻城砲和軍團，一起帶過去。", go: "帶我去看" });
       window.R25.edge([35, 59], "對手主城");
     });
   },
