@@ -8,7 +8,7 @@
 // with the stage to start at in the settings (ES_DEFAULTS: the mix, as the start is as strong as hard already).
 
 import { NET_HEADS, NET_SHAPE, type NetWeights } from "../net.ts";
-import { runAll } from "./pool.ts";
+import { runPlays } from "./pool.ts";
 import type { GameOutcome, Opponent } from "./play.ts";
 import type { Job } from "./worker.ts";
 
@@ -167,7 +167,7 @@ export async function generation(state: EsState, like: NetWeights, threads?: num
   }
   const jobs: Job[] = [];
   for (const net of candidates) for (const g of games) jobs.push({ kind: "play", spec: { seed: g.seed, map: g.map, swap: g.swap, maxTicks: c.maxTicks, opp: g.opp }, net });
-  const results = await runAll(jobs, threads);
+  const results = await runPlays(jobs, threads);
   const shaping = state.generation >= c.shapingUntil ? 0 : (c.shaping * (c.shapingUntil - state.generation)) / c.shapingUntil;
   const fitness: number[] = [];
   let won = 0;

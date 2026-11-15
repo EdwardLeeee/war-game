@@ -10,21 +10,24 @@
 #   es      evolution strategies, one island per job (train-es-<n>), from the network that plays exactly as hard
 #           (from_run: an es run to go on from)
 #   eval    networks against hard, normal and the late group (nets: files in the branch; or from_run, net_artifact)
+#   exam    D-147: search the scripted player's plays for examiners that beat hard (src/ai/learn/exam.ts search), one
+#           search per job (islands), each its own seeds
+#   examcheck  D-147: the best of each kind from an exam run (from_run), on fresh seeds (exam.ts check), split over the jobs
 name: AI train
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: dryrun, record, es or eval
+        description: dryrun, record, es, eval, exam or examcheck
         type: choice
-        options: [dryrun, record, es, eval]
+        options: [dryrun, record, es, eval, exam, examcheck]
         default: dryrun
       from_run:
         description: The run whose artifacts this one starts from (es, eval)
         default: ""
       islands:
-        description: "es: jobs, each its own search (at most 8)"
+        description: "es, exam: jobs, each its own search; examcheck: jobs the plans are split over (at most 8)"
         default: "8"
       generations:
         description: "es: generations per job at most"
@@ -33,7 +36,7 @@ on:
         description: Hours a job plays before it saves and stops
         default: "5.5"
       games:
-        description: "record: games; eval: games against hard on each map"
+        description: "record: games; eval: games against hard on each map; examcheck: games each plan"
         default: "400"
       config:
         description: "es: settings over ES_DEFAULTS (JSON)"
@@ -85,10 +88,10 @@ jobs:
           fi
           get() { echo "$S" | jq -r --arg k "$1" --arg d "$2" '.[$k] // $d | if type == "string" then . else tojson end'; }
           mode=$(get mode dryrun)
-          case "$mode" in dryrun|record|es|eval) ;; *) echo "mode $mode" >&2; exit 1 ;; esac
+          case "$mode" in dryrun|record|es|eval|exam|examcheck) ;; *) echo "mode $mode" >&2; exit 1 ;; esac
           islands=$(get islands 8)
           n=1
-          if [ "$mode" = "es" ]; then n=$(( islands < 1 ? 1 : islands > 8 ? 8 : islands )); fi
+          if [ "$mode" = "es" ] || [ "$mode" = "exam" ] || [ "$mode" = "examcheck" ]; then n=$(( islands < 1 ? 1 : islands > 8 ? 8 : islands )); fi
           # eval: "nets" lists networks in the branch (paths under sim/, "none": hard itself), one job each, at most 8.
           nets=$(echo "$S" | jq -c '.nets // []')
           k=$(echo "$nets" | jq 'length')
@@ -143,6 +146,7 @@ jobs:
           NET: ${{ needs.plan.outputs.net_artifact }}
           ARGS: ${{ needs.plan.outputs.args }}
           NETS: ${{ needs.plan.outputs.nets }}
+          ISLANDS: ${{ needs.plan.outputs.islands }}
         run: |
           set -o pipefail
           F="${GITHUB_WORKSPACE}/from"
@@ -172,12 +176,15 @@ jobs:
               [ -f "$N" ] || N=$(first net.json)
               [ -n "$N" ] && [ -f "$N" ] || N=$(first bc.json)
               node $T eval --net "$N" --games "$GAMES" --out "$O" "$@" ;;
+            # D-147: run.json "args" adds exam.ts's options (--map, --pool, --rounds, --cap, --top, --seed-from, --qualify).
+            exam) node src/ai/learn/exam.ts search --seed $((ISLAND + 1)) --hours "$HOURS" --out "$O" "$@" ;;
+            examcheck) node src/ai/learn/exam.ts check --from "$F" --games "$GAMES" --shard "$ISLAND" --shards "$(echo "$ISLANDS" | jq length)" --out "$O" "$@" ;;
           esac
           cat "$O/summary.md" >> "$GITHUB_STEP_SUMMARY"
       - if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: train-${{ needs.plan.outputs.mode }}${{ (needs.plan.outputs.mode == 'es' || needs.plan.outputs.nets != '[]') && format('-{0}', matrix.island) || '' }}
+          name: train-${{ needs.plan.outputs.mode }}${{ (needs.plan.outputs.mode == 'es' || needs.plan.outputs.mode == 'exam' || needs.plan.outputs.mode == 'examcheck' || needs.plan.outputs.nets != '[]') && format('-{0}', matrix.island) || '' }}
           path: out/
           retention-days: 14
           if-no-files-found: ignore
