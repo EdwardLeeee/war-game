@@ -23,7 +23,7 @@ async function startMock(page: Page, ui: string): Promise<number[]> {
   return (await page.evaluate(() => window.__proto?.game?.units() ?? [])).filter((u) => u.owner === me && [1, 2, 3].includes(u.type)).map((u) => u.id);
 }
 
-test("正式介面的指令區（R6-18）：選了兵時四欄、每顆 56×50，從 x 571 起；攻擊紅、移動藍、堅守金、隊形兩格寬；選位置時那顆亮", async ({ page }) => {
+test("正式介面的指令區（R6-18、R24-03）：選了兵時一排四顆、每顆 56×50；攻擊紅、移動藍；「更多」裡堅守金、隊形和別顆一樣寬；選位置時那顆亮", async ({ page }) => {
   const soldiers = await startMock(page, "&ui=r6");
   await page.evaluate(() => window.__proto?.game?.centerOn(23, 66, 1));
   await selectForCommands(page, soldiers);
@@ -34,12 +34,15 @@ test("正式介面的指令區（R6-18）：選了兵時四欄、每顆 56×50�
   const attack = cmds(page).getByRole("button", { name: /^攻擊/ });
   await expect(attack).toHaveClass(/\bb\b.*\bred\b|\bred\b.*\bb\b/);
   await expect(cmds(page).getByRole("button", { name: /^移動/ })).toHaveClass(/\bblue\b/);
-  await expect(cmds(page).getByRole("button", { name: /^堅守/ })).toHaveClass(/\bgold\b/);
   const one = await attack.boundingBox();
   expect(one !== null && Math.round(one.width) === 56 && Math.round(one.height) === 50, `攻擊 56 × 50: ${JSON.stringify(one)}`).toBe(true);
-  const formation = await cmds(page).getByRole("button", { name: /^隊形/ }).boundingBox();
-  expect(Math.round(formation?.width ?? 0), "隊形 two columns").toBe(117);
   await expect(attack.locator("svg.ic")).toHaveCount(1);
+  // R24-03: 堅守 and 隊形 in 更多, 隊形 as wide as the others there.
+  await cmds(page).getByRole("button", { name: /^更多/ }).tap();
+  await expect(cmds(page).getByRole("button", { name: /^堅守/ })).toHaveClass(/\bgold\b/);
+  const formation = await cmds(page).getByRole("button", { name: /^隊形/ }).boundingBox();
+  expect(Math.round(formation?.width ?? 0), "隊形 one column").toBe(56);
+  await cmds(page).getByRole("button", { name: /^更多/ }).tap();
   await attack.tap();
   await expect(cmds(page).getByRole("button", { name: /^取消攻擊/ })).toHaveClass(/\bactive\b/);
 });
@@ -80,15 +83,19 @@ test("正式介面的建造選單（R14-04，真的模擬）：超過 12 顆時�
   const tops = await buttons.evaluateAll((bs) => bs.slice(0, 5).map((b) => Math.round(b.getBoundingClientRect().top)));
   expect(new Set(tops).size, `five on the first line: ${tops}`).toBe(1);
   const area = await box(page, ".cmds");
-  const panel = await box(page, ".sel-info");
-  expect(area.x, "clear of the selection info").toBeGreaterThanOrEqual(panel.x + panel.width);
+  // The bar (R24-02, the farmers selected) ends 8 left of the five columns.
+  const panel = await box(page, ".sel-bar");
+  expect(Math.round(area.x - (panel.x + panel.width)), "clear of the selection bar").toBe(8);
   for (const b of await buttons.all()) {
     const r = await b.boundingBox();
     expect(Math.min(r?.width ?? 0, r?.height ?? 0), "a finger across").toBeGreaterThanOrEqual(44);
   }
-  // 返回: four columns again.
+  // 返回: four columns again, and the bar as long as before.
   await cmds(page).getByRole("button", { name: "返回" }).tap();
   await expect(cmds(page)).not.toHaveClass(/\bcols5\b/);
+  const back = await box(page, ".cmds");
+  const bar = await box(page, ".sel-bar");
+  expect(Math.round(back.x - (bar.x + bar.width))).toBe(8);
 });
 
 test("原型的指令區照舊：?ui=proto 時按鈕不是正式介面的樣子，沒有圖示", async ({ page }) => {

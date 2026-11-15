@@ -157,6 +157,8 @@ export interface PanelHost {
   /** 收起 (D-054): the panel shows its title line only; kept for this game. */
   collapsed(): boolean;
   toggleCollapsed(): void;
+  /** 軍團畫面 folded (R24-02: a tap outside it), as its 收起 did. */
+  foldGroup(): void;
   /** 預留 (D-054): the reserve 自動訓練 leaves untouched, set in a dialog. */
   openReserve(): void;
 }
@@ -289,6 +291,48 @@ function bar(parent: HTMLElement, cls: string): (frac: number) => void {
 
 type Updater = () => void;
 
+/** A cell of the bar (R24-02): a button 44 high, flat, a line between it and the one before. */
+function cell(parent: HTMLElement, cls: string, label: string, onTap: () => void): HTMLButtonElement {
+  const b = el("button", parent, `bar-cell ${cls}`);
+  b.type = "button";
+  b.setAttribute("aria-label", label);
+  b.addEventListener("click", onTap);
+  return b;
+}
+
+/** The bar's short words for what soldiers do (R24-02: 待命 11・攻擊 1), and their tone. */
+const BAR_WORD: Record<OrderState, [string, string]> = { advance: ["攻擊", "atk"], retreat: ["移動", "ret"], hold: ["堅守", "hold"], idle: ["待命", "idle"], guard: ["守城", "idle"], garrison: ["躲著", "idle"] };
+
+/**
+ * What these units do, the most first, at most two: soldiers by their order (all ours), else by what
+ * they are doing (採集中, 移動中); nothing for nobody.
+ */
+function barWords(view: GameView, ids: number[]): [string, number, string][] {
+  const counts = new Map<string, [number, string]>();
+  const add = (w: string, tone: string) => counts.set(w, [(counts.get(w)?.[0] ?? 0) + 1, tone]);
+  const u = view.curr?.snap.units;
+  const own = ids.every((id) => {
+    const o = view.unitRow(id);
+    return o >= 0 && u !== undefined && u[o + U.owner] === view.me;
+  });
+  const soldiers = own && ids.length > 0 && ids.every((id) => isSoldier(view.unitType(id)));
+  for (const id of ids) {
+    if (soldiers) {
+      const [w, tone] = BAR_WORD[orderState(view, id)];
+      add(w, tone);
+      continue;
+    }
+    const o = view.unitRow(id);
+    if (o < 0 || u === undefined) continue;
+    add(ACTION_NAME[u[o + U.action]] ?? "", "idle");
+  }
+  return [...counts.entries()]
+    .filter(([w]) => w !== "")
+    .sort((a, b) => b[1][0] - a[1][0])
+    .slice(0, 2)
+    .map(([w, [n, tone]]) => [w, n, tone]);
+}
+
 /** 正式介面 (R6-14 to R6-16): the number after these words in bold (生命 100/100 and 剩下 80, their 100 and 80). */
 const BOLD_AFTER = /((?:生命|防護罩|搬運|剩下|附近有|建造中|躲了|駐守|主堡|城裡有) )(\d+(?::\d\d)?)/g;
 
@@ -389,6 +433,77 @@ export class SelectionInfo {
       },
       { passive: true },
     );
+    // R24-02 (D-150): the bar at the foot, and what ？ opens over it.
+    this.bar = this.formal ? el("section", parent, "sel-bar panel") : null;
+    this.help = this.formal ? el("section", parent, "sel-help panel") : null;
+    if (this.bar !== null && this.help !== null) {
+      this.bar.setAttribute("aria-label", "選取資訊");
+      this.bar.hidden = true;
+      this.help.setAttribute("aria-label", "說明");
+      this.help.hidden = true;
+      // A tap outside closes ？ and 軍團畫面, and still does what it does (the user 2026-10-31: most
+      // of the time the tap is on the ground). On its way down, before the battlefield's own.
+      const outside = (e: PointerEvent) => this.tapOutside(e.target);
+      document.addEventListener("pointerdown", outside, true);
+      this.drop = () => document.removeEventListener("pointerdown", outside, true);
+    }
+  }
+
+  /** The listener on the page, taken off with the game. */
+  private drop: () => void = () => {};
+
+  destroy(): void {
+    this.drop();
+  }
+
+  /**
+   * R24-02 (D-150, 正式介面): with soldiers or villagers selected, a unit looked at, or a group's, a
+   * bar 44 high along the foot (from 地圖 to the commands) in place of the panel: who, what they do,
+   * a cell a kind (a tap keeps that kind), ？ and ✕. ？ opens the explanation over it (`help`); a
+   * group's 軍團 opens 軍團畫面 over it (the panel, `frame`, at most 46% high).
+   */
+  readonly bar: HTMLElement | null;
+  private readonly help: HTMLElement | null;
+  /** The bar built for (the selection's key and its kinds), and what keeps it up to date. */
+  private barKey = "";
+  private barUpdaters: Updater[] = [];
+  private barRow: HTMLElement | null = null;
+  private qCell: HTMLButtonElement | null = null;
+  private legionCell: HTMLButtonElement | null = null;
+  private extraCell: HTMLElement | null = null;
+  /** ？ open: until ？ again, ✕, 軍團, or a tap outside it (not when one of them dies). */
+  private helpOpen = false;
+  /** The explanation has something to say (villagers have none). */
+  private hasHelp = false;
+  /** The screen size and title the cells were last fitted to (fitBar). */
+  private barFit = "";
+
+  private tapOutside(target: EventTarget | null): void {
+    if (!(target instanceof Node) || this.bar === null || this.help === null) return;
+    if (this.helpOpen && !this.help.contains(target) && !(this.qCell?.contains(target) ?? false)) {
+      this.helpOpen = false;
+      this.showPops();
+    }
+    const legion = this.legionCell;
+    if (legion !== null && this.host.groupView() !== null && !this.host.collapsed() && !this.frame.contains(target) && !legion.contains(target) && !(this.extraCell?.contains(target) ?? false)) {
+      this.host.foldGroup();
+      this.showPops();
+    }
+  }
+
+  /** What is open over the bar: 軍團畫面 (the group's, unless folded), or ？'s explanation. */
+  private showPops(): void {
+    if (this.bar === null || this.help === null || this.bar.hidden) return;
+    const group = this.host.groupView() !== null;
+    const legionOpen = group && !this.host.collapsed();
+    this.frame.hidden = !legionOpen;
+    // Not while picking where to go in (進駐, R13-01 B: the panel folded then).
+    const helpShown = this.helpOpen && this.hasHelp && this.host.mode() !== "enter";
+    this.help.hidden = !helpShown;
+    this.legionCell?.classList.toggle("on", legionOpen);
+    this.legionCell?.setAttribute("aria-expanded", `${legionOpen}`);
+    this.qCell?.classList.toggle("on", helpShown);
+    this.qCell?.setAttribute("aria-expanded", `${helpShown}`);
   }
 
   /** The fade at the foot of what scrolls, the ⌄, and the foot row it takes without a pinned row (正式介面). */
@@ -424,6 +539,7 @@ export class SelectionInfo {
     const snap = view?.curr?.snap;
     if (view === null || snap === undefined) return;
     const key = this.keyFor(view);
+    const barMode = this.bar !== null && (key.startsWith("u:") || key.startsWith("g:") || key.startsWith("i:unit:"));
     if (key !== this.key) {
       this.key = key;
       this.updaters = [];
@@ -431,15 +547,198 @@ export class SelectionInfo {
       this.el.replaceChildren();
       this.el.scrollTop = 0;
       this.frame.classList.remove("scrolled");
+      // Over the bar: 軍團畫面 (R24-02), as wide as the bar, its title the bar's.
+      this.frame.classList.toggle("legion-pop", barMode);
+      this.frame.setAttribute("aria-label", barMode ? "軍團畫面" : "選取資訊");
       this.frame.hidden = key === "none";
-      if (key !== "none") this.build(view);
+      if (key !== "none") this.build(view, barMode);
     }
     for (const u of this.updaters) u();
+    if (this.bar !== null) {
+      const ids = barMode ? this.barUnits(view) : [];
+      const kinds = [...new Set(ids.map((id) => view.unitType(id)))].sort((a, b) => a - b).join(".");
+      const barKey = barMode ? `${key}|${kinds}` : "";
+      if (barKey !== this.barKey) {
+        this.barKey = barKey;
+        this.barUpdaters = [];
+        this.bar.replaceChildren();
+        this.help?.replaceChildren();
+        this.barRow = this.qCell = this.legionCell = this.extraCell = null;
+        this.bar.hidden = !barMode;
+        if (barMode) this.buildBar(view, ids);
+        else {
+          this.helpOpen = false;
+          if (this.help !== null) this.help.hidden = true;
+        }
+        this.barFit = "";
+      }
+      for (const u of this.barUpdaters) u();
+      if (barMode) {
+        // Over the bar there is no 收起 (軍團 shuts it): no fold left from a panel before.
+        this.frame.classList.remove("collapsed");
+        this.fitBar();
+        this.showPops();
+      }
+    }
     if (this.foldButton !== null) this.fold(this.foldButton);
     // Last in what scrolls (a new build fills the body anew), held at its foot; the ⌄ out of it.
     if (this.more !== null && this.el.lastChild !== this.more) this.el.appendChild(this.more);
     this.placeDown();
     this.showMore();
+  }
+
+  /** Who the bar is about: the selection (a group's too), or the unit looked at. */
+  private barUnits(view: GameView): number[] {
+    if (view.selection.units.length > 0) return view.selection.units;
+    const p = view.inspected;
+    return p !== null && p.kind === "unit" && this.host.groupView() === null ? [p.id] : [];
+  }
+
+  /**
+   * The bar (R24-02, ui's board R24-02-選取資訊面板): the title over what they do (one: 槍兵／待命 and
+   * its life; several: 已選 12／待命 11・攻擊 1; a group: 編隊 1 12/12), a cell a kind (a tap keeps that
+   * kind), 軍團 (a group's), ？ and ✕, each cell 44 high. What ？ opens, built with it.
+   */
+  private buildBar(view: GameView, ids: number[]): void {
+    const bar = this.bar;
+    const help = this.help;
+    if (bar === null || help === null) return;
+    const row = el("div", bar, "bar-row");
+    this.barRow = row;
+    const group = this.host.groupView();
+    const title = el("div", row, "bar-title");
+    const t1 = el("span", title, "t1");
+    const t2 = el("span", title, "t2");
+    const set = (e: HTMLElement, text: string) => {
+      if (e.textContent !== text) e.textContent = text;
+    };
+    const u0 = view.curr?.snap.units;
+    const ownerOf = (id: number) => {
+      const o = view.unitRow(id);
+      return o < 0 || u0 === undefined ? view.me : u0[o + U.owner];
+    };
+    if (group !== null) {
+      el("b", t1, "", `編隊 ${group + 1}`);
+      const n = el("small", t1);
+      const types = GROUP_TYPES.filter((type) => (type !== UnitType.Cavalry || features(view.rules).cavalry) && (type !== UnitType.Siege || features(view.rules).siege === true));
+      this.barUpdaters.push(() => {
+        let has = 0;
+        let want = 0;
+        for (const t of types) {
+          has += this.host.groupHas(group, t);
+          want += this.host.groupWant(group, t);
+        }
+        set(n, has > 0 || want > 0 ? `${has}/${want}` : "還沒有兵");
+      });
+    } else if (ids.length === 1) {
+      el("b", t1, "", `${this.whose(ownerOf(ids[0]))}${UNIT_NAME[view.unitType(ids[0])] ?? "單位"}`);
+    } else {
+      el("b", t1, "", "已選");
+      el("small", t1, "", `${ids.length}`);
+    }
+    // What they do, under the title: one word when all do the same, else the two most (R24-02).
+    this.barUpdaters.push(() => {
+      const now = this.barUnits(view);
+      const words = barWords(view, now);
+      const text = words.map(([w, n]) => (words.length > 1 ? `${w} ${n}` : w)).join("・");
+      if (t2.dataset.text === text) return;
+      t2.dataset.text = text;
+      t2.replaceChildren();
+      words.forEach(([w, n, tone], k) => {
+        if (k > 0) t2.append("・");
+        el("span", t2, `w ${tone}`, w);
+        if (words.length > 1) t2.append(` ${n}`);
+      });
+      // A longer line may push a kind out (fitBar).
+      this.barFit = "";
+    });
+    if (ids.length === 1 && group === null) {
+      // Its life, a bar and the number.
+      const id = ids[0];
+      const hp = el("div", row, "bar-hp");
+      const back = el("i", hp);
+      const fill = el("b", back);
+      const num = el("span", hp);
+      const max = view.rules.units[view.unitType(id)]?.hp ?? 0;
+      this.barUpdaters.push(() => {
+        const o = view.unitRow(id);
+        const u = view.curr?.snap.units;
+        if (o < 0 || u === undefined) return;
+        const now = u[o + U.hp];
+        fill.style.width = `${Math.round(Math.min(Math.max(max > 0 ? now / max : 0, 0), 1) * 100)}%`;
+        set(num, `${now}`);
+      });
+      hp.setAttribute("aria-label", "生命");
+    } else if (ids.length > 0) {
+      // A cell a kind: a tap keeps only that kind (as the panel's chips did).
+      const kinds = [...new Set(ids.map((id) => view.unitType(id)))].sort((a, b) => a - b);
+      for (const kind of kinds) {
+        const name = UNIT_NAME[kind] ?? "單位";
+        const chip = cell(row, "bar-chip", `只選${name}`, () => this.host.selectOnly(this.barUnits(view).filter((id) => view.unitType(id) === kind)));
+        el("span", chip, "", name);
+        const cnt = el("span", chip, "cnt");
+        this.barUpdaters.push(() => set(cnt, `${this.barUnits(view).filter((id) => view.unitType(id) === kind).length}`));
+      }
+      // The kinds that do not fit (fitBar): how many more; a group's opens 軍團畫面.
+      this.extraCell = group !== null ? cell(row, "bar-extra", "打開軍團畫面看全部兵種", () => this.openLegion()) : el("span", row, "bar-cell bar-extra");
+      this.extraCell.hidden = true;
+    }
+    el("div", row, "bar-gap");
+    if (group !== null) {
+      this.legionCell = cell(row, "bar-legion", "軍團畫面", () => this.openLegion(true));
+      this.legionCell.append(icon("army"));
+      el("span", this.legionCell, "", "軍團");
+    }
+    this.qCell = cell(row, "bar-q", "說明", () => {
+      this.helpOpen = !this.helpOpen;
+      // One thing over the bar at a time.
+      if (this.helpOpen && this.host.groupView() !== null && !this.host.collapsed()) this.host.foldGroup();
+      this.showPops();
+    });
+    this.qCell.textContent = "？";
+    const close = cell(row, "bar-x", "取消選取", () => this.host.clearSelection());
+    close.append(icon("close"));
+    // ？: what the orders do (their meaning lines, 隊形, 剋怕), as the panel said under them.
+    const head = el("div", help, "help-head", "指令說明（點外面就收起）");
+    const kinds = [...new Set(ids.map((id) => view.unitType(id)))];
+    const one = kinds.length === 1 ? kinds : [];
+    if (!this.orderNote(view, ids, null, one, help, this.barUpdaters)) {
+      head.textContent = "剋怕（點外面就收起）";
+      this.counterNote(view, one.length > 0 ? one : kinds, help);
+    }
+    this.hasHelp = help.childElementCount > 1;
+    this.qCell.hidden = !this.hasHelp;
+  }
+
+  /** 軍團 (or the kinds that do not fit): 軍團畫面 over the bar, ？ shut; 軍團 again folds it. */
+  private openLegion(toggle = false): void {
+    this.helpOpen = false;
+    if (this.host.collapsed()) this.host.toggleCollapsed();
+    else if (toggle) this.host.foldGroup();
+    this.showPops();
+  }
+
+  /**
+   * The kinds that fit along the bar (R24-02 ⑥): from the last, those that do not give way to 「+N 種」.
+   * Measured, never by device, when the screen or the title changes.
+   */
+  private fitBar(): void {
+    const row = this.barRow;
+    const extra = this.extraCell;
+    if (row === null || extra === null) return;
+    const size = `${innerWidth}x${innerHeight}`;
+    if (this.barFit === size) return;
+    this.barFit = size;
+    const chips = [...row.querySelectorAll<HTMLElement>(".bar-chip")];
+    for (const c of chips) c.hidden = false;
+    extra.hidden = true;
+    let shown = chips.length;
+    while (row.scrollWidth > row.clientWidth + 1 && shown > 0) {
+      shown--;
+      chips[shown].hidden = true;
+      extra.hidden = false;
+      extra.textContent = `+${chips.length - shown} 種`;
+    }
   }
 
   private keyFor(view: GameView): string {
@@ -466,7 +765,14 @@ export class SelectionInfo {
     return "none";
   }
 
-  private build(view: GameView): void {
+  private build(view: GameView, barMode = false): void {
+    this.foldButton = null;
+    // R24-02: the bar has ✕ and the title; the panel is 軍團畫面 only (a group's), opened from the bar.
+    if (barMode) {
+      const group = this.host.groupView();
+      if (group !== null) this.groupPanel(view, group);
+      return;
+    }
     const close = button(this.frame, "✕", "", () => this.host.clearSelection(), "sel-close secondary");
     // First, as before the frame (the order buttons are read and tabbed in).
     this.frame.insertBefore(close, this.el);
@@ -677,26 +983,27 @@ export class SelectionInfo {
     return this.formal && owner !== this.host.view()?.me && owner !== NEUTRAL && owner !== NO_OWNER ? "敵方" : "";
   }
 
-  /** 剋／怕 (D-097) for the soldier type selected, ours or not: 「槍兵　剋：騎兵／怕：遠程」. */
-  private counterNote(view: GameView, types: number[]): void {
+  /** 剋／怕 (D-097) for the soldier type selected, ours or not: 「槍兵　剋：騎兵／怕：遠程」. In `parent` (the bar's ？, R24-02). */
+  private counterNote(view: GameView, types: number[], parent: HTMLElement = this.el): void {
     const lines = types.filter((t) => isSoldier(t)).map((t) => [t, counterShort(view.rules, t)] as const).filter(([, text]) => text !== "");
     if (lines.length === 0) return;
-    const note = el("p", this.el, "sel-counters");
+    const note = el("p", parent, "sel-counters");
     for (const [t, text] of lines) el("span", note, "counter-short", `${UNIT_NAME[t] ?? "兵"}　${text}`);
   }
 
   /**
    * Small lines under an own selection with soldiers: which of 進攻／撤退／堅守 they are in,
-   * what each of the three does (D-050), then what their formation means (D-027).
+   * what each of the three does (D-050), then what their formation means (D-027). In `parent`, kept
+   * up to date by `ups` (the bar's ？, R24-02).
    */
-  private orderNote(view: GameView, ids: number[], nowIn: HTMLElement | null = null, counterOf: readonly number[] = []): boolean {
+  private orderNote(view: GameView, ids: number[], nowIn: HTMLElement | null = null, counterOf: readonly number[] = [], parent: HTMLElement = this.el, ups: Updater[] = this.updaters): boolean {
     const u = view.curr?.snap.units;
     const mine = (id: number): boolean => {
       const o = view.unitRow(id);
       return o >= 0 && u !== undefined && u[o + U.owner] === view.me;
     };
     if (!ids.every(mine) || orderCounts(view, ids) === null) return false;
-    const note = el("p", this.el, "sel-note");
+    const note = el("p", parent, "sel-note");
     // 正式介面 (R6-14): 「目前：」 at the end of the chips' line (nowIn) for several; none for one
     // (his state is in the title line, his order lit in the command area).
     const now = !this.formal ? el("span", note, "order-now") : nowIn === null ? null : el("span", nowIn, "order-now now");
@@ -718,7 +1025,7 @@ export class SelectionInfo {
     // 正式介面 (R14-04): 剋怕 for one kind of soldier, the last line.
     const counters = counterOf.filter((t) => isSoldier(t)).map((t) => counterShort(view.rules, t)).filter((t) => t !== "");
     if (this.formal && counters.length === 1) line("order-meaning counter-meaning", `剋怕：${counters[0]}`);
-    this.updaters.push(() => {
+    ups.push(() => {
       const counts = orderCounts(view, ids);
       const text = counts === null ? "" : orderNowText(counts);
       if (now !== null && now.textContent !== text) now.textContent = text;
@@ -1245,6 +1552,39 @@ export class CommandArea {
     this.host = host;
     this.el = el("section", parent, "cmds");
     this.el.setAttribute("aria-label", "指令區");
+    if (this.formal) {
+      // 更多 (R24-03): a tap outside it shuts it, and still does what it does.
+      const outside = (e: PointerEvent) => {
+        if (!this.moreOpen || !(e.target instanceof Node)) return;
+        if ((this.morePop?.contains(e.target) ?? false) || (this.moreBtn?.contains(e.target) ?? false)) return;
+        this.openMore(false);
+      };
+      document.addEventListener("pointerdown", outside, true);
+      this.drop = () => document.removeEventListener("pointerdown", outside, true);
+    }
+  }
+
+  /** The listener on the page, taken off with the game. */
+  private drop: () => void = () => {};
+
+  destroy(): void {
+    this.drop();
+  }
+
+  /**
+   * 更多 open (R24-03, 正式介面): 隊形, 堅守, 整理隊形 and 停止 in a row over the commands. Shut by a
+   * tap on one of them, on 更多 again, or outside; not by one of the soldiers dying. Shown and hidden
+   * as it is, never rebuilt for it: the button under the finger stays the one it pressed.
+   */
+  private moreOpen = false;
+  private morePop: HTMLElement | null = null;
+  private moreBtn: HTMLButtonElement | null = null;
+
+  private openMore(open: boolean): void {
+    this.moreOpen = open;
+    if (this.morePop !== null) this.morePop.hidden = !open;
+    this.moreBtn?.classList.toggle("active", open);
+    this.moreBtn?.setAttribute("aria-expanded", `${open}`);
   }
 
   /** 正式介面 (R6-18): the icon over the words and the colour (攻擊 red, 移動 blue, 堅守 gold, 建造 and 訓練 gold); else as it is. */
@@ -1274,6 +1614,7 @@ export class CommandArea {
     }
     this.key = key;
     this.el.replaceChildren();
+    this.morePop = this.moreBtn = null;
     this.el.classList.remove("cols5", "build-page");
     this.build(view);
     this.fitBuildPage();
@@ -1313,6 +1654,9 @@ export class CommandArea {
     if (sel.units.length > 0) {
       const types = new Set(sel.units.map((id) => view.unitType(id)));
       const soldiers = sel.units.filter((id) => isSoldier(view.unitType(id)));
+      // R24-03 (D-150, 正式介面): soldiers only, one row of four, the rest in 更多; with villagers, as before.
+      if (this.formal && !types.has(UnitType.Farmer) && soldiers.length === sel.units.length && orderCounts(view, sel.units) !== null) return this.soldierRow(view, soldiers);
+      this.moreOpen = false;
       // 攻擊／移動／堅守 (D-050; D-094 renamed 進攻、撤退), then 停止, in the first row; the one all
       // the soldiers are in is lit. 攻擊 and 移動 both ask where to (D-059). 取消即堅守 (D-054):
       // while they attack or move, or while the spot is being picked, the same button reads 取消
@@ -1380,6 +1724,7 @@ export class CommandArea {
       }
       return;
     }
+    this.moreOpen = false;
     if (sel.building !== null) {
       const o = view.buildingRow(sel.building);
       const b = view.curr?.snap.buildings;
@@ -1431,6 +1776,80 @@ export class CommandArea {
     // Nothing selected (or only looking at a resource, a town or someone else's building):
     // 建造 still works, and the simulation sends the nearest farmers (D-024).
     this.look(button(this.el, "建造", "", () => this.setPage("build")), "build", "pri");
+  }
+
+  /**
+   * R24-03 (D-150, ui's board R24-03-常駐按鈕): 攻擊, 移動, 進駐 and 更多 in one row (the most used: 攻擊
+   * 6,832 times in 154 games, 移動 10,633, 進駐 about 2,079); 更多 opens 隊形, 堅守, 整理隊形 and 停止
+   * over it, in the order used (隊形 187, 堅守 87, 整理隊形 34, 停止 10).
+   */
+  private soldierRow(view: GameView, soldiers: number[]): void {
+    const sel = view.selection;
+    const mode = this.host.mode();
+    const advancing = mode === "advance" || (mode === "normal" && allIn(view, sel.units, "advance"));
+    const retreating = mode === "retreat" || (mode === "normal" && allIn(view, sel.units, "retreat"));
+    const advance = this.look(
+      advancing
+        ? button(this.el, "取消攻擊", "停下堅守", () => this.host.cancelToHold(), ORDER_TONE.advance)
+        : button(this.el, "攻擊", "地面或敵人", () => this.host.setMode("advance"), ORDER_TONE.advance),
+      "attack",
+      "red",
+    );
+    if (advancing) advance.classList.add("active");
+    const retreat = this.look(
+      retreating
+        ? button(this.el, "取消移動", "停下堅守", () => this.host.cancelToHold(), ORDER_TONE.retreat)
+        : button(this.el, "移動", "點地面", () => this.host.retreat(), ORDER_TONE.retreat),
+      "retreat",
+      "blue",
+    );
+    if (retreating) retreat.classList.add("active");
+    if (enterOn(view.rules)) {
+      const picking = mode === "enter";
+      const enter = this.look(
+        picking ? button(this.el, "取消", "進駐", () => this.host.setMode("normal"), "secondary") : button(this.el, "進駐", "點建築", () => this.host.setMode("enter"), "secondary"),
+        "enter",
+      );
+      if (picking) enter.classList.add("active");
+    }
+    const holding = mode === "normal" && allIn(view, sel.units, "hold");
+    this.moreBtn = this.look(button(this.el, "更多", "隊形等", () => this.openMore(!this.moreOpen), "secondary more-btn"), "more");
+    const pop = el("div", this.el, "cmds-more panel");
+    this.morePop = pop;
+    pop.setAttribute("role", "group");
+    pop.setAttribute("aria-label", "更多指令");
+    this.openMore(this.moreOpen);
+    const shut = (act: () => void) => () => {
+      this.openMore(false);
+      act();
+    };
+    // A tap re-forms the troops where they stand (D-028): 隊形 as narrow as the others, now → after.
+    const formation = formationOf(view, sel.units);
+    if (formation !== null) {
+      const loose = formation !== true;
+      const now = formation === "mixed" ? "混合" : formation ? "散開" : "密集";
+      const to = `${formation === "mixed" ? "全部" : ""}改成${loose ? "散開" : "密集"}`;
+      const f = this.look(
+        button(pop, "隊形", `${now}→${loose ? "散開" : "密集"}`, shut(() => {
+          this.host.command({ c: "formation", u: soldiers, loose });
+          this.host.notify(`已${to}。${FORMATION_TEXT[loose ? "loose" : "close"][0]}`);
+        })),
+        "formation",
+      );
+      f.setAttribute("aria-label", `隊形：${now}，按一下${to}`);
+    }
+    const hold = this.look(
+      button(pop, "堅守", "原地不動", shut(() => {
+        this.host.command({ c: "stop", u: soldiers });
+        this.host.command({ c: "stance", u: soldiers, stance: Stance.Hold });
+        this.host.notify(ORDER_TEXT.hold);
+      })),
+      "hold",
+      "gold",
+    );
+    if (holding) hold.classList.add("active");
+    if (soldiers.length > 1) this.look(button(pop, "整理隊形", "槍兵在前", shut(() => this.host.reform()), "secondary"), "reform");
+    this.look(button(pop, "停止", "", shut(() => this.host.command({ c: "stop", u: sel.units })), "secondary"), "stop");
   }
 
   private buildMenu(view: GameView): void {

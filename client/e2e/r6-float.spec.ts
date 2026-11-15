@@ -67,6 +67,8 @@ test("正式介面的進駐（R14-08）：進駐、整理隊形有自己的圖�
   await selectForCommands(page, await own(page, [1, 2, 3]));
   const icon = (name: RegExp) => cmds(page).getByRole("button", { name }).locator("svg.ic").evaluate((e) => e.innerHTML);
   const enter = await icon(/^進駐/);
+  // 整理隊形 in 更多 (R24-03).
+  await cmds(page).getByRole("button", { name: /^更多/ }).tap();
   const reform = await icon(/^整理隊形/);
   await selectForCommands(page, await own(page, [0]));
   const build = await icon(/^建造/);

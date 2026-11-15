@@ -37,19 +37,21 @@ const ownSoldiers = async (page: Page) => {
   return (await page.evaluate(() => window.__proto?.game?.units() ?? [])).filter((u) => u.owner === me && [1, 2, 3].includes(u.type));
 };
 
-test("正式介面：多選的說明照 R14 的字，多一行進駐；「目前：」在兵種鈕那一列；只選一種兵時剋怕在說明裡（原型照舊）", async ({ page }) => {
+test("正式介面：多選的說明照 R14 的字，多一行進駐，收在「？」裡（R24-02）；在做什麼寫在那一條上；只選一種兵時剋怕在說明裡（原型照舊）", async ({ page }) => {
   await start(page, "r7=1&outpost=1");
   const soldiers = await ownSoldiers(page);
   await selectForCommands(page, soldiers.map((u) => u.id));
-  const note = panel(page).locator(".sel-note");
+  await expect(page.locator(".sel-bar .bar-title .t2")).toContainText("待命");
+  await page.locator(".sel-bar").getByRole("button", { name: "說明" }).tap();
+  const help = page.locator(".sel-help");
+  const note = help.locator(".sel-note");
   await expect(note.locator(".order-meaning").first()).toHaveText("攻擊點地面或敵人：邊走邊打，或集中打它");
   await expect(note.locator(".order-meaning .k").first()).toHaveText("攻擊");
   await expect(note.locator(".enter-meaning")).toHaveText("進駐再點自己的城、主城、箭樓或哨所：那棟決定誰進去");
-  await expect(panel(page).locator(".sel-chips .now")).toHaveText(/^目前：/);
   // One kind: 剋怕 the last line of the help, no line of its own above it.
   await selectForCommands(page, soldiers.filter((u) => u.type === 1).map((u) => u.id));
   await expect(note.locator(".counter-meaning")).toHaveText(/^剋怕剋：/);
-  await expect(panel(page).locator(".sel-counters")).toHaveCount(0);
+  await expect(help.locator(".sel-counters")).toHaveCount(0);
   await expect(note.locator(".enter-meaning")).toHaveCount(1);
 });
 

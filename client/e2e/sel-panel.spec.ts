@@ -6,7 +6,7 @@
 // prototype's look and under 正式介面 (?ui=r6) alike.
 
 import { expect, type Page, test } from "@playwright/test";
-import { injectSafeArea, saveGroup, selectForCommands } from "./helpers.ts";
+import { injectSafeArea, openPanel, saveGroup, selectForCommands } from "./helpers.ts";
 
 const GROUP_1 = ".groups > button:nth-child(1)";
 const OUR_TOWN = { id: 1, x: 18, y: 62 };
@@ -52,11 +52,16 @@ for (const [ui, name] of [["", "原型"], ["&ui=r6", "正式介面"]] as const) 
     await page.evaluate(() => window.__proto?.game?.select([]));
     await page.locator(GROUP_1).tap();
     const panel = page.locator(".sel-info");
-    await expect(panel.locator(".sel-head")).toContainText(/^編隊 1/);
-    const unfold = panel.getByRole("button", { name: "展開選取資訊" });
-    if (await unfold.isVisible()) await unfold.tap();
+    // 正式介面 (R24-02): opened from the bar's 軍團, its title and ✕ on the bar under it.
+    const formal = ui !== "";
+    if (formal) await openPanel(page);
+    else {
+      await expect(panel.locator(".sel-head")).toContainText(/^編隊 1/);
+      const unfold = panel.getByRole("button", { name: "展開選取資訊" });
+      if (await unfold.isVisible()) await unfold.tap();
+    }
     await expect(panel.locator(".group-place").first()).toBeVisible();
-    const close = panel.getByRole("button", { name: "取消選取" });
+    const close = (formal ? page.locator(".sel-bar") : panel).getByRole("button", { name: "取消選取" });
     for (const size of [{ width: 814, height: 380 }, { width: 932, height: 430 }, { width: 814, height: 300 }]) {
       await page.setViewportSize(size);
       await page.waitForTimeout(300);
@@ -81,9 +86,12 @@ for (const [ui, name] of [["", "原型"], ["&ui=r6", "正式介面"]] as const) 
     const sizes = await body.evaluate((e) => ({ scroll: e.scrollHeight, client: e.clientHeight }));
     expect(sizes.scroll).toBeGreaterThan(sizes.client);
     await body.evaluate((e) => e.scrollTo(0, e.scrollHeight));
-    const head = await panel.locator(".sel-head").boundingBox();
-    const top = await panel.boundingBox();
-    expect(head !== null && top !== null && head.y - top.y < 20, "the title line at the top").toBe(true);
+    if (formal) await expect(page.locator(".sel-bar .bar-title")).toBeInViewport();
+    else {
+      const head = await panel.locator(".sel-head").boundingBox();
+      const top = await panel.boundingBox();
+      expect(head !== null && top !== null && head.y - top.y < 20, "the title line at the top").toBe(true);
+    }
     await expect(panel.getByRole("button", { name: /^自動補兵/ })).toBeInViewport();
     // And the ✕ does what it says.
     await close.tap();

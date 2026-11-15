@@ -531,27 +531,27 @@
 }
 
 /* What the orders and the formation mean: the word, in its colour, then what it does (R6-14). */
-:root[data-ui="r6"] .sel-info .sel-note,
-:root[data-ui="r6"] .sel-info .sel-counters {
+:root[data-ui="r6"] :is(.sel-info, .sel-help) .sel-note,
+:root[data-ui="r6"] :is(.sel-info, .sel-help) .sel-counters {
   margin-top: 5px;
   font-size: 11px;
   line-height: 15px;
   color: var(--ink2);
 }
 
-:root[data-ui="r6"] .sel-info .sel-note .order-meaning,
-:root[data-ui="r6"] .sel-info .sel-note .formation-meaning,
-:root[data-ui="r6"] .sel-info .sel-note .formation-more {
+:root[data-ui="r6"] :is(.sel-info, .sel-help) .sel-note .order-meaning,
+:root[data-ui="r6"] :is(.sel-info, .sel-help) .sel-note .formation-meaning,
+:root[data-ui="r6"] :is(.sel-info, .sel-help) .sel-note .formation-more {
   opacity: 1;
   padding-left: 32px;
   text-indent: -32px;
 }
 
-:root[data-ui="r6"] .sel-info .sel-note .formation-more {
+:root[data-ui="r6"] :is(.sel-info, .sel-help) .sel-note .formation-more {
   text-indent: 0;
 }
 
-:root[data-ui="r6"] .sel-info .sel-note .k {
+:root[data-ui="r6"] :is(.sel-info, .sel-help) .sel-note .k {
   display: inline-block;
   min-width: 26px;
   margin-right: 6px;
@@ -560,15 +560,15 @@
   text-indent: 0;
 }
 
-:root[data-ui="r6"] .sel-info .sel-note .k.atk {
+:root[data-ui="r6"] :is(.sel-info, .sel-help) .sel-note .k.atk {
   color: #ff9a86;
 }
 
-:root[data-ui="r6"] .sel-info .sel-note .k.ret {
+:root[data-ui="r6"] :is(.sel-info, .sel-help) .sel-note .k.ret {
   color: #9cc2ff;
 }
 
-:root[data-ui="r6"] .sel-info .sel-note .k.hold {
+:root[data-ui="r6"] :is(.sel-info, .sel-help) .sel-note .k.hold {
   color: #f2cf73;
 }
 
@@ -915,6 +915,354 @@
 :root[data-ui="r6"] .cmds.cols5 .b {
   width: 52px;
   min-width: 52px;
+}
+
+/* --- 選兵後的一條、更多 (R24-02, R24-03; D-150) ------------------------------------------------ */
+
+/* The bar along the foot, from 8 right of 地圖 (its 60 from 4) to 8 left of the commands (one row of
+   four, 239 from 4): 491 at 932 with the iPhone's 59 a side (ui's R24-02). Its cells are its buttons,
+   44 high, edge to edge, a line between two. */
+:root[data-ui="r6"] {
+  --bar-left: calc(var(--safe-l) + 72px);
+  --bar-right: calc(var(--safe-r) + 251px);
+  --bar-line: rgba(255, 222, 170, 0.2);
+  --bar-count: #f3d48c;
+  --bar-on: rgba(240, 196, 110, 0.32);
+  --bar-legion: rgba(240, 196, 110, 0.14);
+}
+:root[data-ui="r6"][data-theme="b"] {
+  --bar-line: var(--gold-dim);
+  --bar-count: var(--gold);
+  --bar-on: rgba(216, 182, 94, 0.3);
+  --bar-legion: rgba(216, 182, 94, 0.12);
+}
+
+/* 建造's page in five columns (R14-04, 52 and 4 gaps of 5): the bar ends 8 left of it. */
+:root[data-ui="r6"] #hud:has(> .cmds.cols5) {
+  --bar-right: calc(var(--safe-r) + 292px);
+}
+
+:root[data-ui="r6"] #hud .sel-bar {
+  position: absolute;
+  left: var(--bar-left);
+  right: var(--bar-right);
+  bottom: calc(var(--safe-b) + 4px);
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  font-size: 13px;
+}
+
+:root[data-ui="r6"] .sel-bar .bar-row {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  height: 44px;
+  overflow: hidden;
+}
+
+:root[data-ui="r6"] .sel-bar .bar-row > * {
+  flex: none;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: 44px;
+}
+
+:root[data-ui="r6"] .sel-bar .bar-row > * + *:not(.bar-gap) {
+  border-left: 1px solid var(--bar-line);
+}
+
+:root[data-ui="r6"] .sel-bar .bar-cell {
+  justify-content: center;
+  gap: 4px;
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 8px;
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+:root[data-ui="r6"] .sel-bar .bar-cell .cnt {
+  color: var(--bar-count);
+  font-variant-numeric: tabular-nums;
+}
+
+:root[data-ui="r6"] .sel-bar .bar-cell.on {
+  background: var(--bar-on);
+}
+
+:root[data-ui="r6"] .sel-bar .bar-legion {
+  background: var(--bar-legion);
+}
+
+:root[data-ui="r6"] .sel-bar .bar-q,
+:root[data-ui="r6"] .sel-bar .bar-x {
+  width: 44px;
+  padding: 0;
+}
+
+:root[data-ui="r6"] .sel-bar .bar-q {
+  font-size: 17px;
+}
+
+:root[data-ui="r6"] .sel-bar .bar-extra:not(button) {
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* 槍兵 over 待命; 已選 12 over 待命 11・攻擊 1; 編隊 1 12/12 over what they do. */
+:root[data-ui="r6"] .sel-bar .bar-title {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1px;
+  padding: 0 8px 0 12px;
+  white-space: nowrap;
+}
+
+:root[data-ui="r6"] .sel-bar .bar-title .t1 {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 14px;
+  line-height: 18px;
+}
+
+:root[data-ui="r6"] .sel-bar .bar-title small {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ink2);
+  font-variant-numeric: tabular-nums;
+}
+
+:root[data-ui="r6"] .sel-bar .bar-title .t2 {
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--ink2);
+}
+
+:root[data-ui="r6"] .sel-bar .bar-title .t2:empty {
+  display: none;
+}
+
+:root[data-ui="r6"] .sel-bar .t2 .w {
+  font-weight: 700;
+}
+
+:root[data-ui="r6"] .sel-bar .t2 .atk {
+  color: #ff9a86;
+}
+
+:root[data-ui="r6"] .sel-bar .t2 .ret {
+  color: #9cc2ff;
+}
+
+:root[data-ui="r6"] .sel-bar .t2 .hold {
+  color: #f2cf73;
+}
+
+:root[data-ui="r6"] .sel-bar .t2 .idle {
+  color: var(--ink);
+}
+
+:root[data-ui="r6"] .sel-bar .bar-hp {
+  gap: 6px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+:root[data-ui="r6"] .sel-bar .bar-hp i {
+  display: block;
+  width: 54px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+:root[data-ui="r6"] .sel-bar .bar-hp i b {
+  display: block;
+  height: 100%;
+  background: #6fcf5a;
+}
+
+:root[data-ui="r6"] .sel-bar .bar-gap {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* ？: the explanation over the bar, 4 above it, no higher than 40% of the screen; a tap outside shuts it. */
+:root[data-ui="r6"] #hud .sel-help {
+  position: absolute;
+  left: var(--bar-left);
+  bottom: calc(var(--safe-b) + 52px);
+  z-index: 30;
+  box-sizing: border-box;
+  width: min(366px, calc(100vw - var(--bar-left) - var(--bar-right)));
+  max-height: 40vh;
+  max-height: 40dvh;
+  margin: 0;
+  padding: 8px 12px 9px;
+  overflow-y: auto;
+  font-size: 12px;
+}
+
+:root[data-ui="r6"] .sel-help .help-head {
+  margin-bottom: 3px;
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0.85;
+}
+
+:root[data-ui="r6"] .sel-help .sel-note {
+  margin-top: 0;
+}
+
+/* 軍團畫面 over the bar (the user chose 46%, not the board's 40%): as wide as it, its title the bar's
+   (編隊 1, ✕; 軍團 again folds it), the kinds three to a line, the switches on the line under them. */
+:root[data-ui="r6"] #hud .sel-info.legion-pop {
+  left: var(--bar-left);
+  right: var(--bar-right);
+  bottom: calc(var(--safe-b) + 52px);
+  z-index: 30;
+  width: auto;
+  max-width: none;
+  margin: 0;
+  padding: 6px;
+  gap: 6px;
+  max-height: 46vh;
+  max-height: 46dvh;
+}
+
+:root[data-ui="r6"] .sel-info.legion-pop .sel-body > .sel-head {
+  display: none;
+}
+
+/* The fade over the last line while there is more below (a grid's own line, none high). */
+:root[data-ui="r6"] .sel-info.legion-pop .sel-more {
+  margin: -34px 0 0;
+}
+
+/* Three a line on a phone held sideways (491 across at 932); two where three do not fit (373 at 814). */
+:root[data-ui="r6"] .sel-info.legion-pop .sel-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 4px 5px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+:root[data-ui="r6"] .sel-info.legion-pop .sel-body > :not(.group-row) {
+  grid-column: 1 / -1;
+}
+
+/* Four kinds or more (two to a line in the panel): the same three to a line. */
+:root[data-ui="r6"] .sel-info.legion-pop .group-grid {
+  display: contents;
+}
+
+:root[data-ui="r6"] .sel-info.legion-pop .group-row {
+  display: grid;
+  grid-template-columns: 1fr 44px 22px 44px;
+  grid-template-rows: 22px 22px;
+  align-items: center;
+  height: 44px;
+  margin: 0;
+  padding: 0 0 0 6px;
+  gap: 0;
+  flex-wrap: nowrap;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+:root[data-ui="r6"] .sel-info.legion-pop .group-row > .group-label {
+  display: flex;
+  flex-direction: column;
+  grid-column: 1;
+  grid-row: 1 / 3;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0;
+  min-width: 0;
+}
+
+:root[data-ui="r6"] .sel-info.legion-pop .group-row .group-type {
+  grid-column: 1;
+  grid-row: 1;
+  align-self: end;
+  width: auto;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+:root[data-ui="r6"] .sel-info.legion-pop .group-row .group-has {
+  grid-column: 1;
+  grid-row: 2;
+  align-self: start;
+  flex: none;
+  width: auto;
+  min-width: 0;
+  font-size: 10px;
+}
+
+:root[data-ui="r6"] .sel-info.legion-pop .group-row > button:first-of-type {
+  grid-column: 2;
+  grid-row: 1 / 3;
+}
+
+:root[data-ui="r6"] .sel-info.legion-pop .group-row .group-want {
+  grid-column: 3;
+  grid-row: 1 / 3;
+  width: auto;
+  min-width: 0;
+  text-align: center;
+}
+
+:root[data-ui="r6"] .sel-info.legion-pop .group-row > button:last-of-type {
+  grid-column: 4;
+  grid-row: 1 / 3;
+}
+
+:root[data-ui="r6"] .sel-info.legion-pop > .group-actions {
+  display: flex;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+}
+
+:root[data-ui="r6"] .sel-info.legion-pop > .group-actions > .sel-more-btn {
+  margin-left: auto;
+}
+
+/* 更多 (R24-03): what it holds in a row over the commands, clear of 編隊 and 全軍 to the right. */
+:root[data-ui="r6"] .cmds .cmds-more {
+  position: absolute;
+  right: -4px;
+  bottom: calc(100% + 4px);
+  z-index: 30;
+  display: grid;
+  grid-template-columns: repeat(4, 56px);
+  grid-auto-rows: 50px;
+  gap: 5px;
+  padding: 4px;
 }
 
 /* --- 技能輪盤 (R6-19 INV-103 to INV-106) -------------------------------------------------------- */
@@ -1743,7 +2091,7 @@
 :root[data-ui="r6"][data-theme="b"] .sel-info .sel-head > b {
   color: #fbf4e2;
 }
-:root[data-ui="r6"][data-theme="b"] .sel-info .sel-note .k.hold {
+:root[data-ui="r6"][data-theme="b"] :is(.sel-info, .sel-help) .sel-note .k.hold {
   color: var(--gold);
 }
 :root[data-ui="r6"][data-theme="b"] .sel-info .b.plunder::before {
