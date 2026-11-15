@@ -5,6 +5,8 @@ import test from "node:test";
 import { type AiStyle, Known, mapMemory, aroundForts, createAi, enemyForts, FORT_HIDE_AI, type Fort, fortGroups, groupWorth, fortStagePoint, fortValues, GATE_AI, gateLoss, KEEP_AI, mopUpOrders, townDefence, gateOrders, groupsOnWay, HARD, type HardPlan, NORMAL_FORT, onWalls, SIEGE, STAGING, stagePoint, townGates } from "../src/ai/ai.ts";
 import { ARMY_BASE, ARMY_HOME, AS_HARD, asHardNet, BUILD_FARMERS, choose, features, forward, MIX_SPEAR, NET_HEADS, NET_INPUTS, NET_SHAPE, type NetWeights, TOWN_GOVERN, TOWN_PLUNDER } from "../src/ai/net.ts";
 import { readFileSync } from "node:fs";
+import { drawPlan, mutate, rng as examRng, SEARCHED } from "../src/ai/learn/exam-space.ts";
+import { PLAN_SPACE, validatePlan } from "../src/plan-space.ts";
 import { Game } from "../src/core/game.ts";
 import { CAVALRY, DODGE, GARRISON, NO_CRYSTAL, POPULATION_200, rules, TOWN_ONCE } from "../src/core/rules.ts";
 import * as RULES from "../src/core/rules.ts";
@@ -2112,6 +2114,25 @@ test("D-086 B: the simulation worker never imports the training code (sim/src/ai
   assert.ok(seen.size > 10, `walked ${seen.size} files`);
   assert.ok([...seen].some((f) => f.endsWith("/ai/net.ts")), "net.ts is in the worker");
   assert.deepEqual([...seen].filter((f) => f.includes("/ai/learn/")), []);
+});
+
+test("D-147: the examiner search draws plans validatePlan takes, on both maps, the same for the same seed; the fixed map's plays never on a random map", () => {
+  const fixedOnly = Object.entries(PLAN_SPACE).filter(([, f]) => f.fixedOnly).map(([p]) => p);
+  for (const map of ["random", "fixed"] as const) {
+    const r = examRng(11);
+    let changed = 0;
+    for (let k = 0; k < 200; k++) {
+      const d = drawPlan(r, map);
+      assert.deepEqual(validatePlan(d.plan, map), [], `${map} draw ${k}: ${JSON.stringify(d.set)}`);
+      const m = mutate(r, d, map, 3);
+      assert.deepEqual(validatePlan(m.plan, map), [], `${map} mutant ${k}`);
+      if (JSON.stringify(m.plan) !== JSON.stringify(d.plan)) changed++;
+      if (map === "random") for (const p of fixedOnly) assert.ok(!(p in d.set) && !(p in m.set), `${p} on a random map`);
+    }
+    assert.ok(changed >= 180, `${map}: mutants differ from their parents (${changed}/200)`);
+  }
+  assert.deepEqual(drawPlan(examRng(5), "random"), drawPlan(examRng(5), "random"));
+  assert.ok(SEARCHED.length >= 60 && SEARCHED.every((p) => PLAN_SPACE[p].search && PLAN_SPACE[p].type !== "table"));
 });
 
 test("D-086 B: with the network on, its choice at home wins: it marches with 16, or waits with 60; never with fewer than netMarch (14)", () => {
