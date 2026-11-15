@@ -11,7 +11,7 @@ import { cpus } from "node:os";
 import { asHardNet, NET_HEADS, NET_INPUTS, type NetWeights } from "../net.ts";
 import { type EsState, fromVector, generation, newState, sameShape } from "./es.ts";
 import type { Opponent } from "./play.ts";
-import { runAll, threads } from "./pool.ts";
+import { runPlays, threads } from "./pool.ts";
 import type { Job } from "./worker.ts";
 
 const [mode] = process.argv.slice(2);
@@ -48,7 +48,7 @@ async function evaluate(net: NetWeights | null, n: number, seed0: number) {
   for (const [name, opp, games] of sets) {
     for (const map of ["fixed", "random"] as const) {
       const jobs: Job[] = Array.from({ length: games }, (_, k) => ({ kind: "play", spec: { seed: seed0 + (k >> 1), map, swap: (k & 1) === 1, maxTicks: 36000, opp }, net }));
-      const res = await runAll(jobs);
+      const res = await runPlays(jobs);
       const won = res.filter((r) => r.outcome.won === 1).length;
       const draws = res.filter((r) => r.outcome.won < 0).length;
       const reached = res.filter((r) => r.outcome.reached).length;
@@ -63,7 +63,7 @@ if (mode === "dryrun") {
   const n = threads() * 2;
   const jobs: Job[] = Array.from({ length: n }, (_, k) => ({ kind: "play", spec: { seed: 1 + (k >> 1), map: "fixed", swap: (k & 1) === 1, maxTicks: 36000, opp: { kind: "hard" } }, net: null }));
   const t0 = performance.now();
-  const res = await runAll(jobs);
+  const res = await runPlays(jobs);
   const sec = (performance.now() - t0) / 1000;
   summary(`## 試跑\n\n- 核心：${cpus().length}（${cpus()[0]?.model ?? "?"}）\n- ${n} 局困難對困難（固定地圖，30 分上限）：${sec.toFixed(0)} 秒，每小時大約 ${Math.round((n * 3600) / sec)} 局`);
   summary(`- 平均每局 ${(res.reduce((a, r) => a + r.outcome.ticks, 0) / n / 1200).toFixed(1)} 分（遊戲時間）`);
@@ -75,7 +75,7 @@ if (mode === "dryrun") {
     opp: (k >> 2) % 3 === 2 ? { kind: "normal" } : { kind: "hard" },
     every: Number(arg("every", "10")),
   }));
-  const res = await runAll(jobs);
+  const res = await runPlays(jobs);
   const samples = res.flatMap((r) => (r.kind === "record" ? r.samples : []));
   saveSamples(`${out}/samples.bin`, samples);
   // How many samples each game gave, in order: bc holds out whole games (ceo 2026-10-19).
