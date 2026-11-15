@@ -158,11 +158,11 @@ def main():
             ("", INK, text_cell(932, 336, [(ab, 26, INK, False)]))]),
         (None, None, [("A 遮暗：2 採集（框地圖上的樹）", GOLD, S("2b-A", SMALL)), ("B 金框加箭頭：2 採集", GOLD, S("2b-B", SMALL)),
                       ("", INK, text_cell(932, 336, [("沒有單一目標的步驟（1 看地圖、5 拉框）A 也不遮暗整個畫面：1 不遮、5 只亮兵站的那一塊。", 26, INK, False),
-                                                    ("下面九格先用 A 畫，你選了以後照選的重畫。", 26, GREY, False)]))]),
+                                                    ("使用者選了 A（遮暗）：下面九格和細節都是 A。", 26, GREEN, False)]))]),
     ]
     for i in range(0, 9, 3):
         cells = [(f"{n} {name}：{what}　→ 過關：{done}", INK, S(f"{key}-{st}", SMALL)) for n, name, key, what, done in steps[i:i + 3]]
-        rows.append(("九步（約 10–15 分鐘）" if i == 0 else None, None, cells))
+        rows.append(("九步（約 10–15 分鐘；使用者核准，照這樣做）" if i == 0 else None, None, cells))
     img = board(out / "x", "R25-總覽-phone",
                 [("選單 → 設定、開局畫面都有「新手教學」。一步一張說明卡，要按的東西框起來，做對了才往下；每步都能「跳過這步」或按 × 離開。", 30, GOLD, True),
                  ("步驟從 ceo 草案的 11 步併成 9 步：「攻擊」和「主城被打」併成 7 守家；「打城鎮」和「進駐」併成 8；「練兵」說明的自動補兵移到 6 編軍團（兵營要有軍團才會自動練）。", 26, GREY, False),
@@ -218,7 +218,7 @@ def main():
             for i in range(0, len(frames), 2):
                 cells = [(lab, INK, S(f"{lab.split(' ')[0]}-{st}", BIG)) for lab in frames[i:i + 2]]
                 rows.append((f"{n} {title}" if i == 0 else None, f"要做的：{what}。過關：{done}。" if i == 0 else None, cells))
-        img = board(out / "x", f"R25-步驟-{name}-phone", [("每一步的每一格：說明卡寫什麼、框哪裡、做對了怎麼往下。先用 A（遮暗）畫。", 30, GOLD, True), (same, 24, DIM, False)],
+        img = board(out / "x", f"R25-步驟-{name}-phone", [("每一步的每一格：說明卡寫什麼、框哪裡、做對了怎麼往下。框用使用者選的 A（遮暗）。", 30, GOLD, True), (same, 24, DIM, False)],
                     rows, [], cols=2, cw=1398)
         save(img, out / f"R25-步驟-{name}-phone.png")
     frames = shots.parent / "gif"
