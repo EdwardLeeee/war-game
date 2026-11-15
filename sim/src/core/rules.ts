@@ -857,3 +857,9 @@ function noTownCrystal(c: Cost): Cost {
  * unguarded one in about 16 s (7.5 off); with the AI's army out, 40 of 40 stolen still (1/4: 38 of 40, 27 s).
  */
 export const MAIN_CITY_TOUGH = { on: true, num: 2, den: 5 };
+
+// SCRATCH ONLY: gates off from the environment (HARD_PLAN.gatesOff).
+{ const e = (globalThis as unknown as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {}; if (JSON.parse(e.HARD_PLAN || "{}").gatesOff) { GATE.on = false; WALLS.on = false; } }
+
+// SCRATCH ONLY: SIEGE, RICH and MARKET on from the environment (HARD_PLAN.siegeOn, richOn, marketOn).
+{ const e = JSON.parse((globalThis as unknown as { process?: { env?: Record<string, string | undefined> } }).process?.env?.HARD_PLAN || "{}"); if (e.siegeOn) SIEGE.on = true; if (e.richOn) RICH.on = true; if (e.marketOn) MARKET.on = true; }
