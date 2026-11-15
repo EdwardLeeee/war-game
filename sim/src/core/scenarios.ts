@@ -7,13 +7,14 @@ import { type Frame, fromCanon, IDENTITY, toCanon } from "../frame.ts";
 import { Action, BuildingType, CELL_SHIFT, NEUTRAL, Order, PLAYER_COUNT, Resource, type ScenarioName, Stance, TownSize, TownState, UnitFlag, UnitType } from "../protocol.ts";
 import { FIXED_POSTS } from "./castle.ts";
 import { pushOut } from "./commands.ts";
+import { isTutorial, setupTutorial } from "./tutorial.ts";
 import { cellsAround, nearestWalkable } from "./paths.ts";
 import { BUILDINGS, GATE, KEEP, NO_CRYSTAL, OUTPOST, START, TOWNS, UNITS, WALLS } from "./rules.ts";
 import type { World } from "./world.ts";
 
 export type ScenarioKey = ScenarioName | "skirmish";
 
-const SCENARIOS: readonly string[] = ["standard", "e2e", "perf", "perf200", "perf360", "skirmish", "wallshift"];
+const SCENARIOS: readonly string[] = ["standard", "e2e", "perf", "perf200", "perf360", "skirmish", "wallshift", "tutorial"];
 
 /** e2e: resources per side, and the squad placed beside the small town. */
 export const E2E = {
@@ -36,6 +37,10 @@ export function setupScenario(w: World, scenario: ScenarioKey): void {
   if (scenario === "perf200") perf(w, PERF_200);
   if (scenario === "perf360") perf(w, PERF_360);
   if (scenario === "wallshift") wallShift(w);
+  if (scenario === "tutorial") {
+    if (!isTutorial(w)) throw new Error("the tutorial is played on its own map (Game takes it for the scenario)");
+    setupTutorial(w);
+  }
 }
 
 /**

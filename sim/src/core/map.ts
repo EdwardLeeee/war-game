@@ -60,6 +60,11 @@ export interface GameMap {
    * fill closed under the map's mirror. Absent: scenarios.ts POSTS.
    */
   posts?: readonly (readonly [number, number])[];
+  /**
+   * The tutorial's map (R25, tutorial.ts): where the screen asks the player to move the soldiers (rally), and where the
+   * `tutorial` events put player 0's things (own) and player 1's squad (squad). Absent: any other map.
+   */
+  tutorial?: { rally: { x: number; y: number }; own: { x: number; y: number }; squad: { x: number; y: number } };
 }
 
 const P0 = { x: 16, y: 78 };

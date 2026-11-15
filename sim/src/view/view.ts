@@ -97,7 +97,7 @@ export interface RunnerInfo {
 export function mapInfo(map: GameMap, player: number | null): MapInfo {
   const mode = map.mode ?? "fixed";
   if (mode === "fixed" || player === null) {
-    return { seed: map.seed, size: map.size, terrain: map.terrain.slice(), spawns: map.spawns, towns: map.towns, mode };
+    return { seed: map.seed, size: map.size, terrain: map.terrain.slice(), spawns: map.spawns, towns: map.towns, mode, ...(map.tutorial !== undefined ? { tutorial: { rally: { ...map.tutorial.rally } } } : {}) };
   }
   return {
     seed: map.seed,
@@ -116,6 +116,7 @@ const SCENARIO_ID: Record<string, number> = {
   perf200: Scenario.Perf200,
   perf360: Scenario.Perf360,
   wallshift: Scenario.WallShift,
+  tutorial: Scenario.Tutorial,
 };
 
 /** R14-07: within this many cells (Chebyshev) of a wall stretch an enemy soldier counts as at it (WallShiftField.foes). */

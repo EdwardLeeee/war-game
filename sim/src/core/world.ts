@@ -342,6 +342,14 @@ export class World {
   /** Who made it (a statistic for comebacks, D-057; not in the hash: firstCapture is). */
   firstCaptureBy = -1;
   /**
+   * The tutorial (R25, tutorial.ts; in the hash only on its map): the `tutorial` events done that come once (one bit
+   * each, TUTORIAL_EVENTS' order), the ids of the last "near_home" squad, the town "town" takes (governed once it
+   * is captured; -1: none).
+   */
+  tutorialUsed = 0;
+  tutorialSquad: number[] = [];
+  tutorialTown = -1;
+  /**
    * Statistics, not in the hash (early balance, D-057; from round 4): farmers lost per player
    * by what last hurt them [p * 5 + HitCause], and towns lost to a revolt per player.
    */

@@ -675,8 +675,11 @@ export function townIncomePermille(plundered: number, recovered: number): number
 }
 
 /** A town's rules as sent in `Rules.towns`. */
-function townInfo(size: number, map?: { towerSize?: number } & Partial<CastleMap>): TownInfo {
-  const t = TOWNS[size];
+/** The tutorial's town (R25, tutorial.ts): militia (6 in a game; 5 spearmen beat these), and repair ticks (45 s in a game; a beginner would wait). */
+export const TUTORIAL_TOWN = { militia: 3, repairTicks: 10 * S };
+
+function townInfo(size: number, map?: { towerSize?: number; tutorial?: unknown } & Partial<CastleMap>): TownInfo {
+  const t = map?.tutorial !== undefined ? { ...TOWNS[size], ...TUTORIAL_TOWN } : TOWNS[size];
   // The castle on this map (D-089): the big city's is centred on this map's tower.
   const castles = map?.tower !== undefined && map.towns !== undefined ? (map as CastleMap) : undefined;
   const c = castleOf(size as TownSize, castles);

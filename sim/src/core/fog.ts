@@ -7,6 +7,7 @@ import { IDENTITY, footprintCentre } from "../frame.ts";
 import { Action, CELL_SHIFT, NEUTRAL, Order, PLAYER_COUNT, TOWN_STRIDE, TownField, TownFlag, TownState, UnitType } from "../protocol.ts";
 import { BUILDINGS, CANNON, PLUNDER_RECOVERY, REVEAL_CAST, TOWN_ONCE, TOWNS, townIncomePermille, UNITS } from "./rules.ts";
 import type { World } from "./world.ts";
+import { alwaysSeen } from "./tutorial.ts";
 
 const MAX_SIGHT = 10;
 /** MASKS[r] = [dx, dy, dx, dy, ...] of the disc of radius r (cells). */
@@ -100,6 +101,10 @@ export class Fog {
           if (u.order[s] === Order.Cast || u.castCooldown[s] > CANNON.cooldownTicks - REVEAL_CAST.ticks) stamp(u.x[s] >> CELL_SHIFT, u.y[s] >> CELL_SHIFT, 0);
         }
       }
+      // R25: in the tutorial each side always sees the other's main city.
+      alwaysSeen(w, p, (x, y) => {
+        if (x >= 0 && y >= 0 && x < n && y < n) vis[y * n + x] = 1;
+      });
       for (let i = 0; i < vis.length; i++) if (vis[i] === 1) exp[i] = 1;
 
       // Buildings: currently visible ones replace their memory; memories whose footprint is
