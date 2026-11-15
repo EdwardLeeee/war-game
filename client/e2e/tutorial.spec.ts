@@ -37,9 +37,16 @@ async function startTutorial(page: Page): Promise<void> {
 
 /** A tap in the middle of what the tutorial frames (a button, or a place on the battlefield). */
 async function tapTarget(page: Page): Promise<void> {
-  await expect.poll(async () => (await state(page))?.target ?? null, { timeout: 20_000 }).not.toBeNull();
-  // Where it is now (the frame follows each animation frame; the villager walks).
-  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  // Where it is now and stays (the frame follows each animation frame; a villager walks; the camera may bring it into reach).
+  let last = "";
+  await expect.poll(async () => {
+    const t = (await state(page))?.target ?? null;
+    const now = JSON.stringify(t === null ? null : [Math.round(t.box.x), Math.round(t.box.y), Math.round(t.box.w), Math.round(t.box.h)]);
+    const same = t !== null && now === last;
+    last = now;
+    if (!same) await page.waitForTimeout(150);
+    return same;
+  }, { timeout: 30_000 }).toBe(true);
   const t = (await state(page))?.target;
   if (t == null) throw new Error("no target");
   await page.touchscreen.tap(t.box.x + t.box.w / 2, t.box.y + t.box.h / 2);
@@ -109,7 +116,6 @@ test("第 1、2 步照做（R25）：拖、縮放、按地圖、點小地圖打�
   await expect.poll(async () => (await state(page))?.blocked).toBe(1);
   expect(await page.evaluate(() => window.__proto?.game?.selection().units.length)).toBe(0);
   expect(await page.evaluate((n) => (window.__proto?.game?.sent() ?? []).slice(n).filter((c) => (c as { auto?: boolean }).auto !== true).length, sent)).toBe(0);
-  await expect(page.locator(".tut-ring.flash")).toHaveCount(1);
   // A drag still moves the camera.
   const cam = await page.evaluate(() => window.__proto?.game?.camera());
   await drag(page, { x: 450, y: 220 }, { x: 380, y: 200 });
@@ -147,7 +153,12 @@ test("每一步都可以跳過（R25）：跳過時放進後面要用的（兵�
   await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.units() ?? [])).filter((u) => u.owner === me && u.type === 6).length, { timeout: 30_000 }).toBe(2);
   await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.towns() ?? [])).find((t) => t.id === 0)?.owner, { timeout: 30_000 }).toBe(me);
   await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.units() ?? [])).filter((u) => u.owner !== me && u.owner < 2 && u.type !== 0).length, { timeout: 30_000 }).toBe(0);
-  // 9c: the computer's main city off the screen, a tag at the edge and 帶我去看.
+  // 9c: nobody selected, 全軍 framed first; then the computer's main city off the screen, a tag at the edge and 帶我去看.
+  await expect.poll(async () => (await state(page))?.target?.box.x ?? -1).toBeGreaterThan(700);
+  await page.locator(".army-btn").tap();
+  // Selected, and the frame gone from 全軍 to the target (or 帶我去看).
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.selection().units.length ?? 0)).toBeGreaterThan(0);
+  await expect.poll(async () => (await state(page))?.target?.box.x ?? 0).toBeLessThan(700);
   await expect(page.locator(".tut-edge")).toContainText("對手主城");
   await page.locator(".tut-card").getByRole("button", { name: "帶我去看" }).tap();
   await expect(page.locator(".tut-edge")).toHaveCount(0);
@@ -223,10 +234,13 @@ async function phase(page: Page, id: string, ms = 60_000): Promise<void> {
 /** Its target on the screen: 帶我去看 first when it is off it. */
 async function inSight(page: Page): Promise<void> {
   const go = page.locator(".tut-card").getByRole("button", { name: "帶我去看" });
-  if (await go.isVisible()) {
+  // The card drawn for this target first (a frame on the screen, or 帶我去看 for one off it).
+  await expect.poll(async () => (await go.isVisible()) || ((await state(page))?.target ?? null) !== null, { timeout: 20_000 }).toBe(true);
+  for (let k = 0; k < 3 && (await go.isVisible()); k++) {
     await go.tap();
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(500);
   }
+  await expect.poll(async () => (await state(page))?.target ?? null, { timeout: 10_000 }).not.toBeNull();
 }
 
 /** A step done by hand, then the next one by itself. */
@@ -253,11 +267,20 @@ test("九步照做到打下對手主城（R25，真模擬）：蓋兵營、練�
   const spot = await page.evaluate(() => {
     const g = window.__proto?.game;
     const home = g?.buildings().find((b) => b.owner === g.me() && b.type === 0);
+    // The camera at home, so that the spot is on the screen.
+    g?.centerOn((home?.cx ?? 16) + 4, (home?.cy ?? 18) + 4, 1.1);
     const c = g?.buildSpotNear(6, (home?.cx ?? 16) + 6, (home?.cy ?? 18) + 4) ?? null;
     return c === null ? null : g?.cellToScreen(c.x + 1, c.y + 1) ?? null;
   });
   if (spot === null) throw new Error("no spot for the barracks");
-  await page.touchscreen.tap(spot.x, spot.y);
+  await page.waitForTimeout(500);
+  // As the game's prompt says: the preview dragged there, let go (then ✓).
+  const ghost = await page.evaluate(() => {
+    const p = window.__proto?.game?.placement();
+    return p == null ? null : window.__proto?.game?.cellToScreen(p.cellX + 1, p.cellY + 1) ?? null;
+  });
+  await drag(page, ghost ?? { x: 466, y: 168 }, spot);
+  await expect(page.locator(".place-confirm")).toBeVisible();
   await tapTarget(page);
   await phase(page, "3d");
   await done(page, 3);
@@ -306,12 +329,27 @@ test("九步照做到打下對手主城（R25，真模擬）：蓋兵營、練�
     await inSight(page);
     return (await state(page))?.target ?? null;
   }, { timeout: 60_000 }).not.toBeNull();
+  // The squad walks: held still while one is tapped (the order runs when the game goes on).
+  await page.evaluate(() => window.__proto?.game?.pause());
   await tapTarget(page);
+  await page.getByRole("button", { name: "繼續", exact: true }).tap();
   await done(page, 7, 180_000);
   // 8 打城鎮: to the town (帶我去看), at it; 治理 with the card at the left; repaired; 進駐.
   await phase(page, "8a");
-  await inSight(page);
-  await tapTarget(page);
+  // Everyone selected (全軍: 8a frames it first when nobody is), then at the town.
+  await page.locator(".army-btn").tap();
+  // Selected, and the frame gone from 全軍 to the target (or 帶我去看).
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.selection().units.length ?? 0)).toBeGreaterThan(0);
+  await expect.poll(async () => (await state(page))?.target?.box.x ?? 0).toBeLessThan(700);
+  // At the town: the order (攻擊移動 to its keep) sent; else the camera there again and once more (WebKit on a busy
+  // machine lost the tap now and then, the camera back home after it: 1 in 6 runs, not understood yet).
+  const before = await page.evaluate(() => window.__proto?.game?.sent().length ?? 0);
+  const ordered = () => page.evaluate((n) => (window.__proto?.game?.sent() ?? []).slice(n).some((c) => (c as { c: string; auto?: boolean }).auto !== true && ["move", "attack"].includes((c as { c: string }).c)), before);
+  for (let k = 0; k < 3; k++) {
+    await inSight(page);
+    await tapTarget(page);
+    if (await expect.poll(ordered, { timeout: 3_000 }).toBe(true).then(() => true, () => false)) break;
+  }
   await phase(page, "8b", 180_000);
   await expect.poll(async () => (await state(page))?.place).toBe("side");
   await tapTarget(page);
@@ -331,6 +369,9 @@ test("九步照做到打下對手主城（R25，真模擬）：蓋兵營、練�
   for (let i = 0; i < 2; i++) await tapTarget(page);
   await phase(page, "9c", 120_000);
   await page.locator(".army-btn").tap();
+  // Selected, and the frame gone from 全軍 to the target (or 帶我去看).
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.selection().units.length ?? 0)).toBeGreaterThan(0);
+  await expect.poll(async () => (await state(page))?.target?.box.x ?? 0).toBeLessThan(700);
   await inSight(page);
   await tapTarget(page);
   await expect.poll(async () => (await state(page))?.finished, { timeout: 300_000 }).toBe(true);

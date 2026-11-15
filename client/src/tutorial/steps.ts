@@ -48,6 +48,8 @@ export interface Phase {
   go?: boolean;
   /** The camera to the target as the phase begins, if it is not where a tap reaches it. */
   focus?: boolean;
+  /** A building selected here is a tap gone astray (its panel would cover the target): let go of it. */
+  noBuilding?: boolean;
   place?(c: StepCtx): Place | null;
   target(c: StepCtx): TargetSpec;
   /** Also let through when the frame keeps taps off (to pick the soldiers again). */
@@ -86,6 +88,16 @@ const townOurs = (c: StepCtx) => {
 };
 /** The soldiers on the screen at hand: those selected, else all of ours (for a frame round them). */
 const soldiersToBox = (c: StepCtx): UnitAt[] => c.w.ownSoldiers();
+
+/**
+ * Nobody to send (no soldier selected; step 9: no siege engine among them): 全軍 framed first, the target after
+ * (a tap on the town or the city with a building selected would only look at it).
+ */
+const armyFirst = (c: StepCtx, siege = false): TargetSpec => {
+  const sel = c.w.selectedSoldiers();
+  if (sel.length > 0 && (!siege || sel.some((u) => u.type === UnitType.Siege))) return null;
+  return { el: c.el(".army-btn") };
+};
 
 export const STEP_LIST: readonly Step[] = [
   { n: 1, name: "看地圖", first: "1", doneTitle: "做得好！", doneBody: "拖動看四周、縮放看清楚；小地圖點哪裡，畫面就跳到哪裡。" },
@@ -132,6 +144,7 @@ export const PHASES: readonly Phase[] = [
   // 2 採集: a villager, then a tree.
   {
     id: "2a",
+    noBuilding: true,
     step: 2,
     title: "採集",
     body: () => "點一名<b>村民</b>。",
@@ -146,9 +159,11 @@ export const PHASES: readonly Phase[] = [
         const s = c.w.spot(u.x, u.y, 0.5);
         return s !== null && c.clear(s.cx, s.cy);
       };
+      // Off the main city (its picture is tall: a tap there takes the city) when one is: 5.5 cells from its middle.
+      const off = (u: UnitAt) => Math.hypot(u.x - at.x, u.y - at.y) >= 5.5;
       const near = [...farmers].sort((a, b) => Math.hypot(a.x - at.x, a.y - at.y) - Math.hypot(b.x - at.x, b.y - at.y));
       const same = farmers.find((u) => u.id === c.memo.farmer);
-      const f = (same !== undefined && free(same) ? same : undefined) ?? near.find(free) ?? same ?? near[0];
+      const f = (same !== undefined && free(same) && off(same) ? same : undefined) ?? near.find((u) => free(u) && off(u)) ?? near.find(free) ?? same ?? near[0];
       c.memo.farmer = f.id;
       return { cell: { x: f.x, y: f.y, r: 0.9 } };
     },
@@ -157,6 +172,7 @@ export const PHASES: readonly Phase[] = [
   },
   {
     id: "2b",
+    noBuilding: true,
     step: 2,
     title: "採集",
     body: () => "再點一棵<b>樹</b>：村民就去砍，把木頭搬回主城。",
@@ -289,6 +305,7 @@ export const PHASES: readonly Phase[] = [
   },
   {
     id: "5b",
+    noBuilding: true,
     step: 5,
     title: "選兵和移動",
     body: () => "點<b>發亮的地方</b>：兵就走過去。",
@@ -354,10 +371,13 @@ export const PHASES: readonly Phase[] = [
   },
   {
     id: "7b",
+    noBuilding: true,
     step: 7,
     title: "守家",
     body: () => "軍團回來了。點<b>敵人</b>：軍團就去打，打光就過關。",
     target: (c) => {
+      const first = armyFirst(c);
+      if (first !== null) return first;
       const home = c.w.mainCity();
       const at = home === null ? { x: 0, y: 0 } : c.w.middle(home);
       const f = [...c.w.foes()].sort((a, b) => Math.hypot(a.x - at.x, a.y - at.y) - Math.hypot(b.x - at.x, b.y - at.y))[0];
@@ -374,10 +394,13 @@ export const PHASES: readonly Phase[] = [
   // 8 打城鎮: take the small town, 治理, wait, 進駐.
   {
     id: "8a",
+    noBuilding: true,
     step: 8,
     title: "打城鎮",
     body: () => "中立的小鎮在<b>標籤指的方向</b>：帶軍團去，打倒城裡的民兵。",
     target: (c) => {
+      const first = armyFirst(c);
+      if (first !== null) return first;
       const t = town(c);
       return t === null ? null : { cell: { x: t.cellX + 0.5, y: t.cellY + 0.5, r: Math.max(2, t.radius * 0.7) }, label: "小鎮" };
     },
@@ -431,7 +454,12 @@ export const PHASES: readonly Phase[] = [
     place: (c) => (c.game.mode === "enter" ? "hidden" : null),
     target: (c) => {
       const t = town(c);
-      if (c.game.mode === "enter") return t === null ? null : { cell: { x: t.cellX + 0.5, y: t.cellY + 0.5, r: Math.max(2, t.radius * 0.7) }, label: "小鎮" };
+      if (c.game.mode === "enter") {
+        // Its tag, as the game's prompt says (點亮起來的建築：標籤寫誰進去); the town while the tag is not up.
+        const tag = t === null ? null : c.el(`.enter-tag[data-place="t${t.id}"]:not(.off), .enter-chip[data-place="t${t.id}"]`);
+        if (tag !== null) return { el: tag };
+        return t === null ? null : { cell: { x: t.cellX + 0.5, y: t.cellY + 0.5, r: Math.max(2, t.radius * 0.7) }, label: "小鎮" };
+      }
       if (c.w.selectedSoldiers().length > 0) return { el: c.el(".cmds button", /^進駐/) };
       return { el: c.el(".groups > button:nth-child(1)") };
     },
@@ -486,11 +514,20 @@ export const PHASES: readonly Phase[] = [
   },
   {
     id: "9c",
+    noBuilding: true,
     step: 9,
     title: "打下對手主城",
     // On the screen (9d): at it; else (9c) the tag says where.
-    body: (c) => (c.memo.cityInSight === 1 ? "攻城砲打建築最快。選著攻城砲和軍團，點對手的<b>主城</b>。" : "對手的主城在<b>標籤指的方向</b>：選著攻城砲和軍團，一起帶過去。"),
+    body: (c) => {
+      const b = c.w.foeCity();
+      const m = b === null ? null : c.w.middle(b);
+      const s = m === null ? null : c.w.spot(m.x, m.y, 1);
+      const inSight = s !== null && s.cx >= 0 && s.cx <= innerWidth && s.cy >= 0 && s.cy <= innerHeight;
+      return inSight ? "攻城砲打建築最快。選著攻城砲和軍團，點對手的<b>主城</b>。" : "對手的主城在<b>標籤指的方向</b>：選著攻城砲和軍團，一起帶過去。";
+    },
     target: (c) => {
+      const first = armyFirst(c, true);
+      if (first !== null) return first;
       const b = c.w.foeCity();
       if (b === null) return null;
       const m = c.w.middle(b);

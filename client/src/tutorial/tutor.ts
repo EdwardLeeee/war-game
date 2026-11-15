@@ -91,6 +91,9 @@ export class Tutor implements TutorHooks {
   private offCell: { x: number; y: number } | null = null;
   /** A step near home just began: the camera goes to its target if that is off the screen (not 8 and 9's, whose tag is the lesson). */
   private focus = false;
+  /** Since when the target is where a tap cannot reach it (under the card or a button), and when the player last moved the camera. */
+  private unclearSince: number | null = null;
+  private lastPan = 0;
   private readonly timer: number;
   private raf = 0;
   private readonly drop: () => void;
@@ -115,7 +118,12 @@ export class Tutor implements TutorHooks {
     this.drop = () => {
       for (const t of ["pointerdown", "pointerup", "click"]) document.removeEventListener(t, keep, true);
     };
-    this.timer = window.setInterval(() => this.check(), CHECK_MS);
+    // Checked and drawn on a timer too: a busy page may draw no animation frame for seconds (CI's WebKit), and the
+    // card, the frame and what a tap may reach must follow the step all the same.
+    this.timer = window.setInterval(() => {
+      this.check();
+      this.draw();
+    }, CHECK_MS);
     const frame = () => {
       this.draw();
       this.raf = requestAnimationFrame(frame);
@@ -146,10 +154,12 @@ export class Tutor implements TutorHooks {
 
   panned(): void {
     this.flags.panned = true;
+    this.lastPan = performance.now();
   }
 
   pinched(): void {
     this.flags.pinched = true;
+    this.lastPan = performance.now();
   }
 
   minimapAllowed(): boolean {
@@ -223,6 +233,7 @@ export class Tutor implements TutorHooks {
       if (now - this.doneAt >= DONE_MS) this.nextStep();
       return;
     }
+    if (this.phase.noBuilding === true && (this.game.view?.selection.building ?? null) !== null) this.game.apply([{ kind: "clear" }]);
     const next = this.phase.next(this.ctx());
     if (next === null) return;
     if (next === "done") this.stepDone();
@@ -232,6 +243,8 @@ export class Tutor implements TutorHooks {
   private stepDone(): void {
     // Step 1 opened the minimap to teach it: put away for the rest (a target under it could not be tapped).
     if (this.step === 1) this.game.hud.closeMinimap();
+    // Step 6: 軍團畫面 folded, as the board's 6c (the group on the bar), the done card in full over it.
+    if (this.step === 6) this.game.hud.foldGroupPanel();
     if (this.step >= STEPS) {
       this.finished = true;
       this.cardKey = "";
@@ -310,8 +323,9 @@ export class Tutor implements TutorHooks {
 
   private keepOff(e: PointerEvent | MouseEvent): void {
     if (!(e.target instanceof Element) || !this.root.contains(e.target)) return;
-    // The card, its confirm, the top bar (速度, 暫停, 選單) and the minimap (game.minimapTap asks) always answer.
-    if (e.target.closest(".tut-card, .tut-confirm, .top-right, .minimap") !== null) return;
+    // The card, its confirm, the top bar (速度, 暫停, 選單), the minimap (game.minimapTap asks) and ✕ (取消選取: a panel
+    // opened by a stray tap never stays over the target) always answer.
+    if (e.target.closest(".tut-card, .tut-confirm, .top-right, .minimap, [aria-label='取消選取']") !== null) return;
     if (e.target.closest("button, [role=button], .enter-tag, .enter-chip") === null) return;
     if (this.allowedAt(e.clientX, e.clientY)) return;
     e.preventDefault();
@@ -466,6 +480,17 @@ export class Tutor implements TutorHooks {
           this.goSee();
           return;
         }
+      }
+    }
+    // A target on the battlefield gone under the card or a button (a villager walking): after a moment the camera
+    // brings it back where a tap reaches it, unless the player is moving the camera.
+    if (shape !== null && spec !== null && !("el" in spec) && this.phase.block && !this.focus) {
+      const now = performance.now();
+      if (this.clearAt(shape.box.x + shape.box.w / 2, shape.box.y + shape.box.h / 2)) this.unclearSince = null;
+      else if (this.unclearSince === null) this.unclearSince = now;
+      else if (now - this.unclearSince > 1500 && now - this.lastPan > 2000) {
+        this.unclearSince = null;
+        this.focus = true;
       }
     }
     if (shape !== null && this.focus && spec !== null && !("el" in spec)) {
