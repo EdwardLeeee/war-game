@@ -71,6 +71,7 @@ jobs:
       net_artifact: ${{ steps.p.outputs.net_artifact }}
       args: ${{ steps.p.outputs.args }}
       nets: ${{ steps.p.outputs.nets }}
+      from_runs: ${{ steps.p.outputs.from_runs }}
     steps:
       - if: github.event_name == 'push'
         uses: actions/checkout@v7
@@ -107,6 +108,8 @@ jobs:
             echo "net_artifact=$(get net_artifact train-es-0)"
             echo "args=$(get args '')"
             echo "nets=$nets"
+            # examcheck: run.json "from_runs" lists several exam runs (D-147: a search dispatched more than once).
+            echo "from_runs=$(echo "$S" | jq -r '(.from_runs // []) | map(tostring) | join(",")')"
           } >> "$GITHUB_OUTPUT"
           echo "設定：$(echo "$S" | jq -c .)" >> "$GITHUB_STEP_SUMMARY"
 
@@ -135,6 +138,14 @@ jobs:
           run-id: ${{ needs.plan.outputs.from_run }}
           github-token: ${{ github.token }}
           path: from
+      - name: The exam runs (from_runs)
+        if: needs.plan.outputs.from_runs != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUNS: ${{ needs.plan.outputs.from_runs }}
+        run: |
+          IFS=, read -ra ids <<< "$RUNS"
+          for id in "${ids[@]}"; do gh run download "$id" --repo "$GITHUB_REPOSITORY" --dir "${GITHUB_WORKSPACE}/from/$id"; done
       - name: Train
         env:
           MODE: ${{ needs.plan.outputs.mode }}
@@ -147,6 +158,9 @@ jobs:
           ARGS: ${{ needs.plan.outputs.args }}
           NETS: ${{ needs.plan.outputs.nets }}
           ISLANDS: ${{ needs.plan.outputs.islands }}
+          # D-147 (exam.ts, ceo 2026-11-16): it gives way to Pages and to jobs long waiting (D-123), reading the runs.
+          YIELD_REPO: ${{ (needs.plan.outputs.mode == 'exam' || needs.plan.outputs.mode == 'examcheck') && github.repository || '' }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -o pipefail
           F="${GITHUB_WORKSPACE}/from"

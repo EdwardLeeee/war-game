@@ -2,7 +2,7 @@
 // examiners, plans that beat hard with no bonus, and check those found on fresh seeds. What .github/workflows/ai-train.yml
 // runs in its exam and examcheck modes. Never imported by the simulation Worker.
 //   node src/ai/learn/exam.ts search --out DIR [--seed N] [--hours H] [--map random|fixed|mix] [--pool 48] [--cap 90]
-//                                     [--rounds 6,20,60] [--cycles N]
+//                                     [--rounds 6,20,60] [--cycles N] [--seed-offset K]
 //       Each cycle draws a pool of plans (some mutated from the best found so far, by kind), plays every one the first
 //       round's games, keeps the best third, plays those up to the next round's games, and so on; those that reach the
 //       last round are kept (candidates.json). Every plan of a cycle plays the same seeds, so they are compared on equal
@@ -12,12 +12,16 @@
 //       The best plan of each kind across the searches (candidates.json under each DIR), the best `top` kinds, each
 //       `games` games on fresh seeds; examiners.json lists them, qualified with `qualify` percent wins or more.
 // Every mode writes summary.md (Markdown) and its files under --out; never commits.
+// In CI (YIELD_REPO set, D-123; ceo 2026-11-16): every YIELD_EVERY it looks at the repository's other runs; a Pages job
+// waiting for a runner, or any other job waiting YIELD_WAIT or longer, and it stops at once (search: the cycle under way is
+// dropped, those before it kept; check: the plans done so far written), so its runner goes to them.
 
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { execFileSync } from "node:child_process";
 import type { MapMode } from "../../protocol.ts";
 import { drawPlan, type Drawn, mutate, rng } from "./exam-space.ts";
-import { runAll } from "./pool.ts";
+import { runAll, threads } from "./pool.ts";
 import type { Job, JobResult, ScriptedOutcome } from "./worker.ts";
 
 const [mode] = process.argv.slice(2);
@@ -35,6 +39,38 @@ const started = performance.now();
 const hours = () => (performance.now() - started) / 3_600_000;
 const MIN = 1200;
 const cap = Number(arg("cap", "90")) * MIN;
+
+/** D-123: how often it looks (ms), and how long another job may wait before it gives way (ms). */
+const YIELD_EVERY = 6 * 60_000;
+const YIELD_WAIT = 10 * 60_000;
+const yieldRepo = process.env.YIELD_REPO ?? "";
+let lastLook = 0;
+let apiErrors = 0;
+let gaveWay = "";
+const ghJson = (path: string, jq: string): unknown => JSON.parse(execFileSync("gh", ["api", path, "--jq", jq], { encoding: "utf8", timeout: 60_000 }) || "null");
+/** Whether to give way now (in CI only, at most once every YIELD_EVERY); why, in gaveWay. */
+function giveWay(): boolean {
+  if (yieldRepo === "" || gaveWay !== "") return gaveWay !== "";
+  const now = Date.now();
+  if (now - lastLook < YIELD_EVERY) return false;
+  lastLook = now;
+  try {
+    const old = (t: string) => now - Date.parse(t) >= YIELD_WAIT;
+    type Run = { id: number; name: string; created: string };
+    const runs = (status: string) => ghJson(`repos/${yieldRepo}/actions/runs?status=${status}&per_page=50`, `[.workflow_runs[] | select(.name != "AI train" and .name != "AI scratch") | {id, name, created: .created_at}]`) as Run[];
+    for (const r of runs("queued")) if (r.name === "Pages" || old(r.created)) { gaveWay = `${r.name} 在等（run ${r.id}）`; return true; }
+    for (const r of runs("in_progress")) {
+      const waiting = ghJson(`repos/${yieldRepo}/actions/runs/${r.id}/jobs?filter=latest&per_page=100`, `[.jobs[] | select(.status == "queued") | .created_at]`) as string[];
+      if (waiting.some((t) => r.name === "Pages" || old(t))) { gaveWay = `${r.name} 有 job 在等（run ${r.id}）`; return true; }
+    }
+    apiErrors = 0;
+  } catch {
+    // Twice in a row: give way rather than hold runners blind.
+    if (++apiErrors >= 2) { gaveWay = "GitHub API 連續兩次出錯"; return true; }
+  }
+  return false;
+}
+class GaveWay extends Error {}
 
 /** A plan under test, the games it has played (in seed order), on its map. */
 export interface Cand {
@@ -79,10 +115,15 @@ async function playUpTo(cands: Cand[], n: number, seedBase: number): Promise<num
     jobs.push(j);
     owner.push(c);
   }
-  const results = await runAll(jobs);
-  results.forEach((r: JobResult, k) => {
-    if (r.kind === "scripted") owner[k].games.push(r.outcome);
-  });
+  // In chunks, so it can give way between them (D-123).
+  const chunk = 2 * threads();
+  for (let at = 0; at < jobs.length; at += chunk) {
+    if (giveWay()) throw new GaveWay(gaveWay);
+    const results = await runAll(jobs.slice(at, at + chunk));
+    results.forEach((r: JobResult, k) => {
+      if (r.kind === "scripted") owner[at + k].games.push(r.outcome);
+    });
+  }
   for (const c of cands) c.games.sort((a, b) => a.seed - b.seed);
   return jobs.length;
 }
@@ -95,7 +136,8 @@ const setText = (d: Drawn) =>
     .join(" ");
 
 async function search(): Promise<void> {
-  const seed = Number(arg("seed", "1"));
+  // --seed-offset: a later dispatch of the same search plays seeds of its own.
+  const seed = Number(arg("seed", "1")) + Number(arg("seed-offset", "0"));
   const H = Number(arg("hours", "5.5"));
   const poolN = Number(arg("pool", "48"));
   const cycles = Number(arg("cycles", "1000"));
@@ -134,7 +176,13 @@ async function search(): Promise<void> {
     let alive = pool;
     let cut = false;
     for (let k = 0; k < rounds.length; k++) {
-      games += await playUpTo(alive, rounds[k], base);
+      try {
+        games += await playUpTo(alive, rounds[k], base);
+      } catch (e) {
+        if (!(e instanceof GaveWay)) throw e;
+        summary(`- 第 ${cycle + 1} 輪：讓位（${e.message}），這一輪沒打完，不留；${hours().toFixed(2)} 小時`);
+        break;
+      }
       alive.sort((a, b) => score(b) - score(a) || a.id.localeCompare(b.id));
       if (k < rounds.length - 1) {
         alive = alive.slice(0, Math.max(2, Math.ceil(alive.length / 3)));
@@ -146,6 +194,7 @@ async function search(): Promise<void> {
         }
       }
     }
+    if (gaveWay !== "") break;
     kept.push(...alive);
     const top = alive[0];
     summary(`- 第 ${cycle + 1} 輪：${pool.length} 個打法，最好的 ${top.id} 贏 ${wins(top)}/${top.games.length}（${kind(top)}；${top.map}）；累計 ${games} 局、${hours().toFixed(2)} 小時${cut ? "（時間到，這輪沒打完）" : ""}`);
@@ -204,8 +253,22 @@ async function check(): Promise<void> {
   summary(`# 驗考官（D-147）：${all.length} 個留下的打法、${best.size} 種，取前 ${picked.length} 種；這個 job 是第 ${shard + 1}/${shards} 份，${mine.length} 個\n`);
   summary(`每個打新的種子 ${games} 局（從 ${seedFrom} 起），對困難、不給加成、${cap / MIN} 分算未分；贏 ${qualify}% 以上算合格。\n`);
   const fresh: Cand[] = mine.map((c) => ({ ...c, games: [] }));
-  await playUpTo(fresh, games, seedFrom);
-  const rows = fresh.map((c, i) => ({ id: c.id, kind: kind(c), map: c.map, searchWins: `${wins(mine[i])}/${mine[i].games.length}`, wins: wins(c), games: c.games.length, distinct: distinct(c), hits: hits(c), open: c.games.filter((g) => g.result === "open").length, qualified: (100 * wins(c)) / c.games.length >= qualify, base: c.drawn.base, set: c.drawn.set, plan: c.drawn.plan, outcomes: c.games }));
+  // One plan at a time, so a give-way keeps the plans done.
+  const done: Cand[] = [];
+  for (const c of fresh) {
+    try {
+      await playUpTo([c], games, seedFrom);
+      done.push(c);
+    } catch (e) {
+      if (!(e instanceof GaveWay)) throw e;
+      summary(`讓位（${e.message}）：${done.length}/${fresh.length} 個打完。\n`);
+      break;
+    }
+  }
+  fresh.length = 0;
+  fresh.push(...done);
+  const searched = new Map(mine.map((c) => [c.id, c]));
+  const rows = fresh.map((c) => ({ id: c.id, kind: kind(c), map: c.map, searchWins: `${wins(searched.get(c.id)!)}/${searched.get(c.id)!.games.length}`, wins: wins(c), games: c.games.length, distinct: distinct(c), hits: hits(c), open: c.games.filter((g) => g.result === "open").length, qualified: (100 * wins(c)) / c.games.length >= qualify, base: c.drawn.base, set: c.drawn.set, plan: c.drawn.plan, outcomes: c.games }));
   summary("| 種類 | 打法 | 地圖 | 搜尋時 | 新種子 | 不重複的局 | 未分 | 打到主城 | 合格 |\n|---|---|---|---|---|---|---|---|---|");
   for (const x of rows) summary(`| ${x.kind} | ${x.id} | ${x.map} | ${x.searchWins} | ${x.wins}/${x.games}（${pct(x.wins, x.games)}） | ${x.distinct} | ${x.open} | ${x.hits} | ${x.qualified ? "是" : "否"} |`);
   writeFileSync(`${out}/examiners.json`, JSON.stringify({ games, seedFrom, cap, qualify, examiners: rows }, null, 0));
