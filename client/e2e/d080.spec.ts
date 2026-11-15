@@ -4,7 +4,7 @@
 // stays as it was. Every one of them is still at least 44 pt.
 
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { selectForCommands, shot, toneOf, watchErrors } from "./helpers.ts";
+import { command, selectForCommands, shot, toneOf, watchErrors } from "./helpers.ts";
 import { longPress } from "./touch.ts";
 
 const SPEAR = { x: 22, y: 68 };
@@ -42,7 +42,8 @@ test("攻擊紅、移動藍：指令區（軍團畫面也是這一區）、取�
   await selectForCommands(page, await spearmen(page));
   await toned(cmds.getByRole("button", { name: /^攻擊/ }), "red");
   await toned(cmds.getByRole("button", { name: /^移動/ }), "blue");
-  await untoned(cmds.getByRole("button", { name: /^堅守/ }));
+  // (正式介面: 堅守 in 更多, R24-03.)
+  await untoned(await command(page, /^堅守/));
   await toned(page.getByRole("button", { name: "全軍撤退" }), "blue");
   await shot(page, info, "d080-colours-commands");
   // 移動 asks where to: 回主城 is blue too, 取消 is not.

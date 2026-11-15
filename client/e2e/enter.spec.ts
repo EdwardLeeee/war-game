@@ -50,7 +50,7 @@ async function tagsClear(page: Page): Promise<void> {
   }
 }
 
-for (const [ui, name] of [["", "原型"], ["&ui=r6", "正式介面"]] as const) {
+for (const [ui, name] of [["&ui=proto", "原型"], ["&ui=r6", "正式介面"]] as const) {
   test(`進駐（${name}）：只選槍兵時主城是灰的「槍兵進不去」，城和哨所亮著；點灰的說明原因、還在選；混選時每棟寫進誰留誰，標籤不蓋介面、不互蓋；選取資訊收起，取消後回來`, async ({ page }, info) => {
     const check = watchErrors(page);
     await start(page, ui);
@@ -62,9 +62,9 @@ for (const [ui, name] of [["", "原型"], ["&ui=r6", "正式介面"]] as const) 
     // R13-01 state 3: spearmen only.
     await selectForCommands(page, spears);
     // 正式介面 (R24-02): ？'s explanation over the bar shut by the tap on 進駐 (a tap outside it), the bar there.
-    if (ui !== "") await page.locator(".sel-bar").getByRole("button", { name: "說明" }).tap();
+    if (ui === "&ui=r6") await page.locator(".sel-bar").getByRole("button", { name: "說明" }).tap();
     await pick(page);
-    if (ui === "") await expect(page.locator(".sel-info").getByRole("button", { name: "展開選取資訊" })).toBeVisible();
+    if (ui === "&ui=proto") await expect(page.locator(".sel-info").getByRole("button", { name: "展開選取資訊" })).toBeVisible();
     else {
       await expect(page.locator(".sel-help")).toBeHidden();
       await expect(page.locator(".sel-bar")).toBeVisible();
@@ -74,7 +74,7 @@ for (const [ui, name] of [["", "原型"], ["&ui=r6", "正式介面"]] as const) 
     expect(s.tags.find((t) => t.id === `b${city.id}`)).toMatchObject({ head: "槍兵進不去", off: true });
     expect(s.tags.find((t) => t.id === `b${post.id}`)).toMatchObject({ head: `進 槍兵 ${spears.length}`, off: false });
     expect(s.tags.some((t) => t.id.startsWith("t") && !t.off), "a town of ours lit").toBe(true);
-    await shot(page, info, `enter-3-spears${ui === "" ? "" : "-r6"}`);
+    await shot(page, info, `enter-3-spears${ui === "&ui=proto" ? "" : "-r6"}`);
     // A grey one tapped: why; still picking, nothing sent.
     const before = (await sent(page)).length;
     await tap(page, await at(page, city.cx + city.size / 2, city.cy + city.size / 2));
@@ -83,7 +83,7 @@ for (const [ui, name] of [["", "原型"], ["&ui=r6", "正式介面"]] as const) 
     expect((await sent(page)).slice(before).filter((c) => c.auto !== true)).toEqual([]);
     await page.locator(".cmds").getByRole("button", { name: /^取消\s*進駐/ }).tap();
     await expect.poll(() => mode(page)).toBe("normal");
-    if (ui === "") await expect(page.locator(".sel-info").getByRole("button", { name: "收起選取資訊" })).toBeVisible();
+    if (ui === "&ui=proto") await expect(page.locator(".sel-info").getByRole("button", { name: "收起選取資訊" })).toBeVisible();
     else await expect(page.locator(".sel-bar")).toBeVisible();
     // R13-01 state 4: everyone.
     const all = await own(page, [1, 2, 3]);
@@ -96,7 +96,7 @@ for (const [ui, name] of [["", "原型"], ["&ui=r6", "正式介面"]] as const) 
     expect(s.tags.find((t) => t.id.startsWith("t") && !t.off)?.head).toBe(`進 ${all.length} 名全進城`);
     expect(hiders).toBeGreaterThan(0);
     await tagsClear(page);
-    await shot(page, info, `enter-4-mixed${ui === "" ? "" : "-r6"}`);
+    await shot(page, info, `enter-4-mixed${ui === "&ui=proto" ? "" : "-r6"}`);
     check();
   });
 }

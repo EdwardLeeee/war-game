@@ -1,6 +1,7 @@
 // The interface shell on the fake world (?test=1&mock=1, fixed layout), in WebKit and
 // Chromium at iPhone landscape size: the gesture-table rows for the minimap, control groups
-// and idle farmers, and every piece of the temporary interface (GDD §10 草稿).
+// and idle farmers, and every piece of the temporary interface (GDD §10 草稿). The prototype's
+// (?ui=proto) since 正式介面 is the default (R24-01, D-150); 正式介面's own: r6*.spec, r24-bar.spec.
 
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { armyButton, expectNotSaid, expectSaid, formalOn, FULL_SCREEN, hintTownOf, injectSafeArea, INTERACTIVE, IPHONE_SAFE, keepControls, openBox, openPanel, recordToasts, resText, saidMark, saveGroup, selectForCommands, shot, visibleBoxes, watchErrors, watchToasts } from "./helpers.ts";
@@ -19,7 +20,7 @@ let checkErrors: () => void;
 test.beforeEach(async ({ page }) => {
   await watchToasts(page);
   checkErrors = watchErrors(page);
-  await page.goto("./?test=1&mock=1");
+  await page.goto("./?test=1&mock=1&ui=proto");
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true);
   await centre(page, 22, 71);

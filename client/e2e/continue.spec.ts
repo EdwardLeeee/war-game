@@ -53,8 +53,8 @@ async function pause(page: Page): Promise<void> {
 }
 
 /** A game of more than a minute, our soldiers in 編隊 1, the camera moved; then away: kept for 繼續上一局. */
-async function playAndPutAway(page: Page, ticks = 1300, culture: "東陸" | "西陸" | null = null): Promise<{ tick: number; group: number[] }> {
-  await page.goto(`./${QUERY}`);
+async function playAndPutAway(page: Page, ticks = 1300, culture: "東陸" | "西陸" | null = null, ui = ""): Promise<{ tick: number; group: number[] }> {
+  await page.goto(`./${QUERY}${ui}`);
   if (culture !== null) await page.getByRole("radiogroup", { name: "你的陸" }).getByRole("radio", { name: culture }).tap();
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true);
@@ -180,6 +180,33 @@ test("網站已經更新（模擬的 build 不同）：「繼續上一局」變�
   await expect.poll(() => saved(page)).toBeNull();
   check();
 });
+
+for (const [from, to, name] of [["proto", "r6", "原型存的局用正式介面"], ["r6", "proto", "正式介面存的局用原型"]] as const) {
+  test(`換介面接著打（R24-01，預設改成正式介面時）：${name}繼續上一局，編隊和鏡頭還原、停在暫停、接著打`, async ({ page }) => {
+    test.setTimeout(120_000);
+    const check = watchErrors(page);
+    await catchUploads(page);
+    const { tick } = await playAndPutAway(page, 1300, null, `&ui=${from}`);
+    const before = { groups: await groups(page), camera: await camera(page) };
+    await page.goto(`./${QUERY}&ui=${to}`);
+    if (to === "r6") await expect(page.locator("html")).toHaveAttribute("data-ui", "r6");
+    else await expect(page.locator("html")).not.toHaveAttribute("data-ui", "r6");
+    const resume = page.getByRole("button", { name: /^繼續上一局/ });
+    await expect(resume).toBeEnabled();
+    await resume.tap();
+    await page.waitForFunction(() => window.__proto?.ready === true && window.__proto.screen === "battle", null, { timeout: 60_000 });
+    const h = await header(page);
+    expect(h.paused).toBe(true);
+    expect(h.tick).toBe(tick);
+    expect(await groups(page)).toEqual(before.groups);
+    const cam = await camera(page);
+    expect(Math.abs((cam?.x ?? 0) - (before.camera?.x ?? 0))).toBeLessThan(2);
+    expect(Math.abs((cam?.y ?? 0) - (before.camera?.y ?? 0))).toBeLessThan(2);
+    await page.getByRole("button", { name: "繼續", exact: true }).tap();
+    await expect.poll(async () => (await header(page)).tick, { timeout: 30_000 }).toBeGreaterThan(tick + 200);
+    check();
+  });
+}
 
 test("只有畫面改版（畫面狀態的格式不同，模擬一樣）：照樣接著打，停在暫停，不還原編隊，提示「編隊沒有還原，請重新編」（ceo 2026-10-17）", async ({ page }) => {
   test.setTimeout(120_000);
