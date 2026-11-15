@@ -126,7 +126,7 @@ node services/game-logs/fetch.ts [--out ~/war-game-logs] [--code ab12cd34]
 ```
 
 - 從環境變數或 `~/.config/war-game/game-logs.env` 讀 `GAME_LOGS_URL`、`GAME_LOGS_READ_KEY`，不會印出金鑰。
-- 把還沒抓過的紀錄存成 `<資料夾>/<id>.json`（整筆）和 `<資料夾>/<id>.jsonl`（只有指令紀錄），另外寫 `index.json`（摘要）。
+- 把還沒抓過的紀錄存成 `<資料夾>/<id>.json`（整筆）和 `<資料夾>/<id>.jsonl`（只有指令紀錄），另外寫 `index.json`（摘要，加上紀錄裡的介面 `ui`：`"r6"` 正式介面、`"proto"` 原型；舊紀錄沒有就是 `null`）。
   資料夾預設 `~/war-game-logs`，在 repo 外面。`--code` 只留一支手機的紀錄。
 - 重播：`node sim/src/headless.ts --replay ~/war-game-logs/<id>.jsonl --out <資料夾>`。要用紀錄的 `commit` 那一版的 `sim/`；
   同一版重播到 `lastHash.tick` 的雜湊會和 `lastHash.hash` 一樣（client 的 e2e `e2e/logs.spec.ts` 每次都核對）。
