@@ -50,11 +50,13 @@
   .r24-row .r24-q { width: 44px; font-size: 17px !important; }
   .r24-row .r24-x { width: 44px; }
   .r24-row button.r24-cell.on { background: rgba(240, 196, 110, 0.32) !important; color: #fff3d6; }
-  /* What opens over the bar (？ or 軍團): no higher than 40% of the screen, its foot 4 above the bar. */
+  /* What opens over the bar, its foot 4 above it: ？ no higher than 40% of the screen; 軍團畫面 46%
+     (the user, D-150: four kinds, two lines, with no scrolling). */
   .r24-pop, #hud .sel-info.r24-capped {
     position: absolute; left: var(--r24-left) !important; right: auto !important; top: auto !important;
     bottom: calc(var(--safe-b) + 52px) !important; max-height: 40vh !important; box-sizing: border-box;
   }
+  #hud .sel-info.r24-capped { max-height: 46vh !important; }
   .r24-pop { z-index: 30; width: 366px; padding: 8px 12px 9px; overflow: hidden; pointer-events: auto; }
   .r24-pop .sel-note { margin: 0 !important; }
   .r24-pop .r24-pop-head { font-size: 12px; font-weight: 700; opacity: 0.85; margin-bottom: 3px; }

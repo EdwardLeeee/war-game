@@ -224,7 +224,6 @@ try {
     await p.evaluate(([c, s]) => {
       window.R24.bar({ title: "已選", sub: "12", chips: c, state: s, stateUnder: true });
       window.R24.moreCmds(["攻擊", "移動", "進駐"], false);
-      window.R24.hint("選好兵，按右邊的 1–4，再按「改成剛才選的」，就編成軍團");
     }, [CHIPS, state]);
     await shot(p, "all-new");
     await ctx.close();
