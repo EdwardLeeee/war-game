@@ -21,7 +21,7 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import type { MapMode } from "../../protocol.ts";
 import { drawPlan, type Drawn, mutate, rng } from "./exam-space.ts";
-import { runAll, threads } from "./pool.ts";
+import { Pool } from "./pool.ts";
 import type { Job, JobResult, ScriptedOutcome } from "./worker.ts";
 
 const [mode] = process.argv.slice(2);
@@ -71,6 +71,8 @@ function giveWay(): boolean {
   return false;
 }
 class GaveWay extends Error {}
+let workers: Pool | null = null;
+const pool = () => (workers ??= new Pool());
 
 /** A plan under test, the games it has played (in seed order), on its map. */
 export interface Cand {
@@ -115,15 +117,12 @@ async function playUpTo(cands: Cand[], n: number, seedBase: number): Promise<num
     jobs.push(j);
     owner.push(c);
   }
-  // In chunks, so it can give way between them (D-123).
-  const chunk = 2 * threads();
-  for (let at = 0; at < jobs.length; at += chunk) {
-    if (giveWay()) throw new GaveWay(gaveWay);
-    const results = await runAll(jobs.slice(at, at + chunk));
-    results.forEach((r: JobResult, k) => {
-      if (r.kind === "scripted") owner[at + k].games.push(r.outcome);
-    });
-  }
+  // One pool for the whole program (pool.ts Pool); asked before each game whether to give way (D-123).
+  const { results, stopped } = await pool().run(jobs, giveWay);
+  if (stopped) throw new GaveWay(gaveWay);
+  results.forEach((r: JobResult | undefined, k) => {
+    if (r !== undefined && r.kind === "scripted") owner[k].games.push(r.outcome);
+  });
   for (const c of cands) c.games.sort((a, b) => a.seed - b.seed);
   return jobs.length;
 }
@@ -275,9 +274,13 @@ async function check(): Promise<void> {
   summary(`\n${rows.filter((x) => x.qualified).length} 個合格，${hours().toFixed(2)} 小時。`);
 }
 
-if (mode === "search") await search();
-else if (mode === "check") await check();
-else {
-  console.error("exam.ts search|check (see the top of the file)");
-  process.exit(2);
+try {
+  if (mode === "search") await search();
+  else if (mode === "check") await check();
+  else {
+    console.error("exam.ts search|check (see the top of the file)");
+    process.exitCode = 2;
+  }
+} finally {
+  await (workers as Pool | null)?.close();
 }

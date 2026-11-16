@@ -51,3 +51,50 @@ export async function runPlays(jobs: Job[], n = threads()): Promise<Exclude<JobR
     return r;
   });
 }
+
+/**
+ * D-147 (exam.ts): workers kept for many runs. A worker started and stopped for every few games (#514's chunks, run
+ * 43762744582's job 4) crashed V8 after some thousand of them ("jit_page_->allocations_.erase"), so these live as long as
+ * the pool; `stop`, asked before each job is handed out, ends a run early (those under way finish, results kept).
+ */
+export class Pool {
+  private readonly workers: Worker[] = [];
+  private failed: Error | null = null;
+  constructor(n = threads()) {
+    for (let i = 0; i < n; i++) {
+      const wk = new Worker(new URL("./worker.ts", import.meta.url));
+      wk.on("error", (e: unknown) => (this.failed = e instanceof Error ? e : new Error(String(e))));
+      this.workers.push(wk);
+    }
+  }
+  run(jobs: Job[], stop: () => boolean = () => false): Promise<{ results: (JobResult | undefined)[]; stopped: boolean }> {
+    return new Promise((resolve, reject) => {
+      const results: (JobResult | undefined)[] = new Array(jobs.length);
+      let next = 0;
+      let busy = 0;
+      let stopped = false;
+      const finish = () => {
+        if (busy === 0 && (stopped || next >= jobs.length)) resolve({ results, stopped });
+      };
+      const feed = (wk: Worker) => {
+        if (this.failed !== null) return reject(this.failed);
+        if (next >= jobs.length) return finish();
+        if (!stopped && stop()) stopped = true;
+        if (stopped) return finish();
+        const k = next++;
+        busy++;
+        wk.once("message", (r: JobResult) => {
+          results[k] = r;
+          busy--;
+          feed(wk);
+        });
+        wk.postMessage(jobs[k]);
+      };
+      if (jobs.length === 0) return resolve({ results, stopped: false });
+      for (const wk of this.workers) feed(wk);
+    });
+  }
+  async close(): Promise<void> {
+    await Promise.all(this.workers.map((w) => w.terminate()));
+  }
+}
