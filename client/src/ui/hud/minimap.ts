@@ -18,6 +18,7 @@ import {
 import { TILE_PX } from "../../tuning.ts";
 import type { GameView } from "../../view/view.ts";
 import { TERRAIN_RGB, townLook } from "../../render/world.ts";
+import { uiZoom } from "../ui-scale.ts";
 import { ENEMY_TINT, NEUTRAL_TINT, OWN_TINT, ownerTint } from "../../render/atlas.ts";
 
 export const MINIMAP_CSS_PX = 112;
@@ -73,6 +74,19 @@ export class Minimap {
     });
   }
 
+  /**
+   * As many pixels as it shows: its size × the screen's pixel ratio × the interface's zoom (R26-01: a large window draws
+   * the interface bigger; the old picture stretched would be blurred). Drawn again at once when that changes.
+   */
+  private fit(): void {
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    const w = Math.round((this.canvas.clientWidth || MINIMAP_CSS_PX) * dpr * uiZoom());
+    const h = Math.round((this.canvas.clientHeight || MINIMAP_CSS_PX) * dpr * uiZoom());
+    if (w === this.canvas.width && h === this.canvas.height) return;
+    this.canvas.width = w;
+    this.canvas.height = h;
+  }
+
   cellAt(x: number, y: number): { x: number; y: number } | null {
     const view = this.host.view();
     if (view === null) return null;
@@ -85,6 +99,7 @@ export class Minimap {
   update(now: number): void {
     if (now - this.lastDraw < REDRAW_MS) return;
     this.lastDraw = now;
+    this.fit();
     const view = this.host.view();
     const snap = view?.curr?.snap;
     if (view === null || snap === undefined) return;

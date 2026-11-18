@@ -428,14 +428,26 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
 
   // 8d. 暫停自動訓練（D-054；D-098 起是畫面自己的暫停）：選兵營 → 「自動訓練　目前：開」→ 按鈕寫目前：暫停、
   //     選取資訊寫自動訓練暫停 → 佇列裡已經在練的那名練完，就不再排新的（後面的步驟要數全部的兵）
+  //     The game paused while the barracks is tapped, at a point of it where the tap is on it (not on one of ours going by
+  //     in front of it, ceo 2026-11-18): no timing (#525's ours walk through it; one inside it is the barracks anyway).
+  await pause(page);
   await centre(page, bc);
-  await tap(page, await toScreen(page, bc));
+  const onBarracks = await (async () => {
+    for (const [dx, dy] of [[0, 0], [-1, -1], [1, -1], [-1, 0], [1, 0], [0, -1]] as const) {
+      const p = await toScreen(page, { x: bc.x + dx, y: bc.y + dy });
+      const hit = await page.evaluate(([x, y]) => window.__proto?.game?.pickIdAt(x, y) ?? null, [p.x, p.y] as const);
+      if (hit?.kind === "building" && hit.id === barracks.id) return p;
+    }
+    throw new Error("no point of the barracks free to tap");
+  })();
+  await tap(page, onBarracks);
   await expect(page.locator(".sel-info")).toContainText("兵營");
   const autoTrain = page.locator(".cmds").getByRole("button", { name: /^自動訓練/ });
   await expect(autoTrain).toHaveText("自動訓練目前：開");
   await autoTrain.tap();
   await expect(autoTrain).toHaveText("自動訓練目前：暫停");
   await expect(page.locator(".sel-info .auto-train-line")).toHaveText("自動訓練暫停");
+  await resume(page);
   // No order to the simulation: its own 自動訓練 has been off all along (D-098). And no more trains for this barracks.
   const trainsSoFar = (await sent(page)).filter((c) => c.c === "train" && c.building === barracks.id).length;
   await expect(page.getByRole("button", { name: /^取消訓練第 1 個/ })).toBeHidden({ timeout: 30_000 });
