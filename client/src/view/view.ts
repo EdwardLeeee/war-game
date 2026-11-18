@@ -477,10 +477,11 @@ export class GameView implements IntentWorld {
       }
     }
     if (best !== null) {
-      // One of ours inside one of our buildings' footprint is only passing through it (D-154: ours walk through our own
-      // buildings, never stop in them): the building, so that a tap on it is not taken by whoever goes by (ceo
-      // 2026-11-18). Not a farm, where farmers stand to work it. A box still takes them; the enemy's are not touched.
-      if (best.owner === this.me) {
+      // One of ours walking through one of our buildings' footprint (D-154: ours walk through our own buildings): the
+      // building, so that a tap on it is not taken by whoever goes by (ceo 2026-11-18). Only while walking: one standing
+      // there (in our gate's opening, at an outpost) is picked as ever. Not a farm, where farmers work. A box still takes
+      // them; the enemy's are not touched.
+      if (best.owner === this.me && u[bestRow + U.action] === Action.Move) {
         const through = this.ownBuildingUnder(u[bestRow + U.x], u[bestRow + U.y]);
         if (through !== null) return through;
       }

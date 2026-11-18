@@ -1,23 +1,24 @@
-// A tap on one of ours passing through one of our buildings picks the building (D-154: ours walk through our own
-// buildings, never stop in them; ceo 2026-11-18): not on a farm, where farmers stand to work; not an enemy's unit;
-// not one of ours only beside the building.
+// A tap on one of ours walking through one of our buildings picks the building (D-154: ours walk through our own
+// buildings; ceo 2026-11-18): not one standing still there (our gate's opening, an outpost), not on a farm, where
+// farmers stand to work; not an enemy's unit; not one of ours only beside the building.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { MOCK_RULES } from "../src/mock/mock-port.ts";
-import { BUILDING_STRIDE, BuildingField as B, BuildingType, CELL, HEADER_LENGTH, type MapInfo, type Snapshot, UNIT_STRIDE, UnitField as U, UnitType } from "../src/sim.ts";
+import { Action, BUILDING_STRIDE, BuildingField as B, BuildingType, CELL, HEADER_LENGTH, type MapInfo, type Snapshot, UNIT_STRIDE, UnitField as U, UnitType } from "../src/sim.ts";
 import { TILE_PX } from "../src/tuning.ts";
 import { GameView } from "../src/view/view.ts";
 
 const SIZE = 32;
 const map: MapInfo = { seed: 1, size: SIZE, terrain: new Uint8Array(SIZE * SIZE), spawns: [], towns: [] };
 
-/** Units [id, owner, type, x, y] (cells) and buildings [id, owner, type, cellX, cellY]; player 0 is us. */
-function view(units: [number, number, number, number, number][], buildings: [number, number, number, number, number][]): GameView {
+/** Units [id, owner, type, x, y, action?] (cells; walking unless said) and buildings [id, owner, type, cellX, cellY]; player 0 is us. */
+function view(units: ([number, number, number, number, number] | [number, number, number, number, number, number])[], buildings: [number, number, number, number, number][]): GameView {
   const v = new GameView(0, map, MOCK_RULES);
   const u = new Int32Array(units.length * UNIT_STRIDE);
-  units.forEach(([id, owner, type, x, y], i) => {
+  units.forEach(([id, owner, type, x, y, action], i) => {
     const o = i * UNIT_STRIDE;
+    u[o + U.action] = action ?? Action.Move;
     u[o + U.id] = id;
     u[o + U.owner] = owner;
     u[o + U.type] = type;
@@ -76,4 +77,11 @@ test("種田的村民站在農田上：點他照舊選到村民；在別人的�
   assert.equal(farm.pick(...at(11.5, 11.5), 22)?.kind, "unit");
   const theirs = view([[1, 0, UnitType.Spearman, 11.5, 11.5]], [[52, 1, BuildingType.Barracks, 10, 10]]);
   assert.equal(theirs.pick(...at(11.5, 11.5), 22)?.kind, "unit");
+});
+
+test("站著不動的（停在我們城門的開口、哨所裡）：點他照舊選到兵", () => {
+  const v = view([[1, 0, UnitType.Spearman, 11.5, 11.5, Action.Idle]], [BARRACKS]);
+  assert.equal(v.pick(...at(11.5, 11.5), 22)?.kind, "unit");
+  const fighting = view([[1, 0, UnitType.Spearman, 11.5, 11.5, Action.Attack]], [BARRACKS]);
+  assert.equal(fighting.pick(...at(11.5, 11.5), 22)?.kind, "unit");
 });
