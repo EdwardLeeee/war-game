@@ -1725,7 +1725,7 @@
 
 /* 快轉中 (INV-11): the card no more than its title and the line catching up, 取消 at its end. */
 :root[data-ui="r6"] #start.continuing .start-left,
-:root[data-ui="r6"] #start.continuing .start-right > :not(.continue-progress),
+:root[data-ui="r6"] #start.continuing .start-right > :not(.continue-progress, .loading-note),
 :root[data-ui="r6"] #start.continuing .card .small {
   display: none;
 }
@@ -1762,6 +1762,41 @@
 :root[data-ui="r6"] #start .continue-progress progress::-moz-progress-bar {
   border-radius: 5px;
   background: #e7c35a;
+}
+
+/* 載入中 (a new game, ceo 2026-11-18): no share of it known, so a stretch of the bar's gold runs across it. */
+:root[data-ui="r6"] #start .continue-progress progress:indeterminate,
+:root[data-ui="r6"] #start .continue-progress progress:indeterminate::-webkit-progress-bar {
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.45) 0 40%, #e7c35a 40% 60%, rgba(0, 0, 0, 0.45) 60% 100%) 0 0 / 250% 100%;
+  animation: loading-run 1.4s linear infinite;
+}
+
+:root[data-ui="r6"] #start .continue-progress progress:indeterminate::-moz-progress-bar {
+  background: transparent;
+}
+
+@keyframes loading-run {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-ui="r6"] #start .continue-progress progress:indeterminate,
+  :root[data-ui="r6"] #start .continue-progress progress:indeterminate::-webkit-progress-bar {
+    animation: none;
+    background-position: 50% 0;
+  }
+}
+
+/* Under 下載圖片: why the first game is slower (one small line). */
+:root[data-ui="r6"] #start .card .note.loading-note {
+  margin: -4px 0 0;
+  font-size: 12px;
+  opacity: 0.8;
 }
 
 /* 有新版本 (INV-13): a dark line, 更新 at its end. */

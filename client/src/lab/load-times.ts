@@ -124,6 +124,13 @@ export class LoadTimes implements LoadRecorder {
   report: LoadReport | null = null;
   /** Called on each step, for the screen while it loads. */
   onChange: (() => void) | null = null;
+  /** Called on each file and step too: the start screen's 載入中 (main.ts). */
+  onStep: (() => void) | null = null;
+
+  /** Files in since the start (the atlases', the ground's, the edge's). */
+  get filesIn(): number {
+    return this.report?.files.length ?? 0;
+  }
 
   begin(trigger: string, now = performance.now()): void {
     this.t0 = now;
@@ -146,6 +153,7 @@ export class LoadTimes implements LoadRecorder {
     if (!this.measuring || this.report === null || this.report.marks[name] !== undefined) return;
     this.report.marks[name] = now - this.t0;
     this.onChange?.();
+    this.onStep?.();
   }
 
   /** The atlases from `base` begin (file names are shown under it). */
@@ -178,6 +186,7 @@ export class LoadTimes implements LoadRecorder {
     const name = abs.startsWith(this.base) ? abs.slice(this.base.length) : abs;
     this.report.files.push({ name, bytes, source: "不明", start: start - this.t0, downloaded: downloaded - this.t0, decoded: decoded === null ? null : decoded - this.t0 });
     this.onChange?.();
+    this.onStep?.();
   }
 
   /**
