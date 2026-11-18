@@ -13,6 +13,10 @@ const GROUPS = {
   "push-auto": "--strategy push --speed h1 --formation close --auto-train",
   "push-auto-corners": "--strategy push --speed h1 --formation close --auto-train --corners",
   "push-corners-govern": "--strategy push --speed h1 --formation close --corners --govern",
+  // core (D-154): the rest of the active nine, as sim.yml has them.
+  "push-govern": "--strategy push --speed h1 --formation close --govern",
+  "push-auto-govern": "--strategy push --speed h1 --formation close --auto-train --govern",
+  "push-auto-corners-govern": "--strategy push --speed h1 --formation close --auto-train --corners --govern",
   "push-raid": "--strategy push --speed h1 --formation close --raid 4",
   "push-raid-random": "--strategy push --speed h1 --formation close --raid 4 --map random",
   // D-086 A3 / D-130: the user's 75830947, 10 hunting the AI's farmers far from its main city from minute 10 (sim.yml's).

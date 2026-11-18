@@ -1,33 +1,97 @@
 {
  "scripted": [
   {
-   "name": "on",
-   "a": {
-    "mineFirst": true
-   },
-   "groups": [
-    "push",
-    "push-random",
-    "push-corners",
-    "push-corners-govern",
-    "defend-eco"
-   ],
-   "difficulty": "normal"
-  },
-  {
-   "name": "off",
+   "name": "offe",
    "a": {
     "mineFirst": true,
     "ownPass": false
    },
    "groups": [
     "push",
-    "push-random",
     "push-corners",
+    "push-auto",
+    "push-auto-corners",
     "push-corners-govern",
-    "defend-eco"
+    "push-govern",
+    "push-auto-govern",
+    "push-auto-corners-govern",
+    "push-random"
+   ],
+   "difficulty": "easy"
+  },
+  {
+   "name": "one",
+   "a": {
+    "mineFirst": true
+   },
+   "groups": [
+    "push",
+    "push-corners",
+    "push-auto",
+    "push-auto-corners",
+    "push-corners-govern",
+    "push-govern",
+    "push-auto-govern",
+    "push-auto-corners-govern",
+    "push-random"
+   ],
+   "difficulty": "easy"
+  },
+  {
+   "name": "offn",
+   "a": {
+    "mineFirst": true,
+    "ownPass": false
+   },
+   "groups": [
+    "push",
+    "push-corners",
+    "push-auto",
+    "push-auto-corners",
+    "push-corners-govern",
+    "push-govern",
+    "push-auto-govern",
+    "push-auto-corners-govern",
+    "push-random"
    ],
    "difficulty": "normal"
+  },
+  {
+   "name": "onn",
+   "a": {
+    "mineFirst": true
+   },
+   "groups": [
+    "push",
+    "push-corners",
+    "push-auto",
+    "push-auto-corners",
+    "push-corners-govern",
+    "push-govern",
+    "push-auto-govern",
+    "push-auto-corners-govern",
+    "push-random"
+   ],
+   "difficulty": "normal"
+  },
+  {
+   "name": "offh",
+   "a": {
+    "mineFirst": true,
+    "ownPass": false
+   },
+   "groups": [
+    "push",
+    "push-corners",
+    "push-auto",
+    "push-auto-corners",
+    "push-corners-govern",
+    "push-govern",
+    "push-auto-govern",
+    "push-auto-corners-govern",
+    "push-random"
+   ],
+   "difficulty": "hard"
   },
   {
    "name": "onh",
@@ -35,15 +99,52 @@
     "mineFirst": true
    },
    "groups": [
+    "push",
+    "push-corners",
+    "push-auto",
+    "push-auto-corners",
+    "push-corners-govern",
+    "push-govern",
+    "push-auto-govern",
+    "push-auto-corners-govern",
+    "push-random"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "oldn",
+   "a": {},
+   "groups": [
+    "push",
+    "push-random",
+    "push-corners",
+    "push-corners-govern",
+    "defend-eco"
+   ],
+   "difficulty": "normal"
+  },
+  {
+   "name": "newn",
+   "a": {
+    "mineFirst": true
+   },
+   "groups": [
+    "defend-eco"
+   ],
+   "difficulty": "normal"
+  },
+  {
+   "name": "oldh",
+   "a": {},
+   "groups": [
     "push-crush"
    ],
    "difficulty": "hard"
   },
   {
-   "name": "offh",
+   "name": "newh",
    "a": {
-    "mineFirst": true,
-    "ownPass": false
+    "mineFirst": true
    },
    "groups": [
     "push-crush"
