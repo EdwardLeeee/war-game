@@ -1,0 +1,54 @@
+{
+ "scripted": [
+  {
+   "name": "on",
+   "a": {
+    "mineFirst": true
+   },
+   "groups": [
+    "push",
+    "push-random",
+    "push-corners",
+    "push-corners-govern",
+    "defend-eco"
+   ],
+   "difficulty": "normal"
+  },
+  {
+   "name": "off",
+   "a": {
+    "mineFirst": true,
+    "ownPass": false
+   },
+   "groups": [
+    "push",
+    "push-random",
+    "push-corners",
+    "push-corners-govern",
+    "defend-eco"
+   ],
+   "difficulty": "normal"
+  },
+  {
+   "name": "onh",
+   "a": {
+    "mineFirst": true
+   },
+   "groups": [
+    "push-crush"
+   ],
+   "difficulty": "hard"
+  },
+  {
+   "name": "offh",
+   "a": {
+    "mineFirst": true,
+    "ownPass": false
+   },
+   "groups": [
+    "push-crush"
+   ],
+   "difficulty": "hard"
+  }
+ ]
+}
