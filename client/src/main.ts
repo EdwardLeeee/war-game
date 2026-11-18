@@ -479,10 +479,10 @@ document.addEventListener("visibilitychange", () => {
 });
 void checkVersion();
 $("start-game").addEventListener("click", () => {
-  void (game === null ? newGame(params.scenario ?? "standard") : continueGame()).catch(showError);
+  void (game === null ? newGame(params.scenario ?? "standard") : continueGame()).catch(loadFailed);
 });
 $("restart-game").addEventListener("click", () => {
-  void newGame().catch(showError);
+  void newGame().catch(loadFailed);
 });
 // 新手教學 (R25): under 開始, 正式介面 only (ceo 2026-11-15: the prototype has none).
 $("tutorial-start").hidden = !formalUi();
@@ -497,22 +497,26 @@ async function newGame(scenario: ScenarioName = "standard", measure = false, var
   loadTimes.begin(measure ? "量測" : game === null ? "開始" : "重來");
   // Kept from here, before its 100-odd MB come down: a reload while they load is the memory too.
   if (variant !== null) markMeasuring(`art-v7 ${variant.label}（載入圖）`);
-  $("start").hidden = true;
+  const load: Loading = { stopped: false, stage: "art", again: () => void newGame(scenario, measure, variant).catch(loadFailed) };
+  loading = load;
   hook.screen = "battle";
   hook.ready = false;
+  loadingShow();
   const app = await stage();
   // 重來 leaves the game on screen: keep its record first (D-056). A new game takes the place
-  // of the one kept for 繼續上一局 (D-083). 新手教學 (R25) takes nobody's place: a game on screen is
-  // kept for 繼續上一局 (however short), the one kept before stays; a game after the tutorial is new.
+  // of the one kept for 繼續上一局 (D-083), once it shows (取消 meanwhile leaves that one kept).
+  // 新手教學 (R25) takes nobody's place: a game on screen is kept for 繼續上一局 (however short),
+  // the one kept before stays; a game after the tutorial is new.
   const tutorial = scenario === "tutorial";
-  if (game !== null && isTutorial(game)) {
-    if (!tutorial) await saveStore.clear();
-  } else if (game !== null) await (tutorial ? keepGame(game, "leave") : forgetGame(game, "restart"));
-  else if (!tutorial) await saveStore.clear();
+  const takesSave = !tutorial && (game === null || isTutorial(game));
+  if (game !== null && !isTutorial(game)) await (tutorial ? keepGame(game, "leave") : forgetGame(game, "restart"));
   hideSaved();
   endTutor();
   game?.destroy();
-  const port = params.mock ? new MockPort(params.round7, params.map ?? mapMode, params.outpostHide ? "hide" : params.outpost, params.gallery, params.mine, params.walls, params.siege, params.keep, params.market) : createSimPort(showError);
+  game = null;
+  hook.game = undefined;
+  if (load.stopped) return;
+  const port = params.mock ? new MockPort(params.round7, params.map ?? mapMode, params.outpostHide ? "hide" : params.outpost, params.gallery, params.mine, params.walls, params.siege, params.keep, params.market) : createSimPort(simFailed);
   // Players get the chosen 難度 and no time limit (D-024); 量測 always plays 普通 with the
   // 30-minute limit, like the determinism check and CI, so the numbers compare between runs.
   const level: AiDifficulty = measure ? "normal" : difficulty;
@@ -521,7 +525,14 @@ async function newGame(scenario: ScenarioName = "standard", measure = false, var
   // 地圖 (D-074): the start screen's choice (a test page may ask for one); 量測 always the fixed map, so the numbers compare between runs.
   const map: MapMode = measure ? "fixed" : (params.map ?? mapMode);
   const art = await artForGame(variant);
+  if (load.stopped) return port.terminate?.();
+  load.stage = "ground";
+  loadingShow();
   const ground = await groundForGame();
+  const edge = await edgeForGame();
+  if (load.stopped) return port.terminate?.();
+  load.stage = "map";
+  loadingShow();
   const g = new Game(app, port, $("hud"), {
     seed: params.seed ?? newSeed(),
     scenario,
@@ -541,7 +552,7 @@ async function newGame(scenario: ScenarioName = "standard", measure = false, var
     view: params.view ?? (params.edge ? "diamond" : (loadedArt?.view ?? undefined)),
     ghost: params.ghost ?? undefined,
     ground,
-    edge: await edgeForGame(),
+    edge,
     groundQuality: params.groundQuality,
     artAvailable,
     artChanged,
@@ -561,7 +572,13 @@ async function newGame(scenario: ScenarioName = "standard", measure = false, var
   if (tutorial) g.autoArmy.villagersPaused = true;
   g.start();
   await g.whenReady();
-  if (game !== g) return;
+  // The battlefield drawn once behind the start screen, then shown (not a black screen while its pictures go up).
+  await firstFrame();
+  if (game !== g || load.stopped) return;
+  if (takesSave) await saveStore.clear();
+  if (game !== g || load.stopped) return;
+  loadingDone();
+  $("start").hidden = true;
   hook.ready = true;
   if (tutorial) {
     // 新手教學 (R25): no 開局提示.
@@ -587,7 +604,127 @@ function endTutor(): void {
 
 /** 新手教學 (R25): from the start screen, or from 設定 in a game (that game kept for 繼續上一局 first). */
 function startTutorial(): void {
-  void newGame("tutorial").catch(showError);
+  void newGame("tutorial").catch(loadFailed);
+}
+
+/**
+ * A new game on its way (開始, 重來, 新手教學, the first game after it, 量測): the start screen stays, its buttons giving
+ * way to what it is doing, where 繼續上一局 shows its progress (ceo 2026-11-18: the screen was black until the game
+ * showed, and the player took it for broken). No share of it is known for real: the bar runs back and forth.
+ * 取消 goes back to the start screen; a failure says why, with 重試.
+ */
+interface Loading {
+  stopped: boolean;
+  stage: "art" | "ground" | "map";
+  again: () => void;
+}
+let loading: Loading | null = null;
+const LOADING_TEXT: Record<Loading["stage"], string> = { art: "載入中：下載圖片", ground: "載入中：準備地面", map: "載入中：準備地圖" };
+/** Under 下載圖片 (ceo 2026-11-18): why the first game is slower. */
+const FIRST_DOWNLOAD_NOTE = "第一次要下載圖片，之後就不用了";
+loadTimes.onStep = () => {
+  if (loading?.stage === "art") loadingShow();
+};
+
+function loadingShow(): void {
+  const l = loading;
+  // Stopped (取消, or failed: its reason stays up while the pictures it asked for still come in).
+  if (l === null || l.stopped) return;
+  const start = $("start");
+  start.classList.remove("over-battle");
+  start.classList.add("continuing");
+  start.hidden = false;
+  $("hud").style.visibility = "hidden";
+  $("start-buttons").hidden = true;
+  $("continue-progress").hidden = false;
+  const files = loadTimes.filesIn;
+  $("continue-progress-text").textContent = l.stage === "art" && files > 0 ? `${LOADING_TEXT.art}（已下載 ${files} 個檔）` : LOADING_TEXT[l.stage];
+  const bar = $("continue-bar") as HTMLProgressElement;
+  bar.hidden = false;
+  bar.removeAttribute("value");
+  $("continue-retry").hidden = true;
+  $("continue-cancel").textContent = "取消";
+  const note = $("loading-note");
+  note.textContent = FIRST_DOWNLOAD_NOTE;
+  note.hidden = l.stage !== "art";
+}
+
+/** The start screen's buttons back where the line was (the game shows, or 取消). */
+function loadingDone(): void {
+  loading = null;
+  $("start").classList.remove("continuing");
+  $("hud").style.visibility = "";
+  $("start-buttons").hidden = false;
+  $("continue-progress").hidden = true;
+  $("loading-note").hidden = true;
+  $("continue-retry").hidden = true;
+  $("continue-cancel").textContent = "取消";
+}
+
+/** The first frame with the new game's battlefield (the load measurement's end); at most 10 s, for a page that draws none. */
+function firstFrame(): Promise<void> {
+  const until = performance.now() + 10_000;
+  return new Promise((resolve) => {
+    const look = () => {
+      if (!loadTimes.measuring || performance.now() > until) resolve();
+      else window.setTimeout(look, 50);
+    };
+    look();
+  });
+}
+
+/** A new game that could not start: why, 重試 and 回開局畫面 (no game is left on screen). Else the error box, as before. */
+function loadFailed(err: unknown): void {
+  const l = loading;
+  if (l === null) {
+    showError(err);
+    return;
+  }
+  console.error(err);
+  l.stopped = true;
+  game?.destroy();
+  game = null;
+  hook.game = undefined;
+  $("continue-progress-text").textContent = `載入失敗：${err instanceof Error ? err.message : String(err)}`;
+  ($("continue-bar") as HTMLElement).hidden = true;
+  $("loading-note").hidden = true;
+  $("continue-retry").hidden = false;
+  $("continue-cancel").textContent = "回開局畫面";
+}
+/** The simulation's Worker failed (createSimPort): on the loading line while a game loads. */
+const simFailed = (message: string): void => loadFailed(new Error(message));
+
+$("continue-retry").addEventListener("click", () => {
+  const again = loading?.again;
+  if (again === undefined) return;
+  loading = null;
+  again();
+});
+
+/** 取消 while a new game loads, or 回開局畫面 after it failed: the start screen as when the page opened. */
+function stopLoading(): void {
+  const l = loading;
+  if (l === null) return;
+  l.stopped = true;
+  endTutor();
+  game?.destroy();
+  game = null;
+  hook.game = undefined;
+  loadingDone();
+  freshStart();
+}
+
+/** The start screen as when the page opened: 開始, and 繼續上一局 if a game is kept. */
+function freshStart(): void {
+  hook.screen = "start";
+  hook.ready = false;
+  $("difficulty-note").hidden = true;
+  $("about-note").hidden = false;
+  $("start-game").textContent = "開始";
+  $("restart-game").hidden = true;
+  $("start").classList.remove("over-battle");
+  $("start").hidden = false;
+  void showSaved();
 }
 
 /**
@@ -600,17 +737,10 @@ function endTutorial(next: "first" | "start"): void {
   game = null;
   hook.game = undefined;
   if (next === "first") {
-    void newGame("standard").catch(showError);
+    void newGame("standard").catch(loadFailed);
     return;
   }
-  hook.screen = "start";
-  $("difficulty-note").hidden = true;
-  $("about-note").hidden = false;
-  $("start-game").textContent = "開始";
-  $("restart-game").hidden = true;
-  $("start").classList.remove("over-battle");
-  $("start").hidden = false;
-  void showSaved();
+  freshStart();
 }
 
 /** 地面快取 switched in the 量測 panel (render/ground-cache.ts): kept in the address (the art-v7 量測 pages it opens), test pages only. */
@@ -850,11 +980,11 @@ function artCost(): Omit<ArtCost, "ground"> {
 
 /** 重來, 回開局畫面 and 量測, from the game's menu. */
 const life: HudLifecycle = {
-  restart: () => void newGame().catch(showError),
+  restart: () => void newGame().catch(loadFailed),
   // 新手教學's 回開局畫面 (the result's, the menu's): the tutorial over.
   toStart: () => (isTutorial(game) ? endTutorial("start") : showStart()),
   tutorial: () => startTutorial(),
-  perf: (s) => void newGame(s, true).catch(showError),
+  perf: (s) => void newGame(s, true).catch(loadFailed),
 };
 
 /**
@@ -907,11 +1037,17 @@ function continueProgress(tick: number | null, toTick = 0): void {
   $("continue-progress").hidden = !busy;
   if (!busy) return;
   $("continue-progress-text").textContent = progressText(tick, toTick);
-  ($("continue-bar") as HTMLProgressElement).value = toTick > 0 ? tick / toTick : 0;
+  const bar = $("continue-bar") as HTMLProgressElement;
+  bar.hidden = false;
+  bar.value = toTick > 0 ? tick / toTick : 0;
 }
 /** Ends the wait for the game being run again (取消, or it cannot go on). */
 let stopResume: (() => void) | null = null;
 $("continue-cancel").addEventListener("click", () => {
+  if (loading !== null) {
+    stopLoading();
+    return;
+  }
   // The Worker stops where it is (PROTOCOL.md 9.1: no cancelling message); the save stays.
   game?.destroy();
   game = null;
@@ -1039,4 +1175,4 @@ function showError(err: unknown): void {
 }
 
 // art-v7 量測 (D-128): a page its button opened goes straight into it (not one reloaded in the middle of one).
-if (measureNow !== null && cutShort === null) void newGame(ART_MEASURE_SCENARIO, true, measureNow).catch(showError);
+if (measureNow !== null && cutShort === null) void newGame(ART_MEASURE_SCENARIO, true, measureNow).catch(loadFailed);
