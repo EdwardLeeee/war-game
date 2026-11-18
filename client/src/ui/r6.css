@@ -2694,6 +2694,15 @@
   text-align: center;
 }
 
+/* Whose they are, with 召回, on a line of its own under the squares (only while there are any): 0/6 growing to
+   「0/6，1 名正過來」 moved 召回 200 px aside. Over the pinned rows, so it grows the panel upward. */
+:root[data-ui="r6"] .sel-info .seat-row .seat-groups:not(:empty) {
+  display: flex;
+  flex-basis: 100%;
+  align-items: center;
+  gap: 5px;
+}
+
 /* --- 介面放大 (R26-01, design/r26/spec.md 01): a large window (600 tall or more, ui-scale.ts sets .ui-large) ---------
    The bar, 軍團畫面 over it and ？'s explanation no wider than 640 (before the zoom), from the bar's left: on a wide
    screen the bar reached 1600 long, its kinds at one end and ✕ at the other. Its gap takes what is left. */
