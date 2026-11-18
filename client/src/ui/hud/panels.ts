@@ -530,7 +530,9 @@ export class SelectionInfo {
     const pinned = this.frame.querySelector<HTMLElement>(":scope > .group-actions");
     const home = pinned ?? foot;
     if (down.parentElement !== home) home.appendChild(down);
-    if (pinned === null && foot.parentElement !== this.frame) this.frame.appendChild(foot);
+    // Over a building's pinned rows (村民目標, ＋遠程…): the ⌄ row comes and goes without moving them.
+    const rows = this.frame.querySelector<HTMLElement>(":scope > .sel-pinned");
+    if (pinned === null && (foot.parentElement !== this.frame || (rows !== null && foot.nextElementSibling !== rows))) this.frame.insertBefore(foot, rows);
     if (pinned !== null && foot.parentElement !== null) foot.remove();
   }
 
@@ -1081,8 +1083,13 @@ export class SelectionInfo {
     // 自動訓練 by the screen (D-098): why it trains or not; the main city's villagers and their target.
     const trainsOnItsOwn = own && (type === BuildingType.MainCity || autoTrainBuildings(view.rules).includes(type));
     const autoLine = trainsOnItsOwn ? el("p", this.el, "sel-pend auto-train-line") : null;
+    // The rows pressed again and again (村民目標 − +, ＋遠程 ＋法師 全部離開): last, under every line that comes and goes
+    // (the queue, 0/6，1 名正過來, whose they are with 召回, 位子留給…). The panel grows upward from its foot, so what
+    // comes and goes no longer moves them under the finger or the pointer (the user 2026-11-18: 「一直跳來跳去」).
+    const pressed: HTMLElement[] = [];
     if (own && type === BuildingType.MainCity) {
       const row = el("div", this.el, "sel-keep villager-target");
+      pressed.push(row);
       row.setAttribute("role", "group");
       row.setAttribute("aria-label", "村民目標");
       el("span", row, "", "村民目標");
@@ -1096,10 +1103,7 @@ export class SelectionInfo {
         if (count.textContent !== n) count.textContent = n;
       });
     }
-    // A building that trains keeps its queue's line on a computer's window, empty or not: the first 訓練 no longer makes
-    // the panel taller under the pointer (r6.css, the user 2026-11-18: 「點…兵種…那些一直跳來跳去」).
-    const trains = (view.rules.buildings[type]?.trains?.length ?? 0) > 0;
-    const queue = own ? el("div", this.el, trains ? "sel-queue trains" : "sel-queue") : null;
+    const queue = own ? el("div", this.el, "sel-queue") : null;
     const queueLength = b0[o0 + B.queueLength];
     const packed = b0[o0 + B.queuePacked];
     // 躲進建築 (round 7, D-061): how many soldiers hide in our main city or arrow tower, and 全部出來;
@@ -1117,6 +1121,7 @@ export class SelectionInfo {
       hidden = el("span", top, "garrison-count");
       hideGroups = el("span", top, "seat-groups");
       const row = el("div", this.el, "sel-garrison");
+      pressed.push(row);
       for (const t of garrisonTypes(view.rules)) {
         const call = button(row, `＋${CALL_WORD[t] ?? UNIT_NAME[t] ?? ""}`, "", () => this.host.callToHide(id, t), "chip secondary");
         call.setAttribute("aria-label", `叫 1 名${UNIT_NAME[t] ?? ""}躲進來`);
@@ -1124,7 +1129,7 @@ export class SelectionInfo {
       }
       out = button(row, "全部離開", "", () => this.host.command({ c: "leave", building: id }), "chip secondary");
       // D-138 B: the places kept for new soldiers, under the buttons, in the panel's small words.
-      // Empty: no line on a phone; its room kept on a computer's window (r6.css), so the buttons above stay put.
+      // Over ＋遠程／＋法師 (their row is moved last, at the end): it comes and goes without moving them.
       const waiting = el("div", this.el, "sel-garrison call-waiting small empty");
       this.updaters.push(() => {
         const text = this.host.callWaiting(id);
@@ -1208,6 +1213,16 @@ export class SelectionInfo {
       }
       headBar?.(b[o + B.queueProgress] / 1000);
     });
+    // 正式介面: pinned at the panel's foot, out of what scrolls (as 軍團畫面's row): on a phone a panel taller than its room
+    // scrolls, and the rows last in it went under ⌄ as 召回 came. The prototype: last in the panel.
+    if (pressed.length === 0) return;
+    if (this.formal) {
+      const pin = el("div", this.frame, "sel-pinned");
+      for (const row of pressed) pin.appendChild(row);
+    } else {
+      const more = this.el.querySelector(":scope > .sel-more");
+      for (const row of pressed) this.el.insertBefore(row, more);
+    }
   }
 
   /** 哨所 (D-080): the rows of our outpost's panel. Returns the update. */
