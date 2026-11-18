@@ -1,0 +1,226 @@
+{
+ "traces": [
+  {
+   "name": "perf",
+   "script": "ownpass-perf.ts",
+   "args": "perf",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "late",
+   "script": "ownpass-perf.ts",
+   "args": "late 1,2,3 60",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "base-push-1-20",
+   "script": "ring-watch.ts",
+   "args": "--seeds 1-20 --strategy push --speed h1 --formation close --difficulty hard --json /tmp/s.json",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "base-push-21-40",
+   "script": "ring-watch.ts",
+   "args": "--seeds 21-40 --strategy push --speed h1 --formation close --difficulty hard --json /tmp/s.json",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "base-push-turtle-1-20",
+   "script": "ring-watch.ts",
+   "args": "--seeds 1-20 --strategy push --speed h1 --formation close --turtle --cap 90 --difficulty hard --json /tmp/s.json",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "base-push-turtle-21-40",
+   "script": "ring-watch.ts",
+   "args": "--seeds 21-40 --strategy push --speed h1 --formation close --turtle --cap 90 --difficulty hard --json /tmp/s.json",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "base-push-turtle-random-1-20",
+   "script": "ring-watch.ts",
+   "args": "--seeds 1-20 --strategy push --speed h1 --formation close --turtle --cap 90 --map random --difficulty hard --json /tmp/s.json",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "base-push-turtle-random-21-40",
+   "script": "ring-watch.ts",
+   "args": "--seeds 21-40 --strategy push --speed h1 --formation close --turtle --cap 90 --map random --difficulty hard --json /tmp/s.json",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "base-defend-1-20",
+   "script": "ring-watch.ts",
+   "args": "--seeds 1-20 --strategy defend --speed h1 --formation close --difficulty hard --json /tmp/s.json",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "base-defend-21-40",
+   "script": "ring-watch.ts",
+   "args": "--seeds 21-40 --strategy defend --speed h1 --formation close --difficulty hard --json /tmp/s.json",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "ring-push-1-20",
+   "script": "ring-watch.ts",
+   "args": "--seeds 1-20 --strategy push --speed h1 --formation close --difficulty hard --json /tmp/s.json",
+   "a": {
+    "houseRing": [
+     5,
+     4,
+     3
+    ]
+   },
+   "b": {
+    "houseRing": [
+     5,
+     4,
+     3
+    ]
+   }
+  },
+  {
+   "name": "ring-push-21-40",
+   "script": "ring-watch.ts",
+   "args": "--seeds 21-40 --strategy push --speed h1 --formation close --difficulty hard --json /tmp/s.json",
+   "a": {
+    "houseRing": [
+     5,
+     4,
+     3
+    ]
+   },
+   "b": {
+    "houseRing": [
+     5,
+     4,
+     3
+    ]
+   }
+  },
+  {
+   "name": "ring-push-turtle-1-20",
+   "script": "ring-watch.ts",
+   "args": "--seeds 1-20 --strategy push --speed h1 --formation close --turtle --cap 90 --difficulty hard --json /tmp/s.json",
+   "a": {
+    "houseRing": [
+     5,
+     4,
+     3
+    ]
+   },
+   "b": {
+    "houseRing": [
+     5,
+     4,
+     3
+    ]
+   }
+  },
+  {
+   "name": "ring-push-turtle-21-40",
+   "script": "ring-watch.ts",
+   "args": "--seeds 21-40 --strategy push --speed h1 --formation close --turtle --cap 90 --difficulty hard --json /tmp/s.json",
+   "a": {
+    "houseRing": [
+     5,
+     4,
+     3
+    ]
+   },
+   "b": {
+    "houseRing": [
+     5,
+     4,
+     3
+    ]
+   }
+  },
+  {
+   "name": "ring-push-turtle-random-1-20",
+   "script": "ring-watch.ts",
+   "args": "--seeds 1-20 --strategy push --speed h1 --formation close --turtle --cap 90 --map random --difficulty hard --json /tmp/s.json",
+   "a": {
+    "houseRing": [
+     5,
+     4,
+     3
+    ]
+   },
+   "b": {
+    "houseRing": [
+     5,
+     4,
+     3
+    ]
+   }
+  },
+  {
+   "name": "ring-push-turtle-random-21-40",
+   "script": "ring-watch.ts",
+   "args": "--seeds 21-40 --strategy push --speed h1 --formation close --turtle --cap 90 --map random --difficulty hard --json /tmp/s.json",
+   "a": {
+    "houseRing": [
+     5,
+     4,
+     3
+    ]
+   },
+   "b": {
+    "houseRing": [
+     5,
+     4,
+     3
+    ]
+   }
+  },
+  {
+   "name": "ring-defend-1-20",
+   "script": "ring-watch.ts",
+   "args": "--seeds 1-20 --strategy defend --speed h1 --formation close --difficulty hard --json /tmp/s.json",
+   "a": {
+    "houseRing": [
+     5,
+     4,
+     3
+    ]
+   },
+   "b": {
+    "houseRing": [
+     5,
+     4,
+     3
+    ]
+   }
+  },
+  {
+   "name": "ring-defend-21-40",
+   "script": "ring-watch.ts",
+   "args": "--seeds 21-40 --strategy defend --speed h1 --formation close --difficulty hard --json /tmp/s.json",
+   "a": {
+    "houseRing": [
+     5,
+     4,
+     3
+    ]
+   },
+   "b": {
+    "houseRing": [
+     5,
+     4,
+     3
+    ]
+   }
+  }
+ ]
+}
