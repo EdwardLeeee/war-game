@@ -18,7 +18,9 @@
 // Every mode writes summary.md (Markdown) and its files under --out; never commits.
 // In CI (YIELD_REPO set, D-123; ceo 2026-11-16): every YIELD_EVERY it looks at the repository's other runs; a Pages job
 // waiting for a runner, or any other job waiting YIELD_WAIT or longer, and it stops at once (search: the cycle under way is
-// dropped, those before it kept; check: the plans done so far written), so its runner goes to them.
+// dropped, those before it kept; check: the plans done so far written), so its runner goes to them. "A Pages job" is one
+// that publishes the site (a push to main); a pull request's Pages run only builds, and waits as any other job (2026-11-18:
+// the second search gave way at once to #525's Pages build and kept nothing).
 
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -60,12 +62,14 @@ function giveWay(): boolean {
   lastLook = now;
   try {
     const old = (t: string) => now - Date.parse(t) >= YIELD_WAIT;
-    type Run = { id: number; name: string; created: string };
-    const runs = (status: string) => ghJson(`repos/${yieldRepo}/actions/runs?status=${status}&per_page=50`, `[.workflow_runs[] | select(.name != "AI train" and .name != "AI scratch") | {id, name, created: .created_at}]`) as Run[];
-    for (const r of runs("queued")) if (r.name === "Pages" || old(r.created)) { gaveWay = `${r.name} 在等（run ${r.id}）`; return true; }
+    type Run = { id: number; name: string; created: string; event: string; branch: string };
+    const runs = (status: string) => ghJson(`repos/${yieldRepo}/actions/runs?status=${status}&per_page=50`, `[.workflow_runs[] | select(.name != "AI train" and .name != "AI scratch") | {id, name, created: .created_at, event, branch: .head_branch}]`) as Run[];
+    // The site's deployment (Pages on a push to main), not a pull request's build of it.
+    const deploys = (r: Run) => r.name === "Pages" && r.event === "push" && r.branch === "main";
+    for (const r of runs("queued")) if (deploys(r) || old(r.created)) { gaveWay = `${r.name} 在等（run ${r.id}）`; return true; }
     for (const r of runs("in_progress")) {
       const waiting = ghJson(`repos/${yieldRepo}/actions/runs/${r.id}/jobs?filter=latest&per_page=100`, `[.jobs[] | select(.status == "queued") | .created_at]`) as string[];
-      if (waiting.some((t) => r.name === "Pages" || old(t))) { gaveWay = `${r.name} 有 job 在等（run ${r.id}）`; return true; }
+      if (waiting.some((t) => deploys(r) || old(t))) { gaveWay = `${r.name} 有 job 在等（run ${r.id}）`; return true; }
     }
     apiErrors = 0;
   } catch {
