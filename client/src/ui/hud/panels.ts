@@ -1096,7 +1096,10 @@ export class SelectionInfo {
         if (count.textContent !== n) count.textContent = n;
       });
     }
-    const queue = own ? el("div", this.el, "sel-queue") : null;
+    // A building that trains keeps its queue's line on a computer's window, empty or not: the first 訓練 no longer makes
+    // the panel taller under the pointer (r6.css, the user 2026-11-18: 「點…兵種…那些一直跳來跳去」).
+    const trains = (view.rules.buildings[type]?.trains?.length ?? 0) > 0;
+    const queue = own ? el("div", this.el, trains ? "sel-queue trains" : "sel-queue") : null;
     const queueLength = b0[o0 + B.queueLength];
     const packed = b0[o0 + B.queuePacked];
     // 躲進建築 (round 7, D-061): how many soldiers hide in our main city or arrow tower, and 全部出來;
@@ -1121,12 +1124,12 @@ export class SelectionInfo {
       }
       out = button(row, "全部離開", "", () => this.host.command({ c: "leave", building: id }), "chip secondary");
       // D-138 B: the places kept for new soldiers, under the buttons, in the panel's small words.
-      const waiting = el("div", this.el, "sel-garrison call-waiting small");
-      waiting.hidden = true;
+      // Empty: no line on a phone; its room kept on a computer's window (r6.css), so the buttons above stay put.
+      const waiting = el("div", this.el, "sel-garrison call-waiting small empty");
       this.updaters.push(() => {
         const text = this.host.callWaiting(id);
         if (waiting.textContent !== text) waiting.textContent = text;
-        waiting.hidden = text === "";
+        waiting.classList.toggle("empty", text === "");
       });
     }
     // 哨所 (D-080): how many spearmen stand guard, ＋槍兵, 全部離開; then 攻擊／堅守 and what the one on means.

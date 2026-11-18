@@ -2634,3 +2634,49 @@
 :root[data-ui="r6"] #hud:has(> .tut-card.side:not([hidden])) .stats-page .st-two {
   grid-template-columns: minmax(0, 230fr) minmax(0, 346fr);
 }
+
+/* --- 按下去以後，滑鼠底下的按鈕不動（the user 2026-11-18: 「點交易、兵種、加減符號那些一直跳來跳去」）--------------------
+   On a computer's window (600 tall or more; a phone held sideways is 336 and keeps its layout): what changes as a click
+   is taken no longer moves what is beside it. The bar's title keeps one width (it was its words', 編隊 1 21/21 over
+   待命 20・攻擊 1 one moment and 已選 12 over 待命 the next: every kind's cell moved, 34 px after 只選槍兵); a kind's count
+   keeps two figures' room; a building that trains keeps its queue's line, empty or not (the first 訓練 made the panel
+   44 taller, its ✕ and 收起 rising under the pointer); 0/6 keeps the room of 「0/6，1 名正過來」 (召回 went 164 px aside
+   and down a line after ＋法師); the line under ＋遠程／＋法師 (位子留給…) keeps its room while empty. (Whose they are, with 召回, still takes a line of its own as the first one
+   gets in: the panel grows upward, ＋遠程／＋法師 under the pointer stay; a blank line kept for it looked broken.) */
+@media (min-height: 600px) {
+  :root[data-ui="r6"] .sel-bar .bar-title {
+    width: 132px;
+    overflow: hidden;
+  }
+
+  :root[data-ui="r6"] .sel-bar .bar-title .t1,
+  :root[data-ui="r6"] .sel-bar .bar-title .t2 {
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  :root[data-ui="r6"] .sel-bar .bar-cell .cnt {
+    display: inline-block;
+    min-width: 2ch;
+    text-align: right;
+  }
+
+  :root[data-ui="r6"] .sel-info .sel-queue.trains {
+    min-height: 44px;
+  }
+
+  :root[data-ui="r6"] .sel-info .seat-row .garrison-count {
+    min-width: 9.5em;
+  }
+
+  :root[data-ui="r6"] .sel-info .sel-garrison.call-waiting {
+    min-height: 16px;
+  }
+
+  :root[data-ui="r6"] .sel-info .sel-garrison.call-waiting.empty {
+    display: flex;
+    visibility: hidden;
+  }
+}
