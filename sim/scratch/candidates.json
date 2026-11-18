@@ -1,20 +1,6 @@
 {
  "traces": [
   {
-   "name": "perf",
-   "script": "ownpass-perf.ts",
-   "args": "perf",
-   "a": {},
-   "b": {}
-  },
-  {
-   "name": "late",
-   "script": "ownpass-perf.ts",
-   "args": "late 1,2,3 60",
-   "a": {},
-   "b": {}
-  },
-  {
    "name": "base-push-1-20",
    "script": "ring-watch.ts",
    "args": "--seeds 1-20 --strategy push --speed h1 --formation close --difficulty hard --json /tmp/s.json",

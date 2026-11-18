@@ -4,7 +4,7 @@ name: AI scratch
 # never in a real pull request). Candidates come from sim/scratch/candidates.json.
 on:
   push:
-    branches: ["ai/scratch-**"]
+    branches: ["core/scratch-ownfix*"]
   workflow_dispatch:
 
 permissions:
