@@ -44,6 +44,12 @@ on:
       net_artifact:
         description: "eval: the artifact of from_run with net.json (or bc.json)"
         default: train-es-0
+      from_runs:
+        description: "examcheck: more runs to read (comma-separated ids: searches, and earlier checks for --skip-checked)"
+        default: ""
+      args:
+        description: "more options for the mode's program, split on spaces (exam, examcheck: exam.ts's)"
+        default: ""
   push:
     branches: ["ai/train-*"]
 
@@ -109,7 +115,7 @@ jobs:
             echo "args=$(get args '')"
             echo "nets=$nets"
             # examcheck: run.json "from_runs" lists several exam runs (D-147: a search dispatched more than once).
-            echo "from_runs=$(echo "$S" | jq -r '(.from_runs // []) | map(tostring) | join(",")')"
+            echo "from_runs=$(echo "$S" | jq -r '(.from_runs // "") | if type == "array" then map(tostring) | join(",") else tostring end')"
           } >> "$GITHUB_OUTPUT"
           echo "設定：$(echo "$S" | jq -c .)" >> "$GITHUB_STEP_SUMMARY"
 
@@ -191,7 +197,7 @@ jobs:
               [ -n "$N" ] && [ -f "$N" ] || N=$(first bc.json)
               node $T eval --net "$N" --games "$GAMES" --out "$O" "$@" ;;
             # D-147: run.json "args" adds exam.ts's options (--map, --pool, --rounds, --cap, --top, --seed-from, --qualify).
-            exam) node src/ai/learn/exam.ts search --seed $((ISLAND + 1)) --hours "$HOURS" --out "$O" "$@" ;;
+            exam) node src/ai/learn/exam.ts search --seed $((ISLAND + 1)) --hours "$HOURS" --parents-from "$F" --out "$O" "$@" ;;
             examcheck) node src/ai/learn/exam.ts check --from "$F" --games "$GAMES" --shard "$ISLAND" --shards "$(echo "$ISLANDS" | jq length)" --out "$O" "$@" ;;
           esac
           cat "$O/summary.md" >> "$GITHUB_STEP_SUMMARY"
