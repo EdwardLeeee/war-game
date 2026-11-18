@@ -2521,7 +2521,8 @@ test(
   // (war-game-core 2026-10-22), so they are off here.
   // The game found was on the rules before the D-100 batch (KEEP, SIEGE, RICH, MARKET), off here too; and with crystal
   // (D-135's NO_CRYSTAL off: without it the game goes otherwise and its farmers are not hunted).
-  switchedOff([...(GATES === undefined ? [] : [GATES]), ...[KEEP, RULES.SIEGE, RULES.RICH, RULES.MARKET, NO_CRYSTAL]], () => {
+  // D-154 (OWN_PASS) came later still: off for the game as found, on with the batch as it ships.
+  switchedOff([...(GATES === undefined ? [] : [GATES]), ...[KEEP, RULES.SIEGE, RULES.RICH, RULES.MARKET, NO_CRYSTAL, RULES.OWN_PASS]], () => {
     // The late group with its farmer hunters (scripted-games --late --harass 10) against hard, 20 minutes.
 
     // Seed 7 (D-089's map): farmers sent home from one spot twice from minute 11 (an order shared with its list was changed then).
@@ -2557,7 +2558,7 @@ test(
     assert.deepEqual(before.changed, [], "orders as sent");
     assert.deepEqual(play(true).changed, [], "orders as sent, with D-086 A6");
     // And with the D-100 batch, gates and D-135 (no crystal) on, as they ship.
-    const batch = [...(GATES === undefined ? [] : [GATES]), ...[KEEP, RULES.SIEGE, RULES.RICH, RULES.MARKET, NO_CRYSTAL]];
+    const batch = [...(GATES === undefined ? [] : [GATES]), ...[KEEP, RULES.SIEGE, RULES.RICH, RULES.MARKET, NO_CRYSTAL, RULES.OWN_PASS]];
     for (const sw of batch) sw.on = true;
     try {
       assert.deepEqual(play(true).changed, [], "orders as sent, with the D-100 batch");

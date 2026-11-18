@@ -452,6 +452,14 @@ export const TOWN_GUARD = { on: true, gateTicks: 3 * S, gateReach: 2 };
  */
 export const OUTPOST = { on: true, slots: 6, reach: 8, chase: 12, ownersWalk: true };
 /**
+ * D-154 (the user 2026-11-18: 「我覺得我方人緣應該可以穿過任何一個我方建築不會被卡住」, 「城牆以外全部」; war-game-ai, ceo's
+ * assignment while core was away): a player's units walk through its own buildings (finished or going up, its main city,
+ * towers, a town's keep it holds), as through its outposts (D-115); nobody else does. Walls stay terrain and gates as
+ * before (D-096). Its own pass grid only (World.passGrid): goals, formation slots and drop cells stay outside buildings,
+ * and a unit inside its own building does not fight there and walks out when it stops (units.ts). Off: as before.
+ */
+export const OWN_PASS = { on: true };
+/**
  * Spearmen hide in outposts (D-119; the user 2026-11-04: 「我覺得哨所的面積應該要放大，我是把它當作城牆來設計的」「哨所目前
  * 的血量好像有點太低」「駐軍是不是也可以放進去？只能放槍兵然後槍兵可以躲在裡面戳人」): an outpost is `size` x `size`, has
  * `hp` and costs `cost`; up to `slots` spearmen posted at it go in (`post`), where nobody outside can hit

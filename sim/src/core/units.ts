@@ -63,6 +63,7 @@ import {
   MULT_NUM,
   OUTPOST,
   OUTPOST_HIDE,
+  OWN_PASS,
   PUSH,
   rank,
   RETARGET_EVERY,
@@ -77,7 +78,7 @@ import {
 import { type Frame, IDENTITY, fromCanon, toCanon } from "../frame.ts";
 import { openLine, steerDirect, steerTo } from "./steer.ts";
 import { wallStretch, wayFrame, wayNext, wayPick, waySteps } from "./wall-walk.ts";
-import { HitCause, STONE, UNIT_KINDS, type World } from "./world.ts";
+import { BLOCK_BUILDING, HitCause, STONE, UNIT_KINDS, type World } from "./world.ts";
 import { mainCityFloor } from "./tutorial.ts";
 
 const TICKS = TICKS_PER_SECOND;
@@ -248,6 +249,7 @@ export class UnitSystem {
     if (CAV_FLANK.on) this.collectShooters(w);
     for (let i = 0; i < w.units.count; i++) this.decide(w, fog, fields, farmers, i);
     if (this.warns.length > 0) this.keepOut(w, fog);
+    if (OWN_PASS.on) this.outOfOwn(w);
     this.move(w);
     return this.attack(w, fog);
   }
@@ -841,6 +843,7 @@ export class UnitSystem {
       }
       u.facing[i] = dir16(tx - u.x[i], ty - u.y[i]);
       if (d2 <= info.range * info.range) {
+        if (this.outFirst(w, i, tx, ty)) return true;
         this.attacking[i] = 1;
         u.action[i] = Action.Attack;
         return true;
@@ -1081,6 +1084,7 @@ export class UnitSystem {
       if (d2 <= info.range * info.range) {
         u.target[i] = tid;
         u.facing[i] = dir16(tx - u.x[i], ty - u.y[i]);
+        if (this.outFirst(w, i, tx, ty)) return true;
         this.attacking[i] = 1;
         u.action[i] = Action.Attack;
         return true;
@@ -1820,7 +1824,7 @@ export class UnitSystem {
     u.flankY[i] = -1;
     const tx = u.x[ts];
     const ty = u.y[ts];
-    if (openLine(w, u.x[i], u.y[i], tx, ty)) steerDirect(w, i, tx - u.x[i], ty - u.y[i], speed);
+    if (openLine(w, u.x[i], u.y[i], tx, ty, this.walks(w, i))) steerDirect(w, i, tx - u.x[i], ty - u.y[i], speed);
     else steerTo(w, fields, i, tx, ty, (ty >> CELL_SHIFT) * n + (tx >> CELL_SHIFT), speed);
   }
 
@@ -1893,7 +1897,7 @@ export class UnitSystem {
     }
     const p = at(k);
     if (p.x < 0 || p.y < 0 || p.x >> CELL_SHIFT >= n || p.y >> CELL_SHIFT >= n || !w.walkable(p.x >> CELL_SHIFT, p.y >> CELL_SHIFT)) return;
-    if (!openLine(w, x0, y0, p.x, p.y) || !openLine(w, p.x, p.y, u.x[ts], u.y[ts]) || this.underArrows(w, fog, me, p.x, p.y)) return;
+    if (!openLine(w, x0, y0, p.x, p.y, this.walks(w, i)) || !openLine(w, p.x, p.y, u.x[ts], u.y[ts], this.walks(w, i)) || this.underArrows(w, fog, me, p.x, p.y)) return;
     u.flankSide[i] = k;
     u.flankX[i] = p.x;
     u.flankY[i] = p.y;
@@ -2268,6 +2272,12 @@ export class UnitSystem {
     if (order !== Order.Cast && u.castProgress[i] > 0) u.castProgress[i] = 0;
     if (order === Order.Cast) {
       u.target[i] = -1;
+      // D-154: it calibrates outside its own buildings (out first; the count starts there).
+      if (OWN_PASS.on && w.insideOwn(i)) {
+        u.castProgress[i] = 0;
+        this.outFirst(w, i, u.castX[i], u.castY[i]);
+        return;
+      }
       u.action[i] = Action.Calibrate;
       u.facing[i] = dir16(u.castX[i] - u.x[i], u.castY[i] - u.y[i]);
       return;
@@ -2281,7 +2291,8 @@ export class UnitSystem {
       w.res[u.owner[i] * 4 + Resource.Crystal] >= CANNON.crystal
     ) {
       const aim = this.autocastAim(w, fog, i);
-      if (aim >= 0) {
+      // D-154: not from inside its own buildings.
+      if (aim >= 0 && !w.insideOwn(i)) {
         startCast(w, i, u.x[aim], u.y[aim], true);
         u.action[i] = Action.Calibrate;
         return;
@@ -2415,6 +2426,7 @@ export class UnitSystem {
       // D-115: a siege engine walks up to unitRange for a unit.
       const reach = ts >= 0 ? (info.unitRange ?? info.range) : info.range;
       if (d2 <= reach * reach && !(ts >= 0 && info.range <= CELL && onWall(w, ts) && !this.reaches(w, i, ts))) {
+        if (this.outFirst(w, i, tx, ty)) return;
         this.attacking[i] = 1;
         u.action[i] = Action.Attack;
         return;
@@ -2521,7 +2533,7 @@ export class UnitSystem {
     const n = w.size;
     const info = UNITS[u.type[i]];
     // One on a wall stands on a cell nobody walks on: straight for it, as ever.
-    if (ts >= 0 && (onWall(w, ts) || openLine(w, u.x[i], u.y[i], tx, ty))) {
+    if (ts >= 0 && (onWall(w, ts) || openLine(w, u.x[i], u.y[i], tx, ty, this.walks(w, i)))) {
       steerDirect(w, i, tx - u.x[i], ty - u.y[i], info.speed);
       return true;
     }
@@ -2563,7 +2575,7 @@ export class UnitSystem {
     const uy = u.y[i] - gy;
     const sx = u.orderX[i] - gx;
     const sy = u.orderY[i] - gy;
-    return ux * ux + uy * uy <= sx * sx + sy * sy && openLine(w, u.x[i], u.y[i], u.orderX[i], u.orderY[i]);
+    return ux * ux + uy * uy <= sx * sx + sy * sy && openLine(w, u.x[i], u.y[i], u.orderX[i], u.orderY[i], this.walks(w, i));
   }
 
   /**
@@ -2684,6 +2696,7 @@ export class UnitSystem {
     u.target[i] = b.id[bs];
     u.facing[i] = dir16(bx - u.x[i], by - u.y[i]);
     if (rectDist2(u.x[i], u.y[i], b.cellX[bs], b.cellY[bs], sx, sy) <= info.range * info.range) {
+      if (this.outFirst(w, i, bx, by)) return;
       this.attacking[i] = 1;
       u.action[i] = Action.Attack;
       return;
@@ -2781,6 +2794,68 @@ export class UnitSystem {
       return false;
     }
     return ++u.slotIdle[i] >= SLOT_GIVE_UP.ticks;
+  }
+
+  /** The grid unit i walks for a straight line: its own (through its own buildings, D-154), or World.grid as before. */
+  private walks(w: World, i: number): Uint8Array {
+    return OWN_PASS.on ? w.passGrid(w.passClass(w.units.col.owner[i])) : w.grid;
+  }
+
+  /**
+   * D-154: unit i, in reach of what it is to fight at (tx, ty), stands in one of its own buildings: it steps out
+   * first, to the open cell nearest it (on a tie, the one nearer (tx, ty)), and does not fight this tick (true).
+   */
+  private outFirst(w: World, i: number, tx: number, ty: number): boolean {
+    if (!w.insideOwn(i)) return false;
+    const u = w.units.col;
+    const n = w.size;
+    const c = nearestWalkable(w, u.x[i] >> CELL_SHIFT, u.y[i] >> CELL_SHIFT, { cellX: tx >> CELL_SHIFT, cellY: ty >> CELL_SHIFT });
+    if (c < 0) return false;
+    const gx = ((c % n) << CELL_SHIFT) + (CELL >> 1);
+    const gy = (Math.trunc(c / n) << CELL_SHIFT) + (CELL >> 1);
+    steerDirect(w, i, gx - u.x[i], gy - u.y[i], UNITS[u.type[i]].speed);
+    return true;
+  }
+
+  /**
+   * D-154: a unit standing still in one of its own buildings (no step this tick; not hidden, not on a wall) walks out
+   * to the open cell nearest it (on a tie, nearer its home, as pushOut); one with no order takes it as its place. One
+   * in a building no longer its owner's (a keep that went over as it walked through) is put out at once, as pushOut.
+   */
+  private outOfOwn(w: World): void {
+    const u = w.units.col;
+    const b = w.buildings.col;
+    const n = w.size;
+    for (let i = 0; i < w.units.count; i++) {
+      if (u.owner[i] >= PLAYER_COUNT || u.action[i] === Action.Garrisoned || u.wall[i] >= 0) continue;
+      const here = (u.y[i] >> CELL_SHIFT) * n + (u.x[i] >> CELL_SHIFT);
+      if ((w.grid[here] & BLOCK_BUILDING) === 0) continue;
+      const s = w.building(w.buildingAt[here]);
+      if (s < 0) continue;
+      const mine = b.owner[s] === u.owner[i];
+      if (mine && (u.vx[i] !== 0 || u.vy[i] !== 0)) continue;
+      const home = u.owner[i] < PLAYER_COUNT ? w.homes[u.owner[i]] : undefined;
+      const c = nearestWalkable(w, u.x[i] >> CELL_SHIFT, u.y[i] >> CELL_SHIFT, home);
+      if (c < 0) continue;
+      const gx = ((c % n) << CELL_SHIFT) + (CELL >> 1);
+      const gy = (Math.trunc(c / n) << CELL_SHIFT) + (CELL >> 1);
+      if (!mine) {
+        u.x[i] = gx;
+        u.y[i] = gy;
+        u.vx[i] = 0;
+        u.vy[i] = 0;
+        u.anchorX[i] = gx;
+        u.anchorY[i] = gy;
+        continue;
+      }
+      this.attacking[i] = 0;
+      u.working[i] = 0;
+      steerDirect(w, i, gx - u.x[i], gy - u.y[i], UNITS[u.type[i]].speed);
+      if (u.order[i] === Order.None) {
+        u.anchorX[i] = gx;
+        u.anchorY[i] = gy;
+      }
+    }
   }
 
   private arrive(w: World, i: number): void {

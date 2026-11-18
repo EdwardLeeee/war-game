@@ -286,7 +286,7 @@ export class TownSystem {
       const s = keepOf(w, t);
       if (s < 0) addKeep(w, t, NEUTRAL);
       else {
-        w.buildings.col.owner[s] = NEUTRAL;
+        w.setBuildingOwner(s, NEUTRAL);
         w.buildings.col.hp[s] = w.maxHp(s);
         w.buildings.col.target[s] = -1;
       }
