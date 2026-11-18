@@ -13,6 +13,7 @@ import type { Game } from "../game/game.ts";
 import type { CommandBody, TutorialEvent } from "../sim.ts";
 import { TILE_PX } from "../tuning.ts";
 import { icon } from "../ui/icons.ts";
+import { uiZoom } from "../ui/ui-scale.ts";
 import type { TutorHooks } from "./hooks.ts";
 import { type Phase, phaseById, type Place, STEPS, type StepCtx, stepOf, type TargetSpec } from "./steps.ts";
 import { type Spot, TutorWorld } from "./world.ts";
@@ -521,8 +522,11 @@ export class Tutor implements TutorHooks {
       const NS = "http://www.w3.org/2000/svg";
       const svg = document.createElementNS(NS, "svg");
       svg.setAttribute("class", "tut-dim");
-      svg.setAttribute("width", `${W}`);
-      svg.setAttribute("height", `${H}`);
+      // Drawn in the screen's points, as big as the interface's own lengths (÷ its zoom, R26-01).
+      const z = uiZoom();
+      svg.setAttribute("width", `${W / z}`);
+      svg.setAttribute("height", `${H / z}`);
+      svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
       const id = "tut-mask";
       const defs = document.createElementNS(NS, "defs");
       const mask = document.createElementNS(NS, "mask");
@@ -564,7 +568,7 @@ export class Tutor implements TutorHooks {
       layer.append(svg);
       const ring = el("div", layer, `tut-ring${shape.round ? " round" : ""}${flash ? " flash" : ""}`);
       const pad = 4;
-      Object.assign(ring.style, { left: `${shape.box.x - pad}px`, top: `${shape.box.y - pad}px`, width: `${shape.box.w + 2 * pad}px`, height: `${shape.box.h + 2 * pad}px` });
+      Object.assign(ring.style, { left: `${(shape.box.x - pad) / z}px`, top: `${(shape.box.y - pad) / z}px`, width: `${(shape.box.w + 2 * pad) / z}px`, height: `${(shape.box.h + 2 * pad) / z}px` });
     }
     if (this.offScreen !== null) this.drawEdge(layer, this.offScreen, this.targetLabel ?? "");
     if (!done && this.phase.gesture === "drag-pinch" && !(this.flags.panned && this.flags.pinched)) this.drawHand(layer, "drag-pinch", null);
@@ -592,7 +596,7 @@ export class Tutor implements TutorHooks {
     p.setAttribute("d", "M3 6l18 6-18 6 4-6z");
     svg.append(p);
     tag.append(svg, label);
-    Object.assign(tag.style, { left: `${x - 60}px`, top: `${y - 20}px` });
+    Object.assign(tag.style, { left: `${x / uiZoom() - 60}px`, top: `${y / uiZoom() - 20}px` });
   }
 
   /** A finger: drag and pinch (step 1), or a long press then a box (step 5). */
@@ -618,8 +622,9 @@ export class Tutor implements TutorHooks {
     }
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("class", "tut-hand");
-    svg.setAttribute("width", `${W}`);
-    svg.setAttribute("height", `${H}`);
+    svg.setAttribute("width", `${W / uiZoom()}`);
+    svg.setAttribute("height", `${H / uiZoom()}`);
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
     svg.innerHTML = g;
     layer.append(svg);
   }

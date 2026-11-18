@@ -23,6 +23,8 @@ export const TILE_PX = 32;
 export const MAX_ZOOM = 2.5;
 /** Zoom when a game starts. */
 export const START_ZOOM = 1;
+/** With a mouse (R26 預設拉近, design/r26/spec.md): the start's zoom this much closer. */
+export const MOUSE_ZOOM = 1.3;
 
 /** Taps pick the nearest thing within this many pt of the finger. */
 export const HIT_RADIUS_PT = 22;

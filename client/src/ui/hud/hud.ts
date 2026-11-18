@@ -38,6 +38,7 @@ import { FIXED_TO_PX } from "../../view/view.ts";
 import { applyTheme, loadTheme, saveTheme, THEME_LABEL, THEMES } from "../../theme.ts";
 import { formalUi } from "../formal.ts";
 import { dress, icon } from "../icons.ts";
+import { applyUiScale, largeWindow, loadUiSize, saveUiSize, UI_SIZE_LABEL, UI_SIZES, uiZoom } from "../ui-scale.ts";
 import { ORDER_TONE } from "../overlays.ts";
 import { adjustRatio, type Ratio } from "./economy-ratio.ts";
 import { loadTownHintOff, saveTownHintOff } from "../../hint-pref.ts";
@@ -383,7 +384,8 @@ export class Hud {
     const view = this.game.view;
     const h = view?.header;
     // The resource bar keeps a gap before the top-right buttons.
-    this.res.update(view, Math.floor(this.controlsBar.getBoundingClientRect().left - this.res.el.getBoundingClientRect().left - RES_GAP));
+    // Screen lengths ÷ the interface's zoom: the bar's own (R26-01, ui-scale.ts).
+    this.res.update(view, Math.floor((this.controlsBar.getBoundingClientRect().left - this.res.el.getBoundingClientRect().left) / uiZoom() - RES_GAP));
     if (h !== null && h !== undefined && !this.formal) {
       const recall = h[H.recall] === 1;
       const label = recall ? "回去工作" : "全體回城";
@@ -449,7 +451,7 @@ export class Hud {
     // (the stance lines, the group panel; D-026, D-054), so that neither covers the other; and
     // above the bar (R24-02) and what opens over it.
     const tops = [this.info.frame, this.info.bar, ...this.root.querySelectorAll<HTMLElement>(".sel-help")].filter((e): e is HTMLElement => e !== null && !e.hidden).map((e) => e.getBoundingClientRect().top);
-    const above = tops.length === 0 ? 0 : Math.ceil(this.root.getBoundingClientRect().bottom - Math.min(...tops) + 8);
+    const above = tops.length === 0 ? 0 : Math.ceil((this.root.getBoundingClientRect().bottom - Math.min(...tops)) / uiZoom() + 8);
     if (above !== this.toastAbove) {
       this.toastAbove = above;
       this.root.style.setProperty("--toast-above", `${above}px`);
@@ -844,12 +846,15 @@ export class Hud {
       const cy = h / 2;
       const dx = s.x - cx;
       const dy = s.y - cy;
-      const m = 56;
+      // On the screen: the arrow and its margin as big as the interface draws them (R26-01).
+      const z = uiZoom();
+      const m = 56 * z;
       const k = Math.min((cx - m) / Math.max(Math.abs(dx), 1e-6), (cy - m) / Math.max(Math.abs(dy), 1e-6));
       const boxes = this.arrowKeepOff(now);
       let x = cx + dx * k;
       let y = cy + dy * k;
-      const over = () => boxes.some((b) => x + ARROW_HALF > b.left && x - ARROW_HALF < b.right && y + ARROW_HALF > b.top && y - ARROW_HALF < b.bottom);
+      const half = ARROW_HALF * z;
+      const over = () => boxes.some((b) => x + half > b.left && x - half < b.right && y + half > b.top && y - half < b.bottom);
       for (let f = k, i = 0; i < 24 && over(); i++) {
         f *= 0.93;
         x = cx + dx * f;
@@ -858,7 +863,7 @@ export class Hud {
       // No free place along that line: none this time rather than one on top of a button or the tutorial's frame (it
       // would take their taps). The minimap still flashes.
       a.arrow.style.display = over() ? "none" : "";
-      a.arrow.style.transform = `translate(${x - 26}px, ${y - 26}px)`;
+      a.arrow.style.transform = `translate(${x / z - 26}px, ${y / z - 26}px)`;
       (a.arrow.firstElementChild as HTMLElement).style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
     }
   }
@@ -1055,6 +1060,24 @@ export class Hud {
       });
     };
     show();
+    // 介面大小 (R26-01 B, design/r26/spec.md 01): on a large window only (a phone held sideways never sees it), under 介面風格;
+    // the one chosen gold, at once and remembered on this device (ui-scale.ts).
+    if (this.formal && largeWindow()) {
+      const size = el("div", card, "difficulty ui-size-choice");
+      size.setAttribute("role", "radiogroup");
+      size.setAttribute("aria-label", "介面大小");
+      el("span", size, "", "介面大小");
+      const now = loadUiSize();
+      for (const v of UI_SIZES) {
+        const b = btn(size, UI_SIZE_LABEL[String(v)], () => {
+          saveUiSize(v);
+          applyUiScale();
+          this.openSettings();
+        }, v === now ? "b pri" : "b secondary");
+        b.setAttribute("role", "radio");
+        b.setAttribute("aria-checked", v === now ? "true" : "false");
+      }
+    }
     const end = el("div", card, "dialog-buttons");
     // 開局提示 開／關 (the user 2026-11-08, chose 設定裡加開關): the same as 不再提示, remembered on this device; at once.
     // At the left of the last row, so that the card still fits 932 × 336 without scrolling.
