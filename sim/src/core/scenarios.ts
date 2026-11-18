@@ -66,7 +66,7 @@ function wallShift(w: World): void {
   w.townState[T] = TownState.Governed;
   w.townOwner[T] = 0;
   const keep = keepOf(w, T);
-  if (keep >= 0) w.buildings.col.owner[keep] = 0;
+  if (keep >= 0) w.setBuildingOwner(keep, 0);
   w.refreshGates(T);
   Array.from(w.wallCells[T]).forEach((c, k) => {
     if (k % 4 !== 0) return;
