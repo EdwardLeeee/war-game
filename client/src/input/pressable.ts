@@ -29,10 +29,12 @@ export function pressable(el: HTMLElement, h: PressHandlers): () => void {
     pinch: () => {},
     pinchEnd: () => {},
   });
-  // Relative to the content box (inside any border), which is what the element draws in.
+  // Relative to the content box (inside any border), which is what the element draws in; in its own lengths (the
+  // screen's ÷ how much bigger it is drawn: the interface's zoom on a large window, R26-01).
   const local = (e: PointerEvent) => {
     const r = el.getBoundingClientRect();
-    return { x: e.clientX - r.left - el.clientLeft, y: e.clientY - r.top - el.clientTop };
+    const k = el.offsetWidth > 0 ? r.width / el.offsetWidth : 1;
+    return { x: (e.clientX - r.left) / k - el.clientLeft, y: (e.clientY - r.top) / k - el.clientTop };
   };
   const time = (e: Event) => {
     const now = performance.now();

@@ -327,8 +327,8 @@
   /* No higher than under 全軍撤退 (its foot 90 below the safe top; the panel's 4 above the safe
      bottom; 4 apart), not just under the top bar (#402): five kinds in a 軍團畫面 at 814 × 380, or a
      long explanation, reached over it (PR 5, ceo 2026-11-07). What does not fit scrolls (#402). */
-  max-height: calc(100vh - var(--safe-t) - var(--safe-b) - 98px);
-  max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - 98px);
+  max-height: calc(100vh / var(--ui-zoom, 1) - var(--safe-t) - var(--safe-b) - 98px);
+  max-height: calc(100dvh / var(--ui-zoom, 1) - var(--safe-t) - var(--safe-b) - 98px);
 }
 
 /* More below (ceo 2026-11-07: the fifth kind out of sight): at the foot of what scrolls, while it is
@@ -1123,9 +1123,9 @@
   bottom: calc(var(--safe-b) + 52px);
   z-index: 30;
   box-sizing: border-box;
-  width: min(366px, calc(100vw - var(--bar-left) - var(--bar-right)));
-  max-height: 40vh;
-  max-height: 40dvh;
+  width: min(366px, calc(100vw / var(--ui-zoom, 1) - var(--bar-left) - var(--bar-right)));
+  max-height: calc(40vh / var(--ui-zoom, 1));
+  max-height: calc(40dvh / var(--ui-zoom, 1));
   margin: 0;
   padding: 8px 12px 9px;
   overflow-y: auto;
@@ -1155,8 +1155,8 @@
   margin: 0;
   padding: 6px;
   gap: 6px;
-  max-height: 46vh;
-  max-height: 46dvh;
+  max-height: calc(46vh / var(--ui-zoom, 1));
+  max-height: calc(46dvh / var(--ui-zoom, 1));
 }
 
 :root[data-ui="r6"] .sel-info.legion-pop .sel-body > .sel-head {
@@ -1430,6 +1430,19 @@
 }
 
 :root[data-ui="r6"] .dialog .theme-choice > span {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* 介面大小 (R26-01 B): its name, then 自動 100% 125% 150% in a row (a large window only). */
+:root[data-ui="r6"] .dialog .ui-size-choice {
+  display: grid;
+  grid-template-columns: auto repeat(4, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+:root[data-ui="r6"] .dialog .ui-size-choice > span {
   font-size: 13px;
   font-weight: 700;
 }
@@ -2394,7 +2407,7 @@
 :root[data-ui="r6"] #hud .tut-card.slim {
   left: calc(var(--safe-l) + 241px);
   top: calc(var(--safe-t) + 44px);
-  width: min(390px, calc(100vw - var(--safe-l) - var(--safe-r) - 355px));
+  width: min(390px, calc(100vw / var(--ui-zoom, 1) - var(--safe-l) - var(--safe-r) - 355px));
 }
 
 /* A dialog in the middle (搶或治理, 結算): at the left, over 閒置 and 地圖. */
@@ -2623,7 +2636,7 @@
 }
 
 :root[data-ui="r6"] .tut-confirm .dialog-card {
-  width: min(380px, calc(100vw - var(--safe-l) - var(--safe-r) - 24px));
+  width: min(380px, calc(100vw / var(--ui-zoom, 1) - var(--safe-l) - var(--safe-r) - 24px));
 }
 
 /* 新手教學 on the start screen, under 開始. */
@@ -2679,4 +2692,17 @@
 :root[data-ui="r6"] .sel-info .villager-target output {
   font-variant-numeric: tabular-nums;
   text-align: center;
+}
+
+/* --- 介面放大 (R26-01, design/r26/spec.md 01): a large window (600 tall or more, ui-scale.ts sets .ui-large) ---------
+   The bar, 軍團畫面 over it and ？'s explanation no wider than 640 (before the zoom), from the bar's left: on a wide
+   screen the bar reached 1600 long, its kinds at one end and ✕ at the other. Its gap takes what is left. */
+:root.ui-large[data-ui="r6"] #hud .sel-bar,
+:root.ui-large[data-ui="r6"] #hud .sel-info.legion-pop {
+  right: auto;
+  width: min(640px, calc(100vw / var(--ui-zoom, 1) - var(--bar-left) - var(--bar-right)));
+}
+
+:root.ui-large[data-ui="r6"] #hud .sel-help {
+  max-width: 640px;
 }

@@ -39,6 +39,7 @@ import { battlefieldRes, setBattlefieldRes } from "./battlefield-res.ts";
 import { applyTheme, loadTheme } from "./theme.ts";
 import { tickRateText } from "./ui/controls.ts";
 import { applyFormalUi, FORMAL_UI_DEFAULT, formalUi } from "./ui/formal.ts";
+import { watchUiScale } from "./ui/ui-scale.ts";
 import { Tutor, type TutorState } from "./tutorial/tutor.ts";
 import { watchPresses } from "./ui/press.ts";
 import { deployedCommit, isNewer, updateHref } from "./version.ts";
@@ -101,6 +102,8 @@ if (formalUi()) {
   if (title !== null) title.textContent = "war-game";
 }
 applyTheme(loadTheme());
+// 介面放大 (R26-01): the interface bigger on a large window, as the window changes size too (ui/ui-scale.ts).
+watchUiScale();
 watchPresses();
 /**
  * 對局紀錄 (D-056): each game's command log is kept on this phone and uploaded to the user's

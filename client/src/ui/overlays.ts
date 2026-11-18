@@ -6,6 +6,7 @@ import { tradeRejectText } from "../game/market.ts";
 import { type CommandBody, type CommandKind, Reject } from "../sim.ts";
 import { formalUi } from "./formal.ts";
 import { icon } from "./icons.ts";
+import { uiZoom } from "./ui-scale.ts";
 
 /**
  * 進攻紅、撤退藍 (D-080, user 2026-10-09: 「攻擊跟撤退可以做成紅色跟藍色的按鈕，不然有點搞不清楚」):
@@ -164,8 +165,10 @@ export class Overlays {
   showCue(x: number, y: number, on: boolean): void {
     this.cue.hidden = !on;
     if (!on) return;
-    this.cue.style.left = `${x}px`;
-    this.cue.style.top = `${y}px`;
+    // Screen points (the battlefield's); the interface's own lengths are those ÷ its zoom (R26-01, ui-scale.ts).
+    const z = uiZoom();
+    this.cue.style.left = `${x / z}px`;
+    this.cue.style.top = `${y / z}px`;
     // Restart the closing animation.
     this.cue.classList.remove("run");
     void this.cue.offsetWidth;
@@ -174,11 +177,12 @@ export class Overlays {
 
   showBox(x0: number, y0: number, x1: number, y1: number): void {
     const s = this.marquee.style;
+    const z = uiZoom();
     this.marquee.hidden = false;
-    s.left = `${Math.min(x0, x1)}px`;
-    s.top = `${Math.min(y0, y1)}px`;
-    s.width = `${Math.abs(x1 - x0)}px`;
-    s.height = `${Math.abs(y1 - y0)}px`;
+    s.left = `${Math.min(x0, x1) / z}px`;
+    s.top = `${Math.min(y0, y1) / z}px`;
+    s.width = `${Math.abs(x1 - x0) / z}px`;
+    s.height = `${Math.abs(y1 - y0) / z}px`;
   }
 
   hideBox(): void {
@@ -186,8 +190,11 @@ export class Overlays {
   }
 
   /** Buttons on an arc above the finger, kept on screen; a tap anywhere else closes it. */
-  openWheel(x: number, y: number, buttons: WheelButton[], onPick: (id: string) => void): void {
+  openWheel(sx: number, sy: number, buttons: WheelButton[], onPick: (id: string) => void): void {
     this.closeWheel();
+    // The finger's screen point in the interface's own lengths (R26-01).
+    const x = sx / uiZoom();
+    const y = sy / uiZoom();
     this.wheelItems = buttons.map((b) => b.id);
     const w = this.root.clientWidth;
     const h = this.root.clientHeight;
@@ -273,6 +280,10 @@ export class Overlays {
   ): void {
     const W = this.root.clientWidth;
     const H = this.root.clientHeight;
+    // The preview and the panels are screen rectangles; ✓ ✗ are placed in the interface's own lengths (R26-01).
+    const z = uiZoom();
+    rect = { x: rect.x / z, y: rect.y / z, w: rect.w / z, h: rect.h / z };
+    avoid = avoid.map((a) => new DOMRect(a.left / z, a.top / z, a.width / z, a.height / z));
     const bw = 112;
     const bh = 52;
     // Inside the safe area too (the iPhone's notch and home bar; ui 2026-11-15: ✓ and ✗ reached 10 under it).
