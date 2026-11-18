@@ -37,6 +37,28 @@ async function box(page: Page, selector: string): Promise<Box> {
   return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) };
 }
 
+/**
+ * 軍團畫面's kind names and 現有 N whole: none cut by its column (nowrap, overflow hidden: ceo 2026-11-18). The text's
+ * own width (a Range over it) within its box, the box within the name's column, to half a pixel. (Not scrollWidth >
+ * clientWidth: WebKit at 1.5 rounds them apart, 36 > 35 for 現有 34 whose box is 52.50 px and its text 52.49.)
+ */
+async function expectNoneCut(page: Page): Promise<void> {
+  const cut = await page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>(".sel-info.legion-pop .group-type, .sel-info.legion-pop .group-has")]
+      .map((e) => {
+        const range = document.createRange();
+        range.selectNodeContents(e);
+        const text = range.getBoundingClientRect();
+        const box = e.getBoundingClientRect();
+        const column = (e.closest(".group-label") ?? e.parentElement ?? e).getBoundingClientRect();
+        return { name: e.textContent ?? "", text: text.width, box: box.width, right: box.right, columnRight: column.right };
+      })
+      .filter((m) => m.text > m.box + 0.5 || m.right > m.columnRight + 0.5)
+      .map((m) => `${m.name}: text ${m.text.toFixed(2)}, box ${m.box.toFixed(2)}, right ${m.right.toFixed(2)} > ${m.columnRight.toFixed(2)}`),
+  );
+  expect(cut, "no name or count cut").toEqual([]);
+}
+
 /** Our building of this type (made beside home when there is none) clicked: its panel open. */
 async function openBuilding(page: Page, type: number): Promise<void> {
   const ours = () => page.evaluate((t) => (window.__proto?.game?.buildings() ?? []).filter((b) => b.type === t && b.owner === window.__proto?.game?.me()), type);
@@ -147,11 +169,30 @@ for (const size of [
           [...document.querySelectorAll<HTMLElement>(".sel-info.legion-pop .group-type, .sel-info.legion-pop .group-has")].map((e) => ({ text: e.textContent, h: e.offsetHeight, lh: parseFloat(getComputedStyle(e).lineHeight) || parseFloat(getComputedStyle(e).fontSize) * 1.4 })),
         );
         for (const l of lines) expect(l.h, `${l.text} on one line`).toBeLessThan(l.lh * 1.5);
+        await expectNoneCut(page);
       };
       await fits();
       await tenClicks(page, "多要 1 名槍兵");
       await tenClicks(page, "多要 1 名槍兵");
       await fits();
+      check();
+    });
+
+    test("軍團畫面（真的模擬 perf：34 名槍兵、34 名遠程兵、6 名法師，「現有 34」）：放得下，名字和數量都沒被切", async ({ page }) => {
+      test.setTimeout(120_000);
+      const check = watchErrors(page);
+      await page.setViewportSize(size);
+      await page.goto("./?test=1&scenario=perf&tps=20");
+      await page.getByRole("button", { name: "開始", exact: true }).click();
+      await page.waitForFunction(() => window.__proto?.ready === true && window.__proto.screen === "battle", null, { timeout: 120_000 });
+      await page.evaluate(() => window.__proto?.game?.pause());
+      await page.locator(".army-btn").click();
+      await page.locator(".groups > button").first().click();
+      await page.getByRole("button", { name: /^改成剛才選的/ }).click();
+      await expect(page.locator(".sel-info.legion-pop .group-has").first()).toContainText(/現有 [0-9]{2}/);
+      await page.waitForTimeout(300);
+      expect(await page.locator(".sel-info.legion-pop .sel-more").evaluate((e) => (e as HTMLElement).hidden), "no ⌄: all of it in sight").toBe(true);
+      await expectNoneCut(page);
       check();
     });
 

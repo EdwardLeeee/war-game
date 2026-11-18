@@ -2684,12 +2684,13 @@
   text-align: right;
 }
 
+/* The kind's name and 現有 N whole, on a line each: 遠程兵 wrapped in WebKit (its column 29 wide at 640, 4 kinds a line)
+   and the panel grew by a line's worth now and then. Their column 40 wide at 4 kinds a line (from 37: 3 off the row's
+   left padding; the number keeps its 22): 遠程兵 and 現有 34 are 36 in WebKit at 1.5. */
 :root[data-ui="r6"] .sel-info.legion-pop .group-row {
-  grid-template-columns: 1fr 44px 22px 44px;
+  padding-left: 3px;
 }
 
-/* The kind's name and 現有 N on a line each, never two: 遠程兵 wrapped in WebKit (its column 29 wide at 640, 4 kinds a
-   line) and the panel grew by a line's worth now and then. */
 :root[data-ui="r6"] .sel-info.legion-pop .group-row .group-type,
 :root[data-ui="r6"] .sel-info.legion-pop .group-row .group-has {
   max-width: 100%;

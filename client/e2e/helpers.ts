@@ -97,7 +97,8 @@ export async function saveGroup(page: Page, button: string): Promise<void> {
   // Saved: nothing selected before any more, and the group selected (a message such as 人口滿了 may take the strip). The
   // prototype hides it; 正式介面 greys it in its place (R26 按鈕不動: 清空 no longer slides under the pointer).
   const save = panel.getByRole("button", { name: /^改成剛才選的/ });
-  await expect.poll(async () => !(await save.isVisible()) || (await save.isDisabled())).toBe(true);
+  if (await formalOn(page)) await expect(save).toBeDisabled();
+  else await expect(save).toBeHidden();
 }
 
 /**
