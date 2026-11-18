@@ -3,14 +3,18 @@
 // runs in its exam and examcheck modes. Never imported by the simulation Worker.
 //   node src/ai/learn/exam.ts search --out DIR [--seed N] [--hours H] [--map random|fixed|mix] [--pool 48] [--cap 90]
 //                                     [--rounds 6,20,60] [--cycles N] [--seed-offset K]
+//                                     [--parents-from DIR[,DIR...] --parents ID[,ID...]] [--parent-share 0.33]
 //       Each cycle draws a pool of plans (some mutated from the best found so far, by kind), plays every one the first
 //       round's games, keeps the best third, plays those up to the next round's games, and so on; those that reach the
 //       last round are kept (candidates.json). Every plan of a cycle plays the same seeds, so they are compared on equal
-//       games; each job (--seed) has its own seeds.
+//       games; each job (--seed) has its own seeds. --parents: plans of earlier searches (candidates.json under
+//       --parents-from) that parents are drawn from too (a search near them); never kept themselves, so never checked again.
 //   node src/ai/learn/exam.ts check --from DIR[,DIR...] --out DIR [--games 200] [--seed-from 6000001] [--top 12]
-//                                    [--shard K --shards N] [--cap 90] [--qualify 25] [--least 20]
+//                                    [--shard K --shards N] [--cap 90] [--qualify 25] [--least 20] [--skip-checked]
 //       The best plan of each kind across the searches (candidates.json under each DIR), the best `top` kinds, each
 //       `games` games on fresh seeds; examiners.json lists them, qualified with `qualify` percent wins or more.
+//       --skip-checked: examiners.json under the DIRs too (earlier checks): their plans are not checked again, nor
+//       plans of a kind already qualified (ceo 2026-11-18: no new seeds for a plan that failed; the qualified stand).
 // Every mode writes summary.md (Markdown) and its files under --out; never commits.
 // In CI (YIELD_REPO set, D-123; ceo 2026-11-16): every YIELD_EVERY it looks at the repository's other runs; a Pages job
 // waiting for a runner, or any other job waiting YIELD_WAIT or longer, and it stops at once (search: the cycle under way is
@@ -149,6 +153,14 @@ async function search(): Promise<void> {
   const kept: Cand[] = [];
   let games = 0;
   let made = 0;
+  // --parents: plans of earlier searches to search near (parents only, never kept).
+  const wanted = new Set(arg("parents", "").split(",").filter((x) => x !== ""));
+  const seedParents: Cand[] = [];
+  for (const f of findFiles(arg("parents-from", "").split(",").filter((x) => x !== ""))) {
+    for (const c of JSON.parse(readFileSync(f, "utf8")).kept as Cand[]) if (wanted.has(c.id) && !seedParents.some((x) => x.id === c.id)) seedParents.push(c);
+  }
+  if (wanted.size > 0) summary(`從這些打法附近搜：${seedParents.map((c) => `${c.id}（${kind(c)}，搜尋時 ${wins(c)}/${c.games.length}）`).join("、") || "（一個都沒找到）"}。\n`);
+  const parentShare = Number(arg("parent-share", String(1 / 3)));
   summary(`# 找考官（D-147），第 ${seed} 組\n\n每個打法對困難（不給加成，${cap / MIN} 分算未分），每輪 ${rounds.join("、")} 局，每輪留前三分之一。\n`);
   for (let cycle = 0; cycle < cycles; cycle++) {
     // A cycle's worth of games, guessed from the last one; stop when it would run past the hours.
@@ -162,10 +174,10 @@ async function search(): Promise<void> {
       const b = best.get(k);
       if (b === undefined || score(c) > score(b)) best.set(k, c);
     }
-    const parents = [...best.values()].sort((a, b) => score(b) - score(a)).slice(0, 8);
+    const parents = [...seedParents, ...[...best.values()].sort((a, b) => score(b) - score(a)).slice(0, 8)];
     const pool: Cand[] = [];
     for (let i = 0; i < poolN; i++) {
-      const parent = parents.length > 0 && r() < 1 / 3 ? parents[Math.floor(r() * parents.length)] : null;
+      const parent = parents.length > 0 && r() < parentShare ? parents[Math.floor(r() * parents.length)] : null;
       const map = parent?.map ?? mapFor();
       const drawn = parent !== null ? mutate(r, parent.drawn, map, 1 + Math.floor(r() * 3)) : drawPlan(r, map);
       pool.push({ id: `${seed}-${made++}`, drawn, map, games: [] });
@@ -213,14 +225,14 @@ async function search(): Promise<void> {
   summary(`\n共 ${games} 局，${hours().toFixed(2)} 小時。`);
 }
 
-/** candidates.json files under `dirs` (one level of artifact folders, as download-artifact unpacks them). */
-function findCandidates(dirs: string[]): string[] {
+/** `name` files under `dirs` (two levels of folders: a run's artifacts, several runs). */
+function findFiles(dirs: string[], name = "candidates.json"): string[] {
   const files: string[] = [];
   const walk = (d: string, depth: number) => {
     if (!existsSync(d)) return;
     for (const f of readdirSync(d)) {
       const p = join(d, f);
-      if (f === "candidates.json") files.push(p);
+      if (f === name) files.push(p);
       else if (depth < 2 && statSync(p).isDirectory()) walk(p, depth + 1);
     }
   };
@@ -238,7 +250,18 @@ async function check(): Promise<void> {
   const qualify = Number(arg("qualify", "25"));
   const all: Cand[] = [];
   const least = Number(arg("least", "20"));
-  for (const f of findCandidates(dirs)) all.push(...(JSON.parse(readFileSync(f, "utf8")).kept as Cand[]).filter((c) => c.games.length >= least));
+  // --skip-checked: plans already checked, and kinds already qualified, out.
+  const checkedIds = new Set<string>();
+  const qualifiedKinds = new Set<string>();
+  if (process.argv.includes("--skip-checked")) {
+    for (const f of findFiles(dirs, "examiners.json")) {
+      for (const e of JSON.parse(readFileSync(f, "utf8")).examiners as { id: string; kind: string; qualified: boolean }[]) {
+        checkedIds.add(e.id);
+        if (e.qualified) qualifiedKinds.add(e.kind);
+      }
+    }
+  }
+  for (const f of findFiles(dirs)) all.push(...(JSON.parse(readFileSync(f, "utf8")).kept as Cand[]).filter((c) => c.games.length >= least && !checkedIds.has(c.id) && !qualifiedKinds.has(kind(c))));
   // The best of each kind, by its search's win share (searches played different seeds: shares, not counts).
   const share = (c: Cand) => wins(c) / Math.max(1, c.games.length);
   const best = new Map<string, Cand>();
@@ -250,6 +273,7 @@ async function check(): Promise<void> {
   const picked = [...best.values()].sort((a, b) => share(b) - share(a) || a.id.localeCompare(b.id)).slice(0, topN);
   const mine = picked.filter((_, i) => i % shards === shard);
   summary(`# 驗考官（D-147）：${all.length} 個留下的打法、${best.size} 種，取前 ${picked.length} 種；這個 job 是第 ${shard + 1}/${shards} 份，${mine.length} 個\n`);
+  if (checkedIds.size > 0) summary(`跳過：驗過的 ${checkedIds.size} 個打法；已經合格的種類 ${[...qualifiedKinds].join("、") || "（沒有）"}。\n`);
   summary(`每個打新的種子 ${games} 局（從 ${seedFrom} 起），對困難、不給加成、${cap / MIN} 分算未分；贏 ${qualify}% 以上算合格。\n`);
   const fresh: Cand[] = mine.map((c) => ({ ...c, games: [] }));
   // One plan at a time, so a give-way keeps the plans done.
