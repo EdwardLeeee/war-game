@@ -5,6 +5,7 @@
 // skipped, and step 7's squad and step 9's siege works when those steps begin.
 
 import type { Game } from "../game/game.ts";
+import { usesMouse } from "../input/last-pointer.ts";
 import { BuildingType, type CommandBody, TownState, type TutorialEvent, UnitType } from "../sim.ts";
 import type { TutorWorld, UnitAt } from "./world.ts";
 
@@ -292,7 +293,8 @@ export const PHASES: readonly Phase[] = [
     id: "5a",
     step: 5,
     title: "選兵和移動",
-    body: () => "在空地上<b>長按</b>一下，拖出框把兵框起來。",
+    // With a mouse, its right button (R26, ceo 2026-11-18); a left press held and dragged does it too.
+    body: () => (usesMouse() ? "按住滑鼠<b>右鍵</b>拖出框，把兵框起來。" : "在空地上<b>長按</b>一下，拖出框把兵框起來。"),
     // From nothing selected: the barracks' panel (step 4) would cover them.
     enter: (c) => c.game.apply([{ kind: "clear" }]),
     target: (c) => ({ units: soldiersToBox(c) }),

@@ -11,6 +11,8 @@
 //   The times are the events' own: a page busy past LONG_PRESS_MS (a long frame) may start a box or
 //   the wheel before it reads a lift that came sooner; that lift then undoes it and taps. So does a
 //   long press that did nothing (ignored: a building, an enemy under the finger).
+// The mouse's right button (R26, the user 2026-11-18: 框起來選兵可以用右鍵): dragged past TAP_SLOP_PX it is a box at
+//   once, no hold first; let go, it selects as the long press's does. A right click without a drag does nothing.
 // Two fingers: pinch zoom with two-finger pan, from any state; a box in progress is cancelled.
 // After a pinch the remaining finger does nothing until every finger is up.
 
@@ -45,7 +47,7 @@ export interface GestureHost {
   pinchEnd(): void;
 }
 
-export type GestureState = "idle" | "press" | "held" | "pan" | "box" | "wheel" | "pinch" | "drain";
+export type GestureState = "idle" | "press" | "held" | "pan" | "box" | "wheel" | "pinch" | "drain" | "right";
 
 interface Finger {
   x: number;
@@ -65,6 +67,8 @@ export class GestureRecognizer {
   private noTap = false;
   /** The long press did nothing (ignored): an early lift taps. */
   private heldIgnored = false;
+  /** The box is the right button's (no long press to undo: an early lift is no tap). */
+  private rightBox = false;
   private samples: { x: number; y: number; t: number }[] = [];
   private lastTap: { x: number; y: number; t: number } | null = null;
   private pinchDist = 1;
@@ -96,6 +100,21 @@ export class GestureRecognizer {
     // A third finger, or a second one while the wheel is open, is ignored.
   }
 
+  /** The mouse's right button down (pointer.ts): a box once it is dragged, else nothing. */
+  rightDown(id: number, x: number, y: number, t: number): void {
+    if (this.fingers.size > 0 || (this.state !== "idle" && this.state !== "drain")) return;
+    this.fingers.set(id, { x, y, startX: x, startY: y, startT: t });
+    this.state = "right";
+    this.primary = id;
+  }
+
+  /** The pointer's capture lost (the window left, a browser's gesture): a box ends as it is, anything else stops. */
+  lost(id: number, t: number): void {
+    const f = this.fingers.get(id);
+    if (f === undefined) return;
+    this.lift(id, f.x, f.y, t, this.state !== "box");
+  }
+
   move(id: number, x: number, y: number, t: number): void {
     const f = this.fingers.get(id);
     if (f === undefined) return;
@@ -104,6 +123,13 @@ export class GestureRecognizer {
     f.x = x;
     f.y = y;
     switch (this.state) {
+      case "right":
+        if (id === this.primary && Math.hypot(x - f.startX, y - f.startY) > TAP_SLOP_PX) {
+          this.state = "box";
+          this.rightBox = true;
+          this.host.box(f.startX, f.startY, x, y, "start");
+        }
+        return;
       case "press":
         if (id !== this.primary) return;
         if (Math.hypot(x - f.startX, y - f.startY) > TAP_SLOP_PX) {
@@ -174,7 +200,7 @@ export class GestureRecognizer {
     // taps; so does a long press that did nothing (ignored). Not one the host acted on itself (none:
     // the minimap's move, 閒置's): a tap on top would do a second thing.
     const early = !cancelled && t - f.startT < LONG_PRESS_MS && Math.hypot(x - f.startX, y - f.startY) <= TAP_SLOP_PX;
-    if (early && (this.state === "box" || this.state === "wheel" || (this.state === "held" && this.heldIgnored))) {
+    if (early && !this.rightBox && (this.state === "box" || this.state === "wheel" || (this.state === "held" && this.heldIgnored))) {
       if (this.state === "box") this.host.box(f.startX, f.startY, x, y, "cancel");
       if (this.state === "wheel") this.host.closeWheel?.();
       this.state = "press";
@@ -200,7 +226,10 @@ export class GestureRecognizer {
         break;
     }
     if (this.state !== "drain" || this.fingers.size === 0) this.state = this.fingers.size === 0 ? "idle" : "drain";
-    if (this.fingers.size === 0) this.primary = -1;
+    if (this.fingers.size === 0) {
+      this.primary = -1;
+      this.rightBox = false;
+    }
   }
 
   private tap(x: number, y: number, t: number): void {
