@@ -82,6 +82,8 @@ import { BLOCK_BUILDING, HitCause, STONE, UNIT_KINDS, type World } from "./world
 import { mainCityFloor } from "./tutorial.ts";
 
 const TICKS = TICKS_PER_SECOND;
+/** D-154 (outFirst): how far (cells, Chebyshev) a unit in its own building looks for a cell outside still in reach; past the biggest building. */
+const OUT_LOOK = 6;
 
 /** Decides a farmer that carries an economy order (Gather, Build, Repair, Recall). */
 export interface FarmerDecider {
@@ -843,7 +845,7 @@ export class UnitSystem {
       }
       u.facing[i] = dir16(tx - u.x[i], ty - u.y[i]);
       if (d2 <= info.range * info.range) {
-        if (this.outFirst(w, i, tx, ty)) return true;
+        if (this.outFirst(w, i, tx, ty, info.range, ts >= 0 ? -1 : w.building(tid))) return true;
         this.attacking[i] = 1;
         u.action[i] = Action.Attack;
         return true;
@@ -1084,7 +1086,7 @@ export class UnitSystem {
       if (d2 <= info.range * info.range) {
         u.target[i] = tid;
         u.facing[i] = dir16(tx - u.x[i], ty - u.y[i]);
-        if (this.outFirst(w, i, tx, ty)) return true;
+        if (this.outFirst(w, i, tx, ty, info.range, ks)) return true;
         this.attacking[i] = 1;
         u.action[i] = Action.Attack;
         return true;
@@ -2275,7 +2277,7 @@ export class UnitSystem {
       // D-154: it calibrates outside its own buildings (out first; the count starts there).
       if (OWN_PASS.on && w.insideOwn(i)) {
         u.castProgress[i] = 0;
-        this.outFirst(w, i, u.castX[i], u.castY[i]);
+        this.outFirst(w, i, u.castX[i], u.castY[i], CANNON.range);
         return;
       }
       u.action[i] = Action.Calibrate;
@@ -2426,7 +2428,7 @@ export class UnitSystem {
       // D-115: a siege engine walks up to unitRange for a unit.
       const reach = ts >= 0 ? (info.unitRange ?? info.range) : info.range;
       if (d2 <= reach * reach && !(ts >= 0 && info.range <= CELL && onWall(w, ts) && !this.reaches(w, i, ts))) {
-        if (this.outFirst(w, i, tx, ty)) return;
+        if (this.outFirst(w, i, tx, ty, reach, ts >= 0 ? -1 : w.building(tid))) return;
         this.attacking[i] = 1;
         u.action[i] = Action.Attack;
         return;
@@ -2696,7 +2698,7 @@ export class UnitSystem {
     u.target[i] = b.id[bs];
     u.facing[i] = dir16(bx - u.x[i], by - u.y[i]);
     if (rectDist2(u.x[i], u.y[i], b.cellX[bs], b.cellY[bs], sx, sy) <= info.range * info.range) {
-      if (this.outFirst(w, i, bx, by)) return;
+      if (this.outFirst(w, i, bx, by, info.range, bs)) return;
       this.attacking[i] = 1;
       u.action[i] = Action.Attack;
       return;
@@ -2803,10 +2805,58 @@ export class UnitSystem {
 
   /**
    * D-154: unit i, in reach of what it is to fight at (tx, ty), stands in one of its own buildings: it steps out
-   * first, to the open cell nearest it (on a tie, the one nearer (tx, ty)), and does not fight this tick (true).
+   * first and does not fight this tick (true). Out to the open cell nearest it from which it still reaches the target
+   * (within `reach` of the point (tx, ty), or of building slot `ks`'s footprint), within OUT_LOOK cells; on a tie the
+   * one nearer (tx, ty), then the lower cell. None there (or reach 0): the open cell nearest it, as nearestWalkable.
+   * (core review of #525: the nearest open cell alone could take it out of reach, and its approach walked it back in,
+   * so an archer that came in reach inside the far half of its main city stood at the edge and never shot.)
    */
-  private outFirst(w: World, i: number, tx: number, ty: number): boolean {
+  private outFirst(w: World, i: number, tx: number, ty: number, reach = 0, ks = -1): boolean {
     if (!w.insideOwn(i)) return false;
+    const u = w.units.col;
+    const n = w.size;
+    const c = reach > 0 ? this.outInReach(w, i, tx, ty, reach, ks) : -1;
+    if (c < 0) return this.outNearest(w, i, tx, ty);
+    const gx = ((c % n) << CELL_SHIFT) + (CELL >> 1);
+    const gy = (Math.trunc(c / n) << CELL_SHIFT) + (CELL >> 1);
+    steerDirect(w, i, gx - u.x[i], gy - u.y[i], UNITS[u.type[i]].speed);
+    return true;
+  }
+
+  /** outFirst's cell in reach (open on World.grid, so outside every building), or -1. */
+  private outInReach(w: World, i: number, tx: number, ty: number, reach: number, ks: number): number {
+    const u = w.units.col;
+    const b = w.buildings.col;
+    const n = w.size;
+    const ux = u.x[i] >> CELL_SHIFT;
+    const uy = u.y[i] >> CELL_SHIFT;
+    const r2 = reach * reach;
+    // A siege engine keeps outside its least range too (D-099), or it would back off into the building again.
+    const near = u.type[i] === UnitType.Siege ? (UNITS[UnitType.Siege].minRange ?? 0) : 0;
+    let best = -1;
+    let bestD = 0;
+    let bestT = 0;
+    for (let cy = Math.max(0, uy - OUT_LOOK); cy <= Math.min(n - 1, uy + OUT_LOOK); cy++) {
+      for (let cx = Math.max(0, ux - OUT_LOOK); cx <= Math.min(n - 1, ux + OUT_LOOK); cx++) {
+        const c = cy * n + cx;
+        if (w.grid[c] !== 0) continue;
+        const px = (cx << CELL_SHIFT) + (CELL >> 1);
+        const py = (cy << CELL_SHIFT) + (CELL >> 1);
+        const t2 = ks >= 0 ? rectDist2(px, py, b.cellX[ks], b.cellY[ks], w.wide(ks), w.tall(ks)) : (px - tx) * (px - tx) + (py - ty) * (py - ty);
+        if (t2 > r2 || t2 < near * near) continue;
+        const d = (px - u.x[i]) * (px - u.x[i]) + (py - u.y[i]) * (py - u.y[i]);
+        if (best < 0 || d < bestD || (d === bestD && (t2 < bestT || (t2 === bestT && c < best)))) {
+          best = c;
+          bestD = d;
+          bestT = t2;
+        }
+      }
+    }
+    return best;
+  }
+
+  /** outFirst without a cell in reach: the open cell nearest it (on a tie, the one nearer (tx, ty)). */
+  private outNearest(w: World, i: number, tx: number, ty: number): boolean {
     const u = w.units.col;
     const n = w.size;
     const c = nearestWalkable(w, u.x[i] >> CELL_SHIFT, u.y[i] >> CELL_SHIFT, { cellX: tx >> CELL_SHIFT, cellY: ty >> CELL_SHIFT });

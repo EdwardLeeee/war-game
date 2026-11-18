@@ -5,9 +5,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createAi } from "../src/ai/ai.ts";
 import { Game } from "../src/core/game.ts";
-import { BUILDINGS, OWN_PASS, rules } from "../src/core/rules.ts";
+import { BUILDINGS, OWN_PASS, rules, UNITS } from "../src/core/rules.ts";
 import { BLOCK_BUILDING, BLOCK_ROCK, BLOCK_WALL } from "../src/core/world.ts";
-import { Action, BuildingType, CELL_SHIFT, NEUTRAL, UnitType } from "../src/protocol.ts";
+import { Action, BuildingType, CELL_SHIFT, NEUTRAL, Stance, UnitType } from "../src/protocol.ts";
 import { buildView } from "../src/view/view.ts";
 import { cmd, emptyGame, openArea, put, run, slotOf, switchedOff } from "./helpers.ts";
 
@@ -112,6 +112,40 @@ test("D-154: one standing in its own building walks out and takes its place outs
   assert.ok(f < 0 || u.hp[f] < hp, "it shot from outside");
 });
 
+test("D-154 (core's review): in reach only from inside the far half of its own building, it steps out on the target's side and shoots", () => {
+  // Player 0's main city (4 x 4) on the fixed map; an archer south of it told to attack a spearman holding north of it, so
+  // far that the archer first comes in reach in the city's south half. Stepping out to the nearest open cell (south) took
+  // it out of reach and its approach walked it back in: it stood at the city's edge and never shot (main 2026-11-18).
+  const g = new Game({ seed: 1, scenario: "standard", maxTicks: 0 });
+  const w = g.w;
+  const u = w.units.col;
+  const b = w.buildings.col;
+  for (let s = 0; s < w.units.count; s++) w.unitSlot[u.id[s]] = -1;
+  w.units.count = 0;
+  let city = -1;
+  for (let s = 0; s < w.buildings.count; s++) if (b.type[s] === BuildingType.MainCity && b.owner[s] === 0) city = s;
+  const cx = b.cellX[city];
+  const cy = b.cellY[city];
+  const size = BUILDINGS[BuildingType.MainCity].size;
+  const range = UNITS[UnitType.Ranged].range >> CELL_SHIFT;
+  const archer = put(g, 0, UnitType.Ranged, cx + 2, cy + size + 1);
+  const foe = put(g, 1, UnitType.Spearman, cx + 2, cy - range + 3);
+  u.hp[slotOf(g, foe)] = 5000;
+  g.fog.update(w);
+  cmd(g, 1, { c: "stance", u: [foe], stance: Stance.Hold });
+  cmd(g, 0, { c: "attack", u: [archer], target: foe });
+  let inside = 0;
+  let shooting = 0;
+  for (let t = 0; t < 30 * 20; t++) {
+    run(g, 1);
+    const a = slotOf(g, archer);
+    if (w.insideOwn(a)) inside++;
+    else if (u.action[a] === Action.Attack) shooting++;
+  }
+  assert.ok(inside <= 5 * 20, `${inside} ticks inside its main city`);
+  assert.ok(shooting >= 20 * 20, `${shooting} ticks shooting from outside`);
+});
+
 test("D-154: a move ordered onto its own building ends outside it", () => {
   const { g, w, x, y } = corridor(BuildingType.Barracks);
   const mine = put(g, 0, UnitType.Spearman, x + 6, y + 12);
@@ -147,14 +181,18 @@ test("switched off (OWN_PASS): its own buildings stop its owner as before", swit
  * its own building (moves less than 8 a tick: walking through the main city, 4 x 4, takes a farmer up to 6 seconds)
  * more than 2 seconds running.
  */
-test("D-154 watcher: in computer games nobody stands in its own building more than 2 seconds", () => {
+// core's review: and nobody stays in one more than 15 s running, moving or not (stepping out and back in, the bug the
+// test above shows, moved every tick); 15 s is a siege engine's walk across a main city diagonally, with room.
+test("D-154 watcher: in computer games nobody stands in its own building more than 2 seconds, nor stays in one 15", () => {
   for (const seed of [3, 11]) {
     const was = new Map<number, number>();
     const g = new Game({ seed, scenario: "standard", map: "random" } as never);
     const w = g.w;
     const ais = [0, 1].map((p) => createAi(p, seed, { map: w.map, rules: rules(w.map), frame: w.map.frames[p], maxTicks: 18000, difficulty: "hard" }, p));
     const still = new Map<number, number>();
+    const stay = new Map<number, number>();
     let worst = 0;
+    let longest = 0;
     let seq = 0;
     for (let t = 0; t < 15 * 1200 && !w.over; t++) {
       if (g.tick % 10 === 0) {
@@ -163,11 +201,16 @@ test("D-154 watcher: in computer games nobody stands in its own building more th
       g.step();
       const u = w.units.col;
       const seen = new Set<number>();
+      const staying = new Set<number>();
       for (let i = 0; i < w.units.count; i++) {
         const at = u.x[i] * 65536 + u.y[i];
         const before = was.get(u.id[i]);
         was.set(u.id[i], at);
         if (u.action[i] === Action.Garrisoned || u.wall[i] >= 0 || !w.insideOwn(i)) continue;
+        const left = (stay.get(u.id[i]) ?? 0) + 1;
+        stay.set(u.id[i], left);
+        staying.add(u.id[i]);
+        longest = Math.max(longest, left);
         if (before !== undefined && (Math.abs(Math.trunc(before / 65536) - u.x[i]) >= 8 || Math.abs((before % 65536) - u.y[i]) >= 8)) continue;
         const k = (still.get(u.id[i]) ?? 0) + 1;
         still.set(u.id[i], k);
@@ -175,7 +218,9 @@ test("D-154 watcher: in computer games nobody stands in its own building more th
         worst = Math.max(worst, k);
       }
       for (const id of still.keys()) if (!seen.has(id)) still.delete(id);
+      for (const id of stay.keys()) if (!staying.has(id)) stay.delete(id);
     }
     assert.ok(worst <= 40, `seed ${seed}: one stood in its own building ${worst} ticks running`);
+    assert.ok(longest <= 15 * 20, `seed ${seed}: one stayed in its own building ${longest} ticks running`);
   }
 });
