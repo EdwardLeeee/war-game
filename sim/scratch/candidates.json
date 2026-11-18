@@ -1,0 +1,32 @@
+{
+ "traces": [
+  {
+   "name": "ss-ai-a",
+   "script": "samestate-perf.ts",
+   "args": "ai 1,2,3 20 3",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "ss-ai-b",
+   "script": "samestate-perf.ts",
+   "args": "ai 4,5,6 20 3",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "ss-turtle-a",
+   "script": "samestate-perf.ts",
+   "args": "turtle 1,2 35 3",
+   "a": {},
+   "b": {}
+  },
+  {
+   "name": "ss-turtle-b",
+   "script": "samestate-perf.ts",
+   "args": "turtle 3,4 35 3",
+   "a": {},
+   "b": {}
+  }
+ ]
+}

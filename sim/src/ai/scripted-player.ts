@@ -602,6 +602,10 @@ export interface ScriptedPlayer {
   };
 }
 
+// SCRATCH ONLY: the house ring (HARD_PLAN.houseRing = [R, minute]).
+const MINE_FIRST: boolean = JSON.parse((globalThis as unknown as { process?: { env?: Record<string, string | undefined> } }).process?.env?.HARD_PLAN || "{}").mineFirst === true;
+const RING: [number, number, number?] | null = JSON.parse((globalThis as unknown as { process?: { env?: Record<string, string | undefined> } }).process?.env?.HARD_PLAN || "{}").houseRing ?? null;
+
 export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan: Plan): ScriptedPlayer {
   const n = know.map.size;
   const tune = plan.tune ?? TUNE;
@@ -782,6 +786,21 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
           return dx * dx + dy * dy <= 4 * TOWN_CLEARANCE * TOWN_CLEARANCE;
         };
         if (known.some(near)) continue;
+        if (RING !== null && type !== BuildingType.House) {
+          const R = RING[0];
+          const bx0 = home.cellX - 2 - R - 2;
+          const by0 = home.cellY - 2 - R - 2;
+          const bx1 = home.cellX + 2 + R + 1;
+          const by1 = home.cellY + 2 + R + 1;
+          let hit = false;
+          for (let yy = y; yy < y + size && !hit; yy++) {
+            for (let xx = x; xx < x + size && !hit; xx++) {
+              const inBox = xx >= bx0 && xx <= bx1 && yy >= by0 && yy <= by1;
+              if (inBox && (xx <= bx0 + 1 || xx >= bx1 - 1 || yy <= by0 + 1 || yy >= by1 - 1)) hit = true;
+            }
+          }
+          if (hit) continue;
+        }
         const du = 2 * u + size - 2 * a.u;
         const dv = 2 * v + size - 2 * a.v;
         const d = du * du + dv * dv;
@@ -1056,7 +1075,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       }
       const mageCost = rules.units[UnitType.Mage].cost;
       // One site at a time (plan.turtle: tune.turtle.sites at once, as a person puts up towers side by side).
-      if (own.filter((b) => b.progress < 1000).length < (plan.turtle ? tune.turtle.sites : 1) && gatherers.length >= 3) {
+      if (own.filter((b) => b.progress < 1000).length < Math.max(plan.turtle ? tune.turtle.sites : 1, RING !== null && tick >= RING[1] * 1200 ? (RING[2] ?? 1) : 1) && gatherers.length >= 3) {
         // `here`: there or nowhere (not by the main city instead).
         const plans: { type: BuildingType; at: { x: number; y: number } | null; here?: boolean }[] = [];
         const granary = done(BuildingType.Granary)[0];
@@ -1064,7 +1083,36 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         const add = (type: BuildingType, at: { x: number; y: number } | null, here = false) => plans.push({ type, at, here });
         const crystalForMage = noCrystal ? plan.mageRush || plunders > 0 || tick >= CRYSTAL_FOR_MAGE_TICKS : res.crystal >= mageCost.crystal;
         if (!plan.noMage && plan.hallFirst && !has(BuildingType.MageHall) && crystalForMage) add(BuildingType.MageHall, base);
-        if (cap < ceiling && cap - pop - queued <= houseRoom) add(BuildingType.House, base);
+        // SCRATCH ONLY: the next free slot of the house ring, exact (real cells, top-left).
+        const ringAt = ((): { x: number; y: number } | null => {
+          if (RING === null || tick < RING[1] * 1200) return null;
+          const m = own.find((b) => b.type === BuildingType.MainCity);
+          if (m === undefined) return null;
+          const R = RING[0];
+          const x0 = m.x - R - 2;
+          const y0 = m.y - R - 2;
+          const x1 = m.x + 4 + R;
+          const y1 = m.y + 4 + R;
+          const slots: { x: number; y: number }[] = [];
+          for (let x = x0; x <= x1; x += 2) slots.push({ x, y: y0 }, { x, y: y1 });
+          for (let y = y0 + 2; y <= y1 - 2; y += 2) slots.push({ x: x0, y }, { x: x1, y });
+          const c = n >> 1;
+          slots.sort((a, b) => (a.x - c) ** 2 + (a.y - c) ** 2 - (b.x - c) ** 2 - (b.y - c) ** 2 || a.y - b.y || a.x - b.x);
+          const grid = { size: n, cells: view.placement };
+          const fits = (x: number, y: number) => checkPlacement(grid, rules.buildings[BuildingType.House], x, y) === 0;
+          const slot = slots.find((sl) => fits(sl.x, sl.y));
+          if (slot !== undefined) return slot;
+          // Holes: an open cell of the 2-wide band, covered by any house that fits over it.
+          for (let y = y0; y <= y1 + 1; y++) {
+            for (let x = x0; x <= x1 + 1; x++) {
+              if (!(x <= x0 + 1 || x >= x1 || y <= y0 + 1 || y >= y1)) continue;
+              if (x < 0 || y < 0 || x >= n || y >= n || (view.placement[y * n + x] & PlaceBit.Blocked) !== 0) continue;
+              for (const [dx, dy] of [[0, 0], [-1, 0], [0, -1], [-1, -1]]) if (fits(x + dx, y + dy)) return { x: x + dx, y: y + dy };
+            }
+          }
+          return null;
+        })();
+        if (cap < ceiling && cap - pop - queued <= houseRoom) add(BuildingType.House, ringAt ?? base, ringAt !== null);
         if (!has(BuildingType.LumberCamp) && farmers.length >= 6) add(BuildingType.LumberCamp, nearestNode(NodeKind.Tree));
         if (!has(BuildingType.Granary) && farmers.length >= 8) add(BuildingType.Granary, base);
         // Raiders (round 7): the stable first, as early as it may go up (its `requires`, if any, before it).
@@ -1104,6 +1152,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
           const outposts = tune.turtle.outposts.filter((m) => tick >= m * 1200).length;
           if (rules.features?.outpost === true && count(BuildingType.Outpost) < outposts) add(BuildingType.Outpost, outpostAt[count(BuildingType.Outpost) % outpostAt.length]);
         }
+        if (MINE_FIRST && !has(BuildingType.Mine) && farmers.length >= 14) add(BuildingType.Mine, nearestNode(NodeKind.GoldMine));
         if (count(BuildingType.Farm) < Math.min(10, 2 + (farmers.length >> 2))) add(BuildingType.Farm, granary ? { x: granary.x + 1, y: granary.y + 1 } : base);
         // D-101 (while the market is on): a market once it has a granary and MARKET_FARMERS farmers.
         if (rules.features?.market === true && !has(BuildingType.Market) && granary && farmers.length >= MARKET_FARMERS) add(BuildingType.Market, base);
@@ -1111,9 +1160,10 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         if (res.food + res.wood >= 600 && count(BuildingType.Barracks) + count(BuildingType.Range) < plan.production) {
           add(plan.noRange || count(BuildingType.Barracks) <= count(BuildingType.Range) ? BuildingType.Barracks : BuildingType.Range, rally);
         }
+        if (ringAt !== null && !plans.some((p) => p.type === BuildingType.House)) add(BuildingType.House, ringAt, true);
         for (const p of plans) {
           if (p.at === null) continue;
-          const spot = spotNear(view, p.type, p.at.x, p.at.y, 12) ?? (p.here ? null : spotNear(view, p.type, base.x, base.y, 20));
+          const spot = p.at === ringAt && ringAt !== null ? ringAt : spotNear(view, p.type, p.at.x, p.at.y, 12) ?? (p.here ? null : spotNear(view, p.type, base.x, base.y, 20));
           if (spot === null) continue;
           const cost = rules.buildings[p.type].cost;
           if (!afford(cost)) {
