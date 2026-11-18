@@ -7,7 +7,9 @@
 import { expect, type Page, test } from "@playwright/test";
 import { watchErrors } from "./helpers.ts";
 
-test.use({ isMobile: false, hasTouch: false, deviceScaleFactor: 1 });
+// Without the pressed look (a pressed button sinks 2 px and comes back 0.12 s after): it is how a press feels, not the
+// layout moving; measured right after a click it was a pixel or two off.
+test.use({ isMobile: false, hasTouch: false, deviceScaleFactor: 1, reducedMotion: "reduce" });
 
 type Box = { x: number; y: number; w: number; h: number };
 const MARKET = 15;
@@ -126,6 +128,53 @@ for (const size of [
       await tenClicks(page, /^村民目標多/);
       await tenClicks(page, /^村民目標多/);
       expect(await Promise.all(pressed.map((p) => box(page, p)))).toEqual(before);
+      check();
+    });
+
+    test("軍團畫面：放得下，沒有「⌄」（下面還有），兵種名和「現有 N」都是一行；槍兵加過 10、20 也一樣", async ({ page }) => {
+      const check = watchErrors(page);
+      await start(page, size);
+      await page.locator(".army-btn").click();
+      await page.locator(".groups > button").first().click();
+      await page.getByRole("button", { name: /^改成剛才選的/ }).click();
+      await expect(page.locator(".sel-info .group-row").first()).toBeVisible();
+      // CI's WebKit at 1.5: 遠程兵 on two lines, the panel a few px too tall, ⌄ (and the fade over the last line, a line
+      // of the grid with its 4 px gap) now there, now not: − and + 6 px up and down.
+      const fits = async () => {
+        await page.waitForTimeout(300);
+        expect(await page.locator(".sel-info.legion-pop .sel-more").evaluate((e) => (e as HTMLElement).hidden), "no ⌄: all of it in sight").toBe(true);
+        const lines = await page.evaluate(() =>
+          [...document.querySelectorAll<HTMLElement>(".sel-info.legion-pop .group-type, .sel-info.legion-pop .group-has")].map((e) => ({ text: e.textContent, h: e.offsetHeight, lh: parseFloat(getComputedStyle(e).lineHeight) || parseFloat(getComputedStyle(e).fontSize) * 1.4 })),
+        );
+        for (const l of lines) expect(l.h, `${l.text} on one line`).toBeLessThan(l.lh * 1.5);
+      };
+      await fits();
+      await tenClicks(page, "多要 1 名槍兵");
+      await tenClicks(page, "多要 1 名槍兵");
+      await fits();
+      check();
+    });
+
+    test("軍團畫面「改成剛才選的」：按了以後變灰、留在原地，「清空」不動；同一點再點一下不會清空軍團", async ({ page }) => {
+      const check = watchErrors(page);
+      await start(page, size);
+      await page.locator(".army-btn").click();
+      await page.locator(".groups > button").first().click();
+      const save = page.getByRole("button", { name: /^改成剛才選的/ });
+      await expect(save).toBeEnabled();
+      const at = await box(page, '.sel-info [aria-label^="改成剛才選的"]');
+      const clear = await box(page, '.sel-info .group-actions button:has-text("清空")');
+      await page.mouse.click(at.x + at.w / 2, at.y + at.h / 2);
+      await expect.poll(() => page.evaluate(() => window.__proto?.game?.groupInfo()[0]?.ids.length ?? 0)).toBeGreaterThan(0);
+      const saved = await page.evaluate(() => window.__proto?.game?.groupInfo()[0]?.ids.length ?? 0);
+      // Greyed where it was; 清空 where it was.
+      await expect(save).toBeDisabled();
+      expect(await box(page, '.sel-info [aria-label^="改成剛才選的"]')).toEqual(at);
+      expect(await box(page, '.sel-info .group-actions button:has-text("清空")')).toEqual(clear);
+      // A second click at the same point (a double click): the group still has them all.
+      await page.mouse.click(at.x + at.w / 2, at.y + at.h / 2);
+      await page.waitForTimeout(400);
+      expect(await page.evaluate(() => window.__proto?.game?.groupInfo()[0]?.ids.length ?? 0)).toBe(saved);
       check();
     });
 

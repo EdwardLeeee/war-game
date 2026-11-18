@@ -904,7 +904,10 @@ export class SelectionInfo {
         }
       }
       const n = this.host.beforeGroupCount();
-      fromBefore.hidden = n === 0;
+      // 正式介面: grey with nobody to take (as 清空), never gone: gone, 清空 slid under the pointer that had just pressed
+      // it (ceo 2026-11-18, R26 按鈕不動). The prototype: hidden as before.
+      if (this.formal) fromBefore.disabled = n === 0;
+      else fromBefore.hidden = n === 0;
       const on = this.host.groupRefill(i) ? "開" : "關";
       const growOn = this.host.groupGrow(i) ? "開" : "關";
       if (this.formal) {

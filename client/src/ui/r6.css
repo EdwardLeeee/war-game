@@ -2662,7 +2662,8 @@
    What changes as a click is taken moves nothing beside it, on a phone and a computer alike. The bar's title keeps one
    width (it was its words', 編隊 1 21/21 over 待命 20・攻擊 1 one moment and 已選 12 over 待命 the next: every kind's
    cell moved, 34 px after 只選槍兵, 9 clicks in 10 then beside it); a kind's count keeps two figures' room. Numbers
-   between − and + keep three figures' room in figures of one width (軍團畫面, 經濟分配). A panel's lines that come and
+   between − and + are in figures of one width in a column of their own width (軍團畫面 22, 村民目標 and 經濟分配 30): a
+   longer number never moves − or +. A panel's lines that come and
    go are over the rows pressed again and again (panels.ts building(): the panel grows upward from its foot). */
 :root[data-ui="r6"] .sel-bar .bar-title {
   width: 132px;
@@ -2684,7 +2685,16 @@
 }
 
 :root[data-ui="r6"] .sel-info.legion-pop .group-row {
-  grid-template-columns: 1fr 44px 30px 44px;
+  grid-template-columns: 1fr 44px 22px 44px;
+}
+
+/* The kind's name and 現有 N on a line each, never two: 遠程兵 wrapped in WebKit (its column 29 wide at 640, 4 kinds a
+   line) and the panel grew by a line's worth now and then. */
+:root[data-ui="r6"] .sel-info.legion-pop .group-row .group-type,
+:root[data-ui="r6"] .sel-info.legion-pop .group-row .group-has {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 :root[data-ui="r6"] .sel-info .group-want,
