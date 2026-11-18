@@ -461,6 +461,7 @@ export class GameView implements IntentWorld {
     const t = P.toPlane(wx, wy);
     const lift = this.bodyLift();
     let bestAt = t;
+    let bestRow = -1;
     for (let o = 0; o < u.length; o += UNIT_STRIDE) {
       if (u[o + U.action] === Action.Garrisoned) continue;
       const q = P.toPlane(u[o + U.x] * FIXED_TO_PX, u[o + U.y] * FIXED_TO_PX);
@@ -471,11 +472,22 @@ export class GameView implements IntentWorld {
       if (d <= bestD) {
         bestD = d;
         bestAt = q;
+        bestRow = o;
         best = { kind: "unit", id: u[o + U.id], owner: u[o + U.owner], type: u[o + U.type] };
       }
     }
-    // Behind a building's picture where the finger is, the unit is hidden: the building.
-    if (best !== null) return this.buildingById(this.coverAt?.(t.x, t.y, bestAt.x, bestAt.y) ?? null) ?? best;
+    if (best !== null) {
+      // One of ours walking through one of our buildings' footprint (D-154: ours walk through our own buildings): the
+      // building, so that a tap on it is not taken by whoever goes by (ceo 2026-11-18). Only while walking: one standing
+      // there (in our gate's opening, at an outpost) is picked as ever. Not a farm, where farmers work. A box still takes
+      // them; the enemy's are not touched.
+      if (best.owner === this.me && u[bestRow + U.action] === Action.Move) {
+        const through = this.ownBuildingUnder(u[bestRow + U.x], u[bestRow + U.y]);
+        if (through !== null) return through;
+      }
+      // Behind a building's picture where the finger is, the unit is hidden: the building.
+      return this.buildingById(this.coverAt?.(t.x, t.y, bestAt.x, bestAt.y) ?? null) ?? best;
+    }
 
     const building = this.buildingAt(wx, wy);
     if (building !== null) return building;
@@ -509,6 +521,20 @@ export class GameView implements IntentWorld {
         const owner = row < 0 ? NO_OWNER : snap.towns[row + T.owner];
         return { kind: "town", id: town.id, owner, type: town.size };
       }
+    }
+    return null;
+  }
+
+  /** Our building whose footprint holds this point (fixed-point units' x, y), a farm's aside; or null. */
+  private ownBuildingUnder(fx: number, fy: number): Pick | null {
+    const b = this.curr?.snap.buildings;
+    if (b === undefined) return null;
+    const cx = Math.floor((fx * FIXED_TO_PX) / TILE_PX);
+    const cy = Math.floor((fy * FIXED_TO_PX) / TILE_PX);
+    for (let o = 0; o < b.length; o += BUILDING_STRIDE) {
+      if (b[o + B.owner] !== this.me || b[o + B.type] === BuildingType.Farm) continue;
+      const f = this.footprint(b, o);
+      if (cx >= f.x && cx < f.x + f.w && cy >= f.y && cy < f.y + f.h) return { kind: "building", id: b[o + B.id], owner: b[o + B.owner], type: b[o + B.type] };
     }
     return null;
   }
