@@ -1,21 +1,28 @@
 // R26-05 游標 (ceo 2026-11-18: 劍、城門、斧頭、鎚子，32 和 64 px，東陸唐末五代的器物樣子、不要日式).
 // The cursors as SVG (drawn on a 32 × 32 grid), rendered to PNG at 32 and 64 px with a transparent ground.
-//   node design/r26/cursor/cursors.mjs OUT        (writes OUT/<name>-32.png, -64.png, -256.png, <name>.svg, hotspots.json)
+//   node design/r26/cursor/cursors.mjs OUT [PUBLIC]   (OUT/<name>-32.png, -64.png, -256.png, <name>.svg, hotspots.json;
+//   PUBLIC, e.g. client/public/cursors: the game's 8 PNGs and hotspots.json)
 // The look follows the East's own art: the 橫刀 of east_r8.py (straight, single-edged, a ring pommel 環首, no guard to
 // speak of), R20's tools (an old-iron axe on a wooden haft; a mallet all of wood), and a Tang city gate (a gateway under
-// a flat timber lintel, its sides leaning in: 過梁式, before the arched gates of Song and later; a gate tower with small
-// 鴟尾 at the ridge's ends: drawn large they read as a helmet's horns at this size). Nothing Japanese: no curved blade, no round tsuba, no torii.
+// a flat timber lintel, its sides leaning in: 過梁式, before the arched gates of Song and later; a gate tower with a
+// plain ridge). Nothing Japanese: no curved blade, no round tsuba, no torii.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 
 const require = createRequire(new URL("../../../client/package.json", import.meta.url));
 const { chromium } = require("@playwright/test");
 const OUT = process.argv[2];
+const PUBLIC = process.argv[3] ?? null; // client/public/cursors: what the game loads (32 and 64 px, hotspots.json)
 mkdirSync(OUT, { recursive: true });
+if (PUBLIC) mkdirSync(PUBLIC, { recursive: true });
 
 const INK = "#1b130b";
 const HALO = 'stroke="rgba(255,248,232,0.8)" stroke-width="3" stroke-linejoin="round"';
 const LINE = `stroke="${INK}" stroke-width="1.1" stroke-linejoin="round" stroke-linecap="round"`;
+
+// 城門's ridge: plain (ceo 2026-11-18). The first ridge ends, two horns turned out, read as a helmet's 鍬形; low 鴟尾
+// curling in (as Tang's) read as two round ears drawn large and two bumps at 32 px, so none: a plain ridge.
+const GATE_ENDS = "";
 
 // Each: its body (drawn twice: a light halo under, then itself), and the point that clicks (32 px grid).
 const CURSORS = {
@@ -35,15 +42,15 @@ const CURSORS = {
   // 城門 (進駐): a gate tower over a timber-lintel gateway, a gold arrow going in.
   gate: {
     hot: [16, 16],
-    body: `<path d="M3 29.5 L5 14.5 L27 14.5 L29 29.5 Z" fill="#b99467" ${LINE}/>
-      <path d="M5.6 19 H26.4 M4.9 24 H27.1" stroke="#8b6a45" stroke-width="0.6"/>
+    body: `<path d="M3 29.5 L5 14.5 L27 14.5 L29 29.5 Z" fill="#e6cf9c" stroke="${INK}" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M5.6 19 H26.4 M4.9 24 H27.1" stroke="#a8875a" stroke-width="0.6"/>
       <path d="M11.2 29.5 L12.6 20 L19.4 20 L20.8 29.5 Z" fill="#24160c" ${LINE}/>
       <rect x="11.6" y="19.2" width="8.8" height="1.4" fill="#6b4a2a" ${LINE}/>
       <rect x="9" y="9.6" width="14" height="5" fill="#8a3324" ${LINE}/>
       <path d="M11.8 9.8 V14.4 M16 9.8 V14.4 M20.2 9.8 V14.4" stroke="#f0d9a8" stroke-width="0.7"/>
       <path d="M4.2 10.2 Q6 9.8 7.4 7.8 L24.6 7.8 Q26 9.8 27.8 10.2 L25 10.4 L7 10.4 Z" fill="#3d4249" ${LINE}/>
       <path d="M8.6 7.8 L10.6 4.6 L21.4 4.6 L23.4 7.8 Z" fill="#4a5059" ${LINE}/>
-      <path d="M10.5 4.7 C10.1 3.8 10.4 2.9 11.2 2.7 C11.4 3.4 11.9 3.8 12.6 3.9 L12.5 4.7 Z M21.5 4.7 C21.9 3.8 21.6 2.9 20.8 2.7 C20.6 3.4 20.1 3.8 19.4 3.9 L19.5 4.7 Z" fill="#3d4249" ${LINE}/>
+      ${GATE_ENDS}
       <path d="M16 15.6 V26.2" stroke="${INK}" stroke-width="3.2" stroke-linecap="round"/>
       <path d="M12.6 22.6 L16 26.6 L19.4 22.6" fill="none" stroke="${INK}" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
       <path d="M16 15.6 V26.2" stroke="#f2c862" stroke-width="1.6" stroke-linecap="round"/>
@@ -87,10 +94,12 @@ try {
     for (const px of [32, 64, 256]) {
       await page.setContent(`<html><body style="margin:0;background:transparent"><div id="c" style="width:${px}px;height:${px}px">${svg(c, px)}</div></body></html>`);
       await page.locator("#c").screenshot({ path: `${OUT}/${name}-${px}.png`, omitBackground: true });
+      if (PUBLIC && px !== 256) await page.locator("#c").screenshot({ path: `${PUBLIC}/${name}-${px}.png`, omitBackground: true });
     }
     hot[name] = { "32": c.hot, "64": c.hot.map((v) => v * 2) };
   }
   writeFileSync(`${OUT}/hotspots.json`, JSON.stringify(hot, null, 1));
+  if (PUBLIC) writeFileSync(`${PUBLIC}/hotspots.json`, `${JSON.stringify(hot, null, 1)}\n`);
   console.log(JSON.stringify(hot));
 } finally {
   await browser.close();
