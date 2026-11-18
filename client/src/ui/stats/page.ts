@@ -12,6 +12,7 @@ import { eventCard } from "./events.ts";
 import { RESOURCE_NAME, type ResourceKey, type StatsModel } from "./model.ts";
 import { clock } from "../hud/names.ts";
 import { icon } from "../icons.ts";
+import { uiZoom } from "../ui-scale.ts";
 
 export const STATS_TABS = ["總覽", "資源", "兵力", "戰鬥", "城鎮", "法師"] as const;
 export type StatsTab = (typeof STATS_TABS)[number];
@@ -170,7 +171,8 @@ export class StatsPage {
     const X = (t: number) => x0 + (ticks > 0 ? t / ticks : 0) * pw;
     host.classList.add("st-tap");
     host.addEventListener("click", (ev) => {
-      const at = ((ev.clientX - host.getBoundingClientRect().left - x0) / pw) * ticks;
+      // The click's screen point in the chart's own lengths (÷ the interface's zoom, R26-01).
+      const at = (((ev.clientX - host.getBoundingClientRect().left) / uiZoom() - x0) / pw) * ticks;
       let best = 0;
       events.forEach((e, i) => {
         if (Math.abs(e.from - at) < Math.abs(events[best].from - at)) best = i;
@@ -242,8 +244,10 @@ export class StatsPage {
     const chartHost = (card: HTMLElement) => el("div", card, "st-chart");
     /** Its box, once everything else is in: at least `least` high (the page scrolls then). */
     const boxOf = (host: HTMLElement, least = 96): { w: number; h: number } => {
+      // Its own lengths: the screen's ÷ the interface's zoom (R26-01).
       const r = host.getBoundingClientRect();
-      return { w: Math.max(240, Math.floor(r.width)), h: Math.max(least, Math.floor(r.height)) };
+      const z = uiZoom();
+      return { w: Math.max(240, Math.floor(r.width / z)), h: Math.max(least, Math.floor(r.height / z)) };
     };
     const ctl = (title: string) => {
       const c = el("div", p, "st-ctl");

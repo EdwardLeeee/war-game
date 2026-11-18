@@ -77,7 +77,7 @@ import {
   UnitFlag,
   UnitType,
 } from "../sim.ts";
-import { HIT_RADIUS_PT, START_ZOOM, TILE_PX, UNIT_CORE_HIT_PT } from "../tuning.ts";
+import { HIT_RADIUS_PT, MOUSE_ZOOM, START_ZOOM, TILE_PX, UNIT_CORE_HIT_PT } from "../tuning.ts";
 import { BUILDING_NAME, buildingName, CALL_WORD, NODE_NAME, UNIT_NAME } from "../ui/hud/names.ts";
 import { arrivedLine, cellStretch, type ShiftRow, shiftLine, shiftRows, shiftTowns, type WallView } from "../ui/hud/wall-shift.ts";
 import { KEEP_HINT_KEY, KEEP_HINT_TEXT, loadHintSeen, saveHintSeen } from "../hint-pref.ts";
@@ -2873,7 +2873,9 @@ export class Game implements GestureHost {
         const world = msg.map.size * TILE_PX;
         this.camera = new Camera(world, world, projection);
         this.camera.resize(this.app.screen.width, this.app.screen.height);
-        this.camera.zoomAt(0, 0, START_ZOOM);
+        // With a mouse (a computer, R26 預設拉近): 1.3 times as close, a soldier about 55 px (40–45 at START_ZOOM).
+        const mouse = typeof matchMedia === "function" && matchMedia("(hover: hover) and (pointer: fine)").matches;
+        this.camera.zoomAt(0, 0, START_ZOOM * (mouse ? MOUSE_ZOOM : 1));
         const home = msg.map.spawns.find((s) => s.player === this.view?.me);
         if (home !== undefined) this.camera.centerOn((home.cellX + 0.5) * TILE_PX, (home.cellY + 0.5) * TILE_PX);
         const cam = this.camera;

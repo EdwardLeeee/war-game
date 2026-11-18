@@ -6,6 +6,7 @@
 
 import type { Camera } from "../camera/camera.ts";
 import { around, type Box, edgeArrows, type EdgeArrow, placeTags, tappedItem, type TagItem, type TagPlace } from "./enter-tags.ts";
+import { uiZoom } from "./ui-scale.ts";
 
 /** A place to go into, as Game keeps it. */
 export interface EnterPlace {
@@ -46,6 +47,8 @@ interface Shown {
 
 /** An arrow's size, points (rule 7: 44 high). */
 const ARROW: readonly [number, number] = [104, 44];
+/** An edge arrow's size on the screen (its own × the interface's zoom). */
+const arrowSize = (): [number, number] => [ARROW[0] * uiZoom(), ARROW[1] * uiZoom()];
 /** The camera still this long: lay out again (rule 6). */
 const REST_MS = 120;
 /** How often the interface's boxes are looked at. */
@@ -166,7 +169,8 @@ export class EnterLayer {
     const end = Math.min(hud.right, ...right.filter((b) => b.y + b.h < hud.height * 0.7).map((b) => b.x)) - 4;
     const y = Math.max(hud.top, ...top.map((b) => b.y + b.h)) + 4;
     const bottom = Math.min(hud.bottom, ...low.map((b) => b.y)) - 4;
-    this.free = { x, y, w: Math.max(ARROW[0], end - x), h: Math.max(ARROW[1], bottom - y) };
+    const arrow = arrowSize();
+    this.free = { x, y, w: Math.max(arrow[0], end - x), h: Math.max(arrow[1], bottom - y) };
     const key = JSON.stringify([this.blockers, this.frameBox]);
     if (key !== this.blockersKey) {
       this.blockersKey = key;
@@ -214,7 +218,9 @@ export class EnterLayer {
         s.at = { mode: "ring", box: null, leader: false };
         continue;
       }
-      items.push({ id: s.place.id, cx: s.cx, cy: s.cy, hw: s.hw, hh: s.hh, top: s.top, w: s.tag.offsetWidth, h: s.tag.offsetHeight, cw: s.chip.offsetWidth, ch: s.chip.offsetHeight, off: s.place.off, say: s.place.say });
+      // Laid out on the screen: a tag's own size × the interface's zoom (R26-01, ui-scale.ts).
+      const z = uiZoom();
+      items.push({ id: s.place.id, cx: s.cx, cy: s.cy, hw: s.hw, hh: s.hh, top: s.top, w: s.tag.offsetWidth * z, h: s.tag.offsetHeight * z, cw: s.chip.offsetWidth * z, ch: s.chip.offsetHeight * z, off: s.place.off, say: s.place.say });
     }
     const places = placeTags(items, this.blockers, this.frameBox, squad);
     for (const [id, at] of places) {
@@ -230,7 +236,7 @@ export class EnterLayer {
     const taken = [...places.values()].flatMap((p) => (p.box === null ? [] : [p.box]));
     const rings = items.map((i) => around(i.cx, i.cy, i.hw * 2, i.hh * 2));
     const targets = far.map((s) => ({ id: s.place.id, name: s.place.name, x: s.cx, y: s.cy, d: Math.hypot(s.cx - squad[0], s.cy - squad[1]), short: s.place.short }));
-    for (const arrow of edgeArrows(targets, this.free, [...this.blockers, ...taken, ...rings], this.frameBox, ARROW)) {
+    for (const arrow of edgeArrows(targets, this.free, [...this.blockers, ...taken, ...rings], this.frameBox, arrowSize())) {
       if (arrow.box !== null) this.arrows.push({ el: this.arrowEl(arrow, arrow.box), arrow });
     }
   }
@@ -241,8 +247,8 @@ export class EnterLayer {
     const right = Math.cos(a.angle) > 0;
     el.className = right ? "enter-arrow right" : "enter-arrow";
     el.setAttribute("aria-label", `鏡頭移到${a.name}`);
-    el.style.left = `${b.x - this.frameBox.x}px`;
-    el.style.top = `${b.y - this.frameBox.y}px`;
+    el.style.left = `${(b.x - this.frameBox.x) / uiZoom()}px`;
+    el.style.top = `${(b.y - this.frameBox.y) / uiZoom()}px`;
     const dir = document.createElementNS(SVG, "svg");
     dir.setAttribute("class", "dir");
     dir.setAttribute("viewBox", "-8 -8 16 16");
@@ -265,20 +271,22 @@ export class EnterLayer {
   /** The tags where they go: by their rings, as laid out; line back to the ring where moved away (rule 3). */
   private paint(): void {
     const f = this.frameBox;
+    // Screen points, placed in the interface's own lengths (÷ its zoom, R26-01).
+    const z = uiZoom();
     for (const s of this.shown.values()) {
       const at = s.at;
-      const x = s.cx + s.dx - f.x;
-      const y = s.cy + s.dy - f.y;
+      const x = (s.cx + s.dx - f.x) / z;
+      const y = (s.cy + s.dy - f.y) / z;
       s.tag.classList.toggle("shown", s.on && at.mode === "full");
       s.chip.classList.toggle("shown", s.on && at.mode === "chip");
       if (at.mode !== "ring" && s.on) (at.mode === "full" ? s.tag : s.chip).style.transform = `translate(${x}px, ${y}px)`;
       const leader = s.on && at.mode === "full" && at.leader && at.box !== null;
       s.line.style.display = leader ? "" : "none";
       if (leader && at.box !== null) {
-        s.line.setAttribute("x1", `${x + at.box.w / 2}`);
-        s.line.setAttribute("y1", `${y + at.box.h / 2}`);
-        s.line.setAttribute("x2", `${s.cx - f.x}`);
-        s.line.setAttribute("y2", `${s.cy - f.y}`);
+        s.line.setAttribute("x1", `${x + at.box.w / 2 / z}`);
+        s.line.setAttribute("y1", `${y + at.box.h / 2 / z}`);
+        s.line.setAttribute("x2", `${(s.cx - f.x) / z}`);
+        s.line.setAttribute("y2", `${(s.cy - f.y) / z}`);
       }
     }
   }
