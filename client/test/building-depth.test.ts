@@ -5,7 +5,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildingDepth, type DrawnFootprint, inAFootprint } from "../src/render/building-depth.ts";
+import { buildingDepth, type DrawnFootprint, holding, inAFootprint } from "../src/render/building-depth.ts";
 
 const N = 100;
 /** The cells each drawn building covers (1-based), as structure-art.ts keeps them. */
@@ -86,4 +86,12 @@ test("占地裡、又在旁邊民居的前緣外（e2e 的配置）：民居在�
     const o = owners(order);
     assert.ok(buildingDepth(order, o, N, 17.06, 77.05, 950, false) < city.z, "behind the city");
   }
+});
+
+test("占地裡的兵（不畫出來）：算是被那棟蓋住，不管點下去那一點建築的圖是不是透明的（院子）", () => {
+  const yard: DrawnFootprint = { cellX: 30, cellY: 30, size: 3, z: 700 };
+  const o = owners([yard]);
+  assert.equal(holding([yard], o, N, 31.5, 32.5), 0);
+  assert.equal(holding([yard], o, N, 33.2, 32.5), -1, "out of it");
+  assert.equal(holding([{ ...yard, flat: true }], owners([{ ...yard, flat: true }]), N, 31.5, 32.5), -1, "a flat foundation holds no one hidden");
 });

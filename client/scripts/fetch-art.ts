@@ -13,12 +13,14 @@
 // Layout of public/art/<tag>/, as the Release's archives unpack (and --dev lays them out):
 //   x3/units/<unit>/<unit>.json, <unit>_<layer>_<k>.png   x3/effects/effects.json, effects_0.png
 //   x2/…                                                   astc-sample/units/<unit>/…astc.ktx
+// and, made here from the PNG pages, x{2,3}/buildings/buildings_<culture>.mask.json (building-masks.ts).
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { writeBuildingMasks } from "./building-masks.ts";
 
 const CLIENT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CACHE = join(CLIENT, ".art-cache");
@@ -155,5 +157,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     await fetchLocked(readLock());
     if (process.argv.includes("--lab") && existsSync(LAB_LOCK)) await fetchLocked(readLock(LAB_LOCK));
   }
+  // The building pictures' masks beside them, for the cover test (building-masks.ts).
+  console.log(`art: building masks for ${writeBuildingMasks(OUT)} sets`);
 }
 

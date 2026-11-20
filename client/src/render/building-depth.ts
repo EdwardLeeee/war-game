@@ -4,7 +4,9 @@
 // 2026-11-20: by its place on the screen it came out in front of the main city's hall while still in it, walking on
 // its porch's roof); else by its place on the screen. A field lies on the ground and is not among them; a foundation
 // (the first stage of building one) is flat too, and no one inside it is drawn behind it. No PixiJS here: the unit
-// tests take it on its own.
+// tests take it on its own. And which building hides a unit where a finger is (coverPicture).
+
+import { maskDrawn, type PictureMask } from "./picture-mask.ts";
 
 /** A building drawn standing up: its footprint (cells) and its depth on the plane. */
 export interface DrawnFootprint {
@@ -52,9 +54,39 @@ export function buildingDepth(drawn: readonly DrawnFootprint[], owner: Int32Arra
 
 /** The unit at (ux, uy) in cells is inside a standing building's footprint (drawn behind it). */
 export function inAFootprint(drawn: readonly DrawnFootprint[], owner: Int32Array, n: number, ux: number, uy: number): boolean {
+  return holding(drawn, owner, n, ux, uy) >= 0;
+}
+
+/** The standing building whose footprint holds the unit at (ux, uy) in cells (index; -1 none, or a flat foundation's). */
+export function holding(drawn: readonly DrawnFootprint[], owner: Int32Array, n: number, ux: number, uy: number): number {
   const cx = Math.floor(ux);
   const cy = Math.floor(uy);
-  if (cx < 0 || cy < 0 || cx >= n || cy >= n) return false;
+  if (cx < 0 || cy < 0 || cx >= n || cy >= n) return -1;
   const k = owner[cy * n + cx];
-  return k !== 0 && inside(drawn[k - 1], ux, uy);
+  return k !== 0 && inside(drawn[k - 1], ux, uy) ? k - 1 : -1;
+}
+
+/** A building drawn standing up, its picture's box on the plane, and which of it is drawn (null: all of the box). */
+export interface DrawnPicture extends DrawnFootprint {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  mask?: PictureMask | null;
+}
+
+/**
+ * Which of the buildings drawn hides a unit of depth `depth` where the finger is, (px, py) on the plane: the nearest
+ * in front of it whose picture is drawn there (index; -1 none). Not where its box is transparent (ceo 2026-11-20: a
+ * villager seen over the main city's roof was taken as hidden by it), nor a flat foundation's (as a field's).
+ */
+export function coverPicture(drawn: readonly DrawnPicture[], px: number, py: number, depth: number): number {
+  let best = -1;
+  for (let i = 0; i < drawn.length; i++) {
+    const d = drawn[i];
+    if (d.flat === true || !(d.z > depth) || px < d.x0 || px > d.x1 || py < d.y0 || py > d.y1) continue;
+    if (d.mask != null && !maskDrawn(d.mask, (px - d.x0) / (d.x1 - d.x0), (py - d.y0) / (d.y1 - d.y0))) continue;
+    if (best < 0 || d.z > drawn[best].z) best = i;
+  }
+  return best;
 }
