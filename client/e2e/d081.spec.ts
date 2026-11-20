@@ -5,7 +5,7 @@
 // the flash and 「退」 clear of each other and of every other button.
 
 import { expect, type Page, test } from "@playwright/test";
-import { expectSaid, saveGroup, selectForCommands, shot, visibleBoxes, watchErrors, watchToasts } from "./helpers.ts";
+import { expectSaid, saveGroup, selectForCommands, shot, tapOwnBuilding, visibleBoxes, watchErrors, watchToasts } from "./helpers.ts";
 
 const GROUP_1 = ".groups > button:nth-child(1)";
 const GROUP_2 = ".groups > button:nth-child(2)";
@@ -134,9 +134,7 @@ test("待命的軍團：自動補兵的新兵走過來時（前進中）不出�
   // One falls: group 1 is short of a spearman, and the next one trained walks to it.
   await page.evaluate((ids) => window.__proto?.game?.remove(ids), g1.slice(0, 1));
   await expect(page.locator(GROUP_1)).toHaveText("1·5/6", TICKS);
-  await page.evaluate(() => window.__proto?.game?.centerOn(5, 75));
-  const barracks = await page.evaluate(() => window.__proto?.game?.cellToScreen(5.5, 75.5) ?? { x: 0, y: 0 });
-  await page.touchscreen.tap(barracks.x, barracks.y);
+  await tapOwnBuilding(page, { x: 5, y: 75 });
   await expect(page.locator(".sel-info")).toContainText("兵營");
   await page.getByRole("button", { name: /^訓練槍兵/ }).tap();
   await expectSaid(page, /^新的槍兵補進編隊 1，正走過去$/, {}, TICKS);

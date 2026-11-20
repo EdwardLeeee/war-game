@@ -11,7 +11,7 @@
 // and villagers up to 40) until step 8d pauses the barracks, so the counts before that say "at least".
 
 import { expect, type Page, test } from "@playwright/test";
-import { armyButton, command, foldGroup, formalOn, keepControls, openBox, openPanel, orderHelp, resetAll, resText, saveGroup, selectForCommands, selTitle, shot, watchErrors } from "./helpers.ts";
+import { armyButton, command, foldGroup, formalOn, keepControls, openBox, openPanel, orderHelp, resetAll, resText, saveGroup, selectForCommands, selTitle, shot, tapOwnBuilding, watchErrors } from "./helpers.ts";
 import { doubleTap, longPress, tap, tapOn } from "./touch.ts";
 
 const FARMER = 0;
@@ -122,19 +122,9 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   await pause(page);
   const barracks = (await buildings(page)).find((b) => b.owner === me && b.type === BARRACKS);
   if (barracks === undefined) throw new Error("no barracks");
-  const bc = { x: barracks.cx + Math.floor(barracks.size / 2), y: barracks.cy + Math.floor(barracks.size / 2) };
-  await centre(page, bc);
-  // A cell of it that picks the building: a villager on the way to the house may stand over the
-  // middle one (CI run 41192087489), and a tap there selects him. Paused: what is checked stays so.
-  let barracksSpot: { x: number; y: number } | null = null;
-  for (let dy = barracks.size - 1; dy >= 0 && barracksSpot === null; dy--) {
-    for (let dx = 0; dx < barracks.size && barracksSpot === null; dx++) {
-      const p = await toScreen(page, { x: barracks.cx + dx, y: barracks.cy + dy });
-      if ((await page.evaluate(([x, y]) => window.__proto?.game?.pickAt(x, y) ?? null, [p.x, p.y] as const)) === "building") barracksSpot = p;
-    }
-  }
-  if (barracksSpot === null) throw new Error("no spot that picks the barracks");
-  await tap(page, barracksSpot);
+  // At a point of it that picks the building (a villager on the way to the house may stand over the middle one, CI run
+  // 41192087489): tapOwnBuilding.
+  await tapOwnBuilding(page, barracks.id);
   await expect(page.locator(".sel-info")).toContainText("兵營");
   const spearmenBefore = (await own(page, [SPEARMAN])).length;
   await page.getByRole("button", { name: /^訓練槍兵/ }).tap();
@@ -431,16 +421,7 @@ test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設�
   //     The game paused while the barracks is tapped, at a point of it where the tap is on it (not on one of ours going by
   //     in front of it, ceo 2026-11-18): no timing (#525's ours walk through it; one inside it is the barracks anyway).
   await pause(page);
-  await centre(page, bc);
-  const onBarracks = await (async () => {
-    for (const [dx, dy] of [[0, 0], [-1, -1], [1, -1], [-1, 0], [1, 0], [0, -1]] as const) {
-      const p = await toScreen(page, { x: bc.x + dx, y: bc.y + dy });
-      const hit = await page.evaluate(([x, y]) => window.__proto?.game?.pickIdAt(x, y) ?? null, [p.x, p.y] as const);
-      if (hit?.kind === "building" && hit.id === barracks.id) return p;
-    }
-    throw new Error("no point of the barracks free to tap");
-  })();
-  await tap(page, onBarracks);
+  await tapOwnBuilding(page, barracks.id);
   await expect(page.locator(".sel-info")).toContainText("兵營");
   const autoTrain = page.locator(".cmds").getByRole("button", { name: /^自動訓練/ });
   await expect(autoTrain).toHaveText("自動訓練目前：開");

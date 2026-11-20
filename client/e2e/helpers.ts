@@ -1,5 +1,5 @@
 import { expect, type Locator, type Page, type TestInfo } from "@playwright/test";
-import { tapOn } from "./touch.ts";
+import { tap, tapOn } from "./touch.ts";
 
 /** iPhone 14 Pro Max landscape insets in pt: Dynamic Island side, rounded corner side, home indicator. */
 export const IPHONE_SAFE = { top: 0, right: 59, bottom: 21, left: 59 };
@@ -402,4 +402,63 @@ export async function resetAll(page: Page): Promise<void> {
   // The ✕ on the bar with units selected (R24-02), else on the panel.
   const close = page.locator(".sel-bar:not([hidden]), .sel-info:not([hidden])").getByRole("button", { name: "取消選取" }).first();
   if (await close.isVisible()) await close.tap();
+}
+
+/**
+ * Our building `which` (its id, or a cell of it) selected as the player does: a tap on it (a click with a mouse). The
+ * game paused for it, so that nobody walks in between the look and the tap, the camera on it, and the tap at a point
+ * the picker takes as the building: not on one of ours walking through it (#525: ours walk through our own buildings;
+ * drawn with the art off, a tap on one is on him, #534; main's run 44820075598 tapped a villager in the main city), and
+ * not under a panel (the camera moved a little when one covers the middle). Waits for the selection; then the game as
+ * it was (繼續 pressed if it was running).
+ */
+export async function tapOwnBuilding(page: Page, which: number | { x: number; y: number }, scale?: number): Promise<number> {
+  const paused = () => page.evaluate(() => window.__proto?.game?.header().paused ?? false);
+  const was = await paused();
+  if (!was) {
+    await page.evaluate(() => window.__proto?.game?.pause());
+    await expect.poll(paused).toBe(true);
+  }
+  const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
+  const all = await page.evaluate(() => window.__proto?.game?.buildings() ?? []);
+  const b = typeof which === "number" ? all.find((v) => v.id === which) : all.find((v) => v.owner === me && which.x >= v.cx && which.x < v.cx + v.size && which.y >= v.cy && which.y < v.cy + v.size);
+  if (b === undefined) throw new Error(`no building of ours ${JSON.stringify(which)}`);
+  // Each half cell of it, from its middle out: the first the picker takes as it, where nothing of the interface is over it.
+  // The camera on it; with a panel over the middle of the screen (軍團畫面 on a phone), moved until it shows clear of it.
+  const look = () => page.evaluate(([id, cx, cy, n]) => {
+    const g = window.__proto?.game;
+    const spots: [number, number][] = [];
+    for (let y = 0; y < n * 2; y++) for (let x = 0; x < n * 2; x++) spots.push([cx + (x + 0.5) / 2, cy + (y + 0.5) / 2]);
+    const mid = [cx + n / 2, cy + n / 2];
+    spots.sort((a, c) => Math.hypot(a[0] - mid[0], a[1] - mid[1]) - Math.hypot(c[0] - mid[0], c[1] - mid[1]));
+    const seen: string[] = [];
+    for (const [x, y] of spots) {
+      const s = g?.cellToScreen(x, y);
+      if (s === undefined) continue;
+      const hit = g?.pickIdAt(s.x, s.y);
+      const top = document.elementFromPoint(s.x, s.y);
+      if (hit?.kind === "building" && hit.id === id && top?.tagName === "CANVAS") return { at: s, seen };
+      seen.push(`${x},${y}: ${hit === null || hit === undefined ? "nothing" : `${hit.kind} ${hit.id}`} under ${top === null ? "none" : `${top.tagName.toLowerCase()}.${top.className}`}`);
+    }
+    return { at: null, seen };
+  }, [b.id, b.cx, b.cy, b.size] as const);
+  let found: Awaited<ReturnType<typeof look>> = { at: null, seen: [] };
+  for (const [dx, dy] of [[0, 0], [3, 3], [5, 5], [3, -3], [-3, 3], [-3, -3], [0, 6], [6, 0]] as const) {
+    await page.evaluate(([x, y, s]) => window.__proto?.game?.centerOn(x, y, s ?? undefined), [b.cx + b.size / 2 + dx, b.cy + b.size / 2 + dy, scale ?? null] as const);
+    found = await look();
+    if (found.at !== null) break;
+  }
+  // None: what each point had (in the test's message).
+  if (found.at === null) throw new Error(`no point of building ${b.id} the tap would take: ${found.seen.slice(0, 8).join("; ")}`);
+  const p = found.at;
+  const touch = await page.evaluate(() => navigator.maxTouchPoints > 0);
+  if (touch) await tap(page, p);
+  else await page.mouse.click(p.x, p.y);
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.selection().building ?? null)).toBe(b.id);
+  if (!was) {
+    const go = page.getByRole("button", { name: "繼續", exact: true });
+    await (touch ? go.tap() : go.click());
+    await expect.poll(paused).toBe(false);
+  }
+  return b.id;
 }

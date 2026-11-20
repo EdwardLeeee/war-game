@@ -4,7 +4,7 @@
 // (?ui=proto) since 正式介面 is the default (R24-01, D-150); 正式介面's own: r6*.spec, r24-bar.spec.
 
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { armyButton, expectNotSaid, expectSaid, formalOn, FULL_SCREEN, hintTownOf, injectSafeArea, INTERACTIVE, IPHONE_SAFE, keepControls, openBox, openPanel, recordToasts, resText, saidMark, saveGroup, selectForCommands, shot, visibleBoxes, watchErrors, watchToasts } from "./helpers.ts";
+import { armyButton, expectNotSaid, expectSaid, formalOn, FULL_SCREEN, hintTownOf, injectSafeArea, INTERACTIVE, IPHONE_SAFE, keepControls, openBox, openPanel, recordToasts, resText, saidMark, saveGroup, selectForCommands, shot, tapOwnBuilding, visibleBoxes, watchErrors, watchToasts } from "./helpers.ts";
 import { doubleTap, doubleTapOn, longPress, longPressOn, tap, tapOn } from "./touch.ts";
 
 // Fake-world layout (src/mock/mock-port.ts), in cells.
@@ -502,8 +502,7 @@ test("重設（原型介面；正式介面沒有重設，D-087）：一按就取
   await expect(page.locator(".sel-info")).toBeHidden();
 
   // 集結點：選兵營 → 集結點 → 重設
-  await centre(page, BARRACKS.x + 1, BARRACKS.y + 1);
-  await tap(page, await at(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 }));
+  await tapOwnBuilding(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 });
   await expect(page.locator(".sel-info")).toContainText("兵營");
   await page.getByRole("button", { name: "集結點" }).tap();
   await expect.poll(mode).toBe("rally");
@@ -647,8 +646,7 @@ test("不選村民也能蓋：什麼都沒選 → 建造 → 民居 → ✓，�
 });
 
 test("主城的指令區也有建造", async ({ page }) => {
-  await centre(page, MAIN_CITY.x + 2, MAIN_CITY.y + 2);
-  await tap(page, await at(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 }));
+  await tapOwnBuilding(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 });
   await expect(page.locator(".sel-info")).toContainText("主城");
   await page.getByRole("button", { name: "建造" }).tap();
   await expect(page.getByRole("button", { name: /^民居/ })).toBeVisible();
@@ -657,8 +655,7 @@ test("主城的指令區也有建造", async ({ page }) => {
 });
 
 test("指令區與選取資訊：選兵營 → 訓練槍兵 → 佇列顯示，點它取消", async ({ page }, info) => {
-  await centre(page, BARRACKS.x + 1, BARRACKS.y + 1);
-  await tap(page, await at(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 }));
+  await tapOwnBuilding(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 });
   await expect(page.locator(".sel-info")).toContainText("兵營");
   await page.getByRole("button", { name: /^訓練槍兵/ }).tap();
   await expect.poll(() => lastSent(page)).toMatchObject({ c: "train", type: 1, n: 1 });
@@ -674,8 +671,7 @@ test("指令區與選取資訊：選兵營 → 訓練槍兵 → 佇列顯示，�
 });
 
 test("經濟分配：選主城 → 經濟分配 → 金多一點 → 套用", async ({ page }, info) => {
-  await centre(page, MAIN_CITY.x + 2, MAIN_CITY.y + 2);
-  await tap(page, await at(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 }));
+  await tapOwnBuilding(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 });
   await injectSafeArea(page);
   await page.getByRole("button", { name: "經濟分配" }).tap();
   const dialog = page.getByRole("dialog", { name: "經濟分配" });
@@ -814,8 +810,7 @@ test("等錢治理：自動訓練開著時預留暫時提高到大城的花費�
   await expect.poll(async () => (await garrison(page, 3)).length).toBe(3);
   // The reserve in effect goes up to 150 each for the wait; 預留 says so, and keeps the player's own.
   await expect.poll(async () => (await reserves(page)).at(-1)).toMatchObject({ food: 0, wood: 150, gold: 150, crystal: 0, auto: true });
-  await centre(page, MAIN_CITY.x + 2, MAIN_CITY.y + 2);
-  await tap(page, await at(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 }));
+  await tapOwnBuilding(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 });
   await expect(page.getByRole("button", { name: /^預留/ })).toContainText("暫時提高");
   await page.getByRole("button", { name: /^預留/ }).tap();
   const reserve = page.getByRole("dialog", { name: "預留" });
@@ -1057,8 +1052,7 @@ test("隊形：編隊裡超過一半是散開時，補進來的新兵也送散�
   await expect.poll(async () => (await units(page)).filter((u) => spear.includes(u.id)).every((u) => u.loose)).toBe(true);
   // One falls; the next spearman from the barracks joins group 1 and is told 散開 by the interface.
   await remove(page, [spear[0]]);
-  await centre(page, BARRACKS.x + 1, BARRACKS.y + 1);
-  await tap(page, await at(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 }));
+  await tapOwnBuilding(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 });
   await expect(page.locator(".sel-info")).toContainText("兵營");
   await page.getByRole("button", { name: /^訓練槍兵/ }).tap();
   await expect.poll(async () => (await groupInfo(page))[0].recruits.length, { timeout: 15_000 }).toBe(1);
@@ -1300,8 +1294,7 @@ test("編隊自動補兵：缺人時新訓練的兵補進來，按鈕顯示現�
   expect((await groupInfo(page))[0]).toMatchObject({ ids: spear.slice(3), want: { 1: 6 }, saved: 6, refill: true });
 
   // Three spearmen from the barracks: each joins group 1 as it is trained.
-  await centre(page, BARRACKS.x + 1, BARRACKS.y + 1);
-  await tap(page, await at(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 }));
+  await tapOwnBuilding(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 });
   await expect(page.locator(".sel-info")).toContainText("兵營");
   const train = page.getByRole("button", { name: /^訓練槍兵/ });
   await train.tap();
@@ -1333,7 +1326,7 @@ test("編隊自動補兵：缺人時新訓練的兵補進來，按鈕顯示現�
   await remove(page, [spear[3]]);
   await expect(g1).toHaveText("1·5/6");
   await select(page, []);
-  await tap(page, await at(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 }));
+  await tapOwnBuilding(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 });
   await train.tap();
   await expect.poll(async () => (await ownIds(page, [1])).length, { timeout: 15_000 }).toBe(6);
   await page.waitForTimeout(300);
@@ -1436,8 +1429,7 @@ test("新兵補不進任何編隊時，加入兵最多的編隊並走過去，�
   await select(page, (await ownIds(page, [2])).slice(0, 2));
   await saveGroup(page, GROUP_2);
   // Group 1 (6) is full and has the most: a new spearman joins it, and it wants 7.
-  await centre(page, BARRACKS.x + 1, BARRACKS.y + 1);
-  await tap(page, await at(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 }));
+  await tapOwnBuilding(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 });
   await page.getByRole("button", { name: /^訓練槍兵/ }).tap();
   await expectSaid(page, /^新的槍兵加入兵最多的編隊 1，正走過去$/, {}, { timeout: 15_000 });
   const recruit = (await ownIds(page, [1])).find((id) => !spear.includes(id));
@@ -1507,8 +1499,7 @@ test("點編隊：有兵時選取資訊先收起，點地面照樣下移動；�
   await tapOn(page, GROUP_1);
   await expect(rows).toBeHidden();
   // A building: open, as before, the group's fold not carried over.
-  await centre(page, BARRACKS.x + 1, BARRACKS.y + 1);
-  await tap(page, await at(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 }));
+  await tapOwnBuilding(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 });
   await expect(panel).toContainText("兵營");
   await expect(panel.getByRole("button", { name: "收起選取資訊" })).toBeVisible();
   // An empty group: nothing to order, the panel is what the tap is for.
@@ -1601,8 +1592,7 @@ for (const viewport of [null, FULL_SCREEN]) {
 test("人口：資源列的人口含訓練中的兵，後面寫訓練中幾名；訓練完括號就不見（D-050）", async ({ page }, info) => {
   const bar = () => resText(page);
   await expect.poll(bar).toMatch(/人口 17\/20　時間/);
-  await centre(page, BARRACKS.x + 1, BARRACKS.y + 1);
-  await tap(page, await at(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 }));
+  await tapOwnBuilding(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 });
   const train = page.getByRole("button", { name: /^訓練槍兵/ });
   await train.tap();
   await train.tap();
@@ -1617,8 +1607,7 @@ const autoTrains = async (page: Page) => (await sent(page)).filter((c) => c.c ==
 
 test("自動訓練（D-098）：兵營只補軍團缺的；沒設軍團不訓練、軍團都滿不訓練，選取資訊寫為什麼；暫停是畫面自己的，不送指令", async ({ page }, info) => {
   await autoArmy(page, true);
-  await centre(page, BARRACKS.x + 1, BARRACKS.y + 1);
-  await tap(page, await at(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 }));
+  await tapOwnBuilding(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 });
   const panel = page.locator(".sel-info");
   const line = panel.locator(".auto-train-line");
   await expect(panel).toContainText("兵營");
@@ -1632,8 +1621,7 @@ test("自動訓練（D-098）：兵營只補軍團缺的；沒設軍團不訓練
   const spear = await selectSpearmen(page);
   await saveGroup(page, GROUP_1);
   await select(page, []);
-  await centre(page, BARRACKS.x + 1, BARRACKS.y + 1);
-  await tap(page, await at(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 }));
+  await tapOwnBuilding(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 });
   await expect(line).toHaveText("軍團都滿，不訓練");
   // (The main city trains villagers meanwhile: its own target, below.)
   expect((await autoTrains(page)).filter((c) => c.building === barracks)).toEqual([]);
@@ -1663,8 +1651,7 @@ test("自動訓練（D-098）：兵營只補軍團缺的；沒設軍團不訓練
 
 test("自動訓練（D-098）：主城自動補村民到目標（預設 40，−／+ 一次 5，可暫停）；人口滿了，訊息列提示一次，主城寫人口滿了", async ({ page }, info) => {
   await autoArmy(page, true);
-  await centre(page, MAIN_CITY.x + 2, MAIN_CITY.y + 2);
-  await tap(page, await at(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 }));
+  await tapOwnBuilding(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 });
   const panel = page.locator(".sel-info");
   const target = panel.getByRole("group", { name: "村民目標" });
   await expect(target.locator("output")).toHaveText("40");
@@ -1688,8 +1675,7 @@ test("自動訓練（D-098）：主城自動補村民到目標（預設 40，−
 });
 
 test("預留：選主城 → 預留 → 對話框寫現在的預留額（預設木 150、金 100；D-135 沒有魔晶那行），−／+ 後套用送出 reserve；預設鈕回到預設（D-054）", async ({ page }, info) => {
-  await centre(page, MAIN_CITY.x + 2, MAIN_CITY.y + 2);
-  await tap(page, await at(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 }));
+  await tapOwnBuilding(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 });
   await injectSafeArea(page);
   await page.locator(".cmds").getByRole("button", { name: /^預留/ }).tap();
   const dialog = page.getByRole("dialog", { name: "預留" });
@@ -1763,8 +1749,7 @@ test("村民（D-061）：介面上找不到「農民」——戰場、選了村
   await selectForCommands(page, await ownIds(page, [0]));
   await expect(page.locator(".sel-info")).toContainText("村民");
   await noOldWord("選了村民");
-  await centre(page, MAIN_CITY.x + 2, MAIN_CITY.y + 2);
-  await tap(page, await at(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 }));
+  await tapOwnBuilding(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 });
   await expect(page.locator(".sel-info")).toContainText("主城");
   await expect(page.getByRole("button", { name: /^訓練村民/ })).toBeVisible();
   await noOldWord("主城");

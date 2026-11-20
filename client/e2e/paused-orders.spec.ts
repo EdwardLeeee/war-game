@@ -7,7 +7,7 @@
 // preview says 已取消 without the check.
 
 import { expect, type Page, test } from "@playwright/test";
-import { expectSaid, recordToasts, shot, watchErrors } from "./helpers.ts";
+import { expectSaid, recordToasts, shot, tapOwnBuilding, watchErrors } from "./helpers.ts";
 import { tap } from "./touch.ts";
 
 const BARRACKS = 6;
@@ -40,9 +40,7 @@ async function pausedAtBarracks(page: Page, query = "") {
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
   const barracks = (await buildings(page)).find((b) => b.owner === me && b.type === BARRACKS);
   if (barracks === undefined) throw new Error("no barracks");
-  await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 1.2), [barracks.cx + 1, barracks.cy + 1] as const);
-  await tap(page, await toScreen(page, { x: barracks.cx + 1, y: barracks.cy + 1 }));
-  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.selection()))?.building).toBe(barracks.id);
+  await tapOwnBuilding(page, barracks.id, 1.2);
   return { me, barracks };
 }
 
