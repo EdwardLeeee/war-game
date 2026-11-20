@@ -211,13 +211,12 @@ test("按住滾輪拖：畫面跟著移動，選取不變；方向鍵和滑鼠�
   expect(Math.abs(moved.x - cam.x) + Math.abs(moved.y - cam.y), "the view moved").toBeGreaterThan(50);
   expect(await selection(page)).toEqual(chosen);
   await expect(page.locator(".marquee")).toBeHidden();
-  // The arrow keys: right moves the view right (its x grows), and stops when let go.
+  // The arrow keys: right moves the view right (its x grows) while held, and stops when let go. (Held until it has
+  // moved: a busy page may draw no frame in a given 0.4 s, and the view moves by the frame.)
   cam = await camera(page);
   await page.keyboard.down("ArrowRight");
-  await page.waitForTimeout(400);
+  await expect.poll(async () => (await camera(page)).x, { message: "ArrowRight" }).toBeGreaterThan(cam.x);
   await page.keyboard.up("ArrowRight");
-  const keyed = await camera(page);
-  expect(keyed.x, "ArrowRight").toBeGreaterThan(cam.x);
   await page.waitForTimeout(200);
   const still = await camera(page);
   await page.waitForTimeout(300);
