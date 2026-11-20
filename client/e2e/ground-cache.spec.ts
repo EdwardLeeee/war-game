@@ -9,6 +9,11 @@
 import { expect, type Page, test } from "@playwright/test";
 import { openLab } from "./helpers.ts";
 
+// One worker, in order (as before --fully-parallel, #535): its tests draw a large battlefield with the CPU in CI's
+// Chromium, and two of them side by side on a runner's 4 cores each took twice as long (ground-cache:50 120 s, beside :88
+// and :144: main's run 44768526848). Other files' tests still take the other worker.
+test.describe.configure({ mode: "default" });
+
 const frames = (page: Page) => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 400)))));
 
 /** Two screenshots compared in the page: pixels off at all, by more than 2, the most, of how many. */
