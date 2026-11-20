@@ -37,7 +37,7 @@ export const TUTORIAL_RULES = {
 };
 
 const TERRAIN: Record<string, number> = { R: Terrain.Blocked, "#": Terrain.Wall, "~": Terrain.Water, K: Terrain.Cliff, f: Terrain.Ford, "|": Terrain.BridgeNS, "=": Terrain.BridgeEW };
-const NODE: Record<string, NodeKind> = { T: NodeKind.Tree, G: NodeKind.GoldMine, B: NodeKind.Berries, V: NodeKind.CrystalVein };
+const NODE: Record<string, NodeKind> = { T: NodeKind.Tree, G: NodeKind.GoldMine, B: NodeKind.Berries };
 
 /** The tutorial's map from its data; `seed` is the game's (the map is the same whatever it is). */
 export function tutorialMap(seed: number): GameMap {

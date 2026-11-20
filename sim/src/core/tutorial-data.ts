@@ -1,6 +1,6 @@
 // The tutorial's map (R25, D-150): src/tutorial-freeze.ts made it; not edited by hand. One row per y, one character per
 // cell (as twin-rivers-data.ts): .  open   R  rock   K  cliff   ~  water   f  ford   |  bridge, north-south
-//   =  bridge, east-west   #  castle wall   T  tree   G  gold   B  berries   V  crystal vein (TUTORIAL.amounts each).
+//   =  bridge, east-west   #  castle wall   T  tree   G  gold   B  berries (TUTORIAL.amounts each).
 // Player 0 starts at spawns[0], the one small town (towns[0]) by its home; player 1 across the map.
 
 export const TUTORIAL = {

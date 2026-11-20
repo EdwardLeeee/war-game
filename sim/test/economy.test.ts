@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Game } from "../src/core/game.ts";
 import { Task } from "../src/core/economy.ts";
-import { BUILDINGS, CARRY, ECO_EVERY, MAIN_ARROW, MAIN_CITY_REPAIR_LOCK, NO_CRYSTAL, STAY_LIMIT, UNITS } from "../src/core/rules.ts";
+import { BUILDINGS, CARRY, ECO_EVERY, MAIN_ARROW, MAIN_CITY_REPAIR_LOCK, STAY_LIMIT, UNITS } from "../src/core/rules.ts";
 import { checkPlacement } from "../src/placement.ts";
 import {
   Action,
@@ -590,18 +590,17 @@ test("a main city cannot be repaired within 10 s of being hit; other buildings c
   assert.ok(b.hp[hs] > 100, "houses repair at once");
 });
 
-test("a build without farmers sends the nearest free ones: 1 for 2 x 2, 2 for 3 x 3, not placed, busy, hidden or vein farmers", switchedOff(NO_CRYSTAL, () => {
+// D-135: no crystal vein (with it, the farmers on the vein were left out too).
+test("a build without farmers sends the nearest free ones: 1 for 2 x 2, 2 for 3 x 3, not placed, busy or hidden farmers", () => {
   const g = emptyGame();
   const w = g.w;
   w.ecoOn[0] = 0;
   const u = w.units.col;
-  const vein = Array.from(w.nodeKind).findIndex((k) => k === NodeKind.CrystalVein);
-  // Nearest first: placed by the player, building, hiding, on the vein; then three free ones,
-  // two of them on the same spot (ties go to the lower id).
+  // Nearest first: placed by the player, building, hiding; then three free ones, two of them on the same spot (ties go
+  // to the lower id).
   const placed = farmerAtBase(g, 0, 0);
   const building = farmerAtBase(g, 0, 1);
   const hiding = farmerAtBase(g, 0, 2);
-  const onVein = farmerAtBase(g, 0, 3);
   const near = farmerAtBase(g, 0, 5);
   const tieA = farmerAtBase(g, 0, 7);
   const tieB = farmerAtBase(g, 0, 7);
@@ -609,20 +608,18 @@ test("a build without farmers sends the nearest free ones: 1 for 2 x 2, 2 for 3 
   u.order[slotOf(g, building)] = Order.Build;
   u.orderTarget[slotOf(g, building)] = w.buildings.col.id[w.mainCity(0)];
   u.action[slotOf(g, hiding)] = Action.Garrisoned;
-  u.order[slotOf(g, onVein)] = Order.Gather;
-  u.orderTarget[slotOf(g, onVein)] = vein;
   const house = spot(g, 0, BuildingType.House);
   cmd(g, 0, { c: "build", u: [], type: BuildingType.House, x: house.x, y: house.y });
   assert.deepEqual(step(g), []);
   const houseId = w.buildingAt[house.y * w.size + house.x];
-  const builders = (id: number) => [placed, building, hiding, onVein, near, tieA, tieB].filter((f) => u.order[slotOf(g, f)] === Order.Build && u.orderTarget[slotOf(g, f)] === id);
+  const builders = (id: number) => [placed, building, hiding, near, tieA, tieB].filter((f) => u.order[slotOf(g, f)] === Order.Build && u.orderTarget[slotOf(g, f)] === id);
   assert.deepEqual(builders(houseId), [near], "one farmer, the nearest free one");
   const barracks = spot(g, 0, BuildingType.Barracks, 2);
   cmd(g, 0, { c: "build", u: [], type: BuildingType.Barracks, x: barracks.x, y: barracks.y });
   assert.deepEqual(step(g), []);
   assert.deepEqual(builders(w.buildingAt[barracks.y * w.size + barracks.x]), [tieA, tieB], "two for a 3 x 3");
   assert.equal(u.stay[slotOf(g, near)], 0, "not placed: the economy may take it afterwards");
-}));
+});
 
 test("a build without farmers and nobody free is refused with NoFarmer: nothing placed, nothing paid", () => {
   const g = emptyGame();
@@ -726,7 +723,8 @@ test("a new ratio moves farmers already at work within 2 s, each share within on
   assert.deepEqual(work(0), work(1));
 });
 
-test("the ratio does not move farmers sent by hand, on the vein, placed, or building; the others follow it", switchedOff(NO_CRYSTAL, () => {
+// D-135: no crystal vein (with it, the farmers on the vein stayed there too).
+test("the ratio does not move farmers sent by hand, placed, or building; the others follow it", () => {
   const g = emptyGame();
   const w = g.w;
   const u = w.units.col;
@@ -735,9 +733,6 @@ test("the ratio does not move farmers sent by hand, on the vein, placed, or buil
   const tree = nodesNear(g, 0, NodeKind.Tree)[0];
   const hand = ids.slice(0, 3);
   cmd(g, 0, { c: "gather", u: hand, node: tree });
-  const vein = Array.from(w.nodeKind).findIndex((k) => k === NodeKind.CrystalVein);
-  g.fog.nodeSeen[0][vein] = 0;
-  cmd(g, 0, { c: "gather", u: [ids[3]], node: vein });
   const m = mainCityCell(g, 0);
   cmd(g, 0, { c: "move", u: [ids[4]], x: m.x + 8, y: m.y - 4 });
   const at = spot(g, 0, BuildingType.House);
@@ -750,15 +745,14 @@ test("the ratio does not move farmers sent by hand, on the vein, placed, or buil
   cmd(g, 0, { c: "eco_ratio", food: 0, wood: 0, gold: 100, on: true });
   run(g, 60);
   for (const id of hand) assert.equal(u.orderTarget[slotOf(g, id)], tree, "still on the tree it was sent to");
-  assert.equal(gatheringOf(g, slotOf(g, ids[3])), Resource.Crystal, "still on the vein");
   assert.ok([Order.Move, Order.None].includes(u.order[slotOf(g, ids[4])] as never), "still going to, or waiting at, where it was placed");
   assert.equal(u.order[slotOf(g, ids[5])], Order.Build, "still building");
-  for (const id of ids.slice(6)) assert.equal(gatheringOf(g, slotOf(g, id)), Resource.Gold, "the others went to gold");
+  for (const id of [ids[3], ...ids.slice(6)]) assert.equal(gatheringOf(g, slotOf(g, id)), Resource.Gold, "the others went to gold");
   // Another command takes a farmer off the job it was sent to by hand.
   cmd(g, 0, { c: "stop", u: [hand[0]] });
   run(g, 1);
   assert.equal(u.flags[slotOf(g, hand[0])] & UnitFlag.HandPicked, 0);
-}));
+});
 
 test("with the ratio unchanged, no farmer is moved back and forth", () => {
   const g = emptyGame();

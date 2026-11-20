@@ -32,7 +32,7 @@ for (let i = 0; i < n * n; i++) if (terrain[i] === Terrain.Wall) walls++;
 if (walls !== castleOf(TownSize.Small).wall.length) throw new Error(`tutorial map: ${walls} wall cells left`);
 
 const CHAR: Record<number, string> = { [Terrain.Blocked]: "R", [Terrain.Wall]: "#", [Terrain.Water]: "~", [Terrain.Cliff]: "K", [Terrain.Ford]: "f", [Terrain.BridgeNS]: "|", [Terrain.BridgeEW]: "=" };
-const NODE: Record<number, string> = { [NodeKind.Tree]: "T", [NodeKind.GoldMine]: "G", [NodeKind.Berries]: "B", [NodeKind.CrystalVein]: "V" };
+const NODE: Record<number, string> = { [NodeKind.Tree]: "T", [NodeKind.GoldMine]: "G", [NodeKind.Berries]: "B" };
 const rows: string[][] = [];
 for (let y = 0; y < n; y++) {
   const row: string[] = [];
@@ -103,7 +103,7 @@ const anchors = { own: toward(home, mid, mid, ANCHOR.own), squad: toward(enemy, 
 const out = [
   "// The tutorial's map (R25, D-150): src/tutorial-freeze.ts made it; not edited by hand. One row per y, one character per",
   "// cell (as twin-rivers-data.ts): .  open   R  rock   K  cliff   ~  water   f  ford   |  bridge, north-south",
-  "//   =  bridge, east-west   #  castle wall   T  tree   G  gold   B  berries   V  crystal vein (TUTORIAL.amounts each).",
+  "//   =  bridge, east-west   #  castle wall   T  tree   G  gold   B  berries (TUTORIAL.amounts each).",
   "// Player 0 starts at spawns[0], the one small town (towns[0]) by its home; player 1 across the map.",
   "",
   "export const TUTORIAL = {",

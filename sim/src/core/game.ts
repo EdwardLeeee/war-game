@@ -34,7 +34,7 @@ import { isTutorial, revealTutorial, tutorialMap } from "./tutorial.ts";
 import { FieldCache } from "./paths.ts";
 import { AVENGE, CAV_FLANK, CAVALRY, OUTPOST, SIEGE, COUNTER_ATTACK, FIRE_BACK, GARRISON, GATE, KEEP, MAIN_CITY_TOUGH, MARCH_ORDER, MARKET, SLOT_GIVE_UP, WALLS, WALL_SHIFT, PLUNDER_RECOVERY, START_REVEAL, TOWERS, TOWN_ONCE } from "./rules.ts";
 import { TownSystem } from "./towns.ts";
-import { autoTrain, mainCityCrystal } from "./training.ts";
+import { autoTrain } from "./training.ts";
 import { type ScenarioKey, setupScenario } from "./scenarios.ts";
 import { Timeline } from "./timeline.ts";
 import { UnitSystem } from "./units.ts";
@@ -151,11 +151,9 @@ export class Game {
     if (TOWERS.on || GARRISON.on) this.shotEvents();
     this.econ.workTick(w);
     this.units.removeDead(w, (s) => this.econ.release(w, s), (to, ev) => this.events.push({ to, ev }));
-    // 7. Training, then automatic training queues the next unit where a queue emptied; the
-    // main cities' crystal.
+    // 7. Training, then automatic training queues the next unit where a queue emptied.
     this.econ.produce(w);
     autoTrain(w);
-    mainCityCrystal(w);
     // 8. Towns.
     this.towns.step(w);
     const n = w.size;

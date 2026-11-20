@@ -15,7 +15,6 @@ import {
   NEUTRAL,
   Order,
   PLAYER_COUNT,
-  Resource,
   type SimEvent,
   Stance,
   TICKS_PER_SECOND,
@@ -46,7 +45,6 @@ import {
   WALL_SHIFT,
   HOME_GUARD,
   COUNTER_ATTACK,
-  mageBounty,
   SHIELD,
   SHIELD_REGEN,
   SLOT_GIVE_UP,
@@ -1228,8 +1226,7 @@ export class UnitSystem {
       u.type[i] === UnitType.Mage &&
       (u.flags[i] & UnitFlag.Autocast) !== 0 &&
       u.castCooldown[i] === 0 &&
-      look &&
-      w.res[u.owner[i] * 4 + Resource.Crystal] >= CANNON.crystal
+      look
     ) {
       const aim = this.autocastAim(w, fog, i, bs);
       if (aim >= 0) {
@@ -1345,8 +1342,7 @@ export class UnitSystem {
       u.type[i] === UnitType.Mage &&
       (u.flags[i] & UnitFlag.Autocast) !== 0 &&
       u.castCooldown[i] === 0 &&
-      look &&
-      w.res[u.owner[i] * 4 + Resource.Crystal] >= CANNON.crystal
+      look
     ) {
       const aim = this.autocastAim(w, fog, i);
       if (aim >= 0) {
@@ -2289,8 +2285,7 @@ export class UnitSystem {
       (u.flags[i] & UnitFlag.Autocast) !== 0 &&
       order !== Order.Retreat &&
       u.castCooldown[i] === 0 &&
-      (w.tick + this.phase(w, i)) % RETARGET_EVERY === 0 &&
-      w.res[u.owner[i] * 4 + Resource.Crystal] >= CANNON.crystal
+      (w.tick + this.phase(w, i)) % RETARGET_EVERY === 0
     ) {
       const aim = this.autocastAim(w, fog, i);
       // D-154: not from inside its own buildings.
@@ -3241,43 +3236,38 @@ export class UnitSystem {
   }
 
   /**
-   * The cannon fires at (castX, castY) if the owner still has the crystal: every unit not
-   * the mage owner's within the radius is hit (never own units). Then cooldown; an autocast
-   * returns to the order it interrupted.
+   * The cannon fires at (castX, castY): every unit not the mage owner's within the radius is hit (never own units).
+   * Then cooldown; an autocast returns to the order it interrupted. It costs nothing (D-135).
    */
   private fireCannon(w: World, i: number): void {
     const u = w.units.col;
     const n = w.size;
     const p = u.owner[i];
-    const o = p * 4 + Resource.Crystal;
-    if (w.res[o] >= CANNON.crystal) {
-      w.res[o] -= CANNON.crystal;
-      // From inside a building (round 7): weaker and slower (GARRISON).
-      const inside = u.action[i] === Action.Garrisoned;
-      const dmg = inside ? Math.trunc((CANNON.damage * GARRISON.cannonPermille) / 1000) : CANNON.damage;
-      const r2 = CANNON.radius * CANNON.radius;
-      const blast = (CANNON.radius >> CELL_SHIFT) + 1;
-      const cx = u.castX[i] >> CELL_SHIFT;
-      const cy = u.castY[i] >> CELL_SHIFT;
-      for (let y = Math.max(cy - blast, 0); y <= Math.min(cy + blast, n - 1); y++) {
-        for (let x = Math.max(cx - blast, 0); x <= Math.min(cx + blast, n - 1); x++) {
-          for (let j = this.cellHead[y * n + x]; j >= 0; j = this.cellNext[j]) {
-            if (u.owner[j] === p || u.action[j] === Action.Garrisoned) continue;
-            const dx = u.x[j] - u.castX[i];
-            const dy = u.y[j] - u.castY[i];
-            if (dx * dx + dy * dy <= r2) {
-              this.hit(w, j, dmg, UnitType.Mage, p, HitCause.Cannon, u.id[i]);
-              // A soldier standing with no order goes for the mage (AVENGE, round 8).
-              if (AVENGE.on && u.owner[j] < PLAYER_COUNT && u.type[j] !== UnitType.Farmer && u.order[j] === Order.None) u.avenge[j] = u.id[i];
-              if (p < PLAYER_COUNT) w.cannonHits[p]++;
-            }
+    // From inside a building (round 7): weaker and slower (GARRISON).
+    const inside = u.action[i] === Action.Garrisoned;
+    const dmg = inside ? Math.trunc((CANNON.damage * GARRISON.cannonPermille) / 1000) : CANNON.damage;
+    const r2 = CANNON.radius * CANNON.radius;
+    const blast = (CANNON.radius >> CELL_SHIFT) + 1;
+    const cx = u.castX[i] >> CELL_SHIFT;
+    const cy = u.castY[i] >> CELL_SHIFT;
+    for (let y = Math.max(cy - blast, 0); y <= Math.min(cy + blast, n - 1); y++) {
+      for (let x = Math.max(cx - blast, 0); x <= Math.min(cx + blast, n - 1); x++) {
+        for (let j = this.cellHead[y * n + x]; j >= 0; j = this.cellNext[j]) {
+          if (u.owner[j] === p || u.action[j] === Action.Garrisoned) continue;
+          const dx = u.x[j] - u.castX[i];
+          const dy = u.y[j] - u.castY[i];
+          if (dx * dx + dy * dy <= r2) {
+            this.hit(w, j, dmg, UnitType.Mage, p, HitCause.Cannon, u.id[i]);
+            // A soldier standing with no order goes for the mage (AVENGE, round 8).
+            if (AVENGE.on && u.owner[j] < PLAYER_COUNT && u.type[j] !== UnitType.Farmer && u.order[j] === Order.None) u.avenge[j] = u.id[i];
+            if (p < PLAYER_COUNT) w.cannonHits[p]++;
           }
         }
       }
-      if (p < PLAYER_COUNT) w.cannonShots[p]++;
-      u.lastDealt[i] = w.tick;
-      u.castCooldown[i] = inside ? CANNON.cooldownTicks * GARRISON.cannonCooldown : CANNON.cooldownTicks;
     }
+    if (p < PLAYER_COUNT) w.cannonShots[p]++;
+    u.lastDealt[i] = w.tick;
+    u.castCooldown[i] = inside ? CANNON.cooldownTicks * GARRISON.cannonCooldown : CANNON.cooldownTicks;
     u.castProgress[i] = 0;
     u.order[i] = u.prevOrder[i];
     u.orderTarget[i] = u.prevTarget[i];
@@ -3322,14 +3312,9 @@ export class UnitSystem {
         }
         if (u.hitCause[i] === HitCause.Cannon && u.hitBy[i] >= 0 && u.hitBy[i] < PLAYER_COUNT) w.cannonKills[u.hitBy[i]]++;
         if (u.type[i] === UnitType.Mage) {
-          // The killer's side picks up the bounty (none for the neutral side).
+          // No bounty since D-135: the event's crystal is always 0.
           const killer = u.hitBy[i];
-          const bounty = killer >= 0 && killer < PLAYER_COUNT && killer !== u.owner[i] ? mageBounty() : 0;
-          if (bounty > 0) {
-            w.res[killer * 4 + Resource.Crystal] += bounty;
-            w.earnedExtra[killer * 4 + Resource.Crystal] += bounty;
-          }
-          const ev: SimEvent = { k: "mage_killed", id: u.id[i], owner: u.owner[i], killer, crystal: bounty };
+          const ev: SimEvent = { k: "mage_killed", id: u.id[i], owner: u.owner[i], killer, crystal: 0 };
           emit(u.owner[i], ev);
           if (killer !== u.owner[i] && killer >= 0 && killer < PLAYER_COUNT) emit(killer, ev);
         }

@@ -9,7 +9,7 @@ import { FIXED_POSTS } from "./castle.ts";
 import { pushOut } from "./commands.ts";
 import { isTutorial, setupTutorial } from "./tutorial.ts";
 import { cellsAround, nearestWalkable } from "./paths.ts";
-import { BUILDINGS, GATE, KEEP, NO_CRYSTAL, OUTPOST, START, TOWNS, UNITS, WALLS } from "./rules.ts";
+import { BUILDINGS, GATE, KEEP, OUTPOST, START, TOWNS, UNITS, WALLS } from "./rules.ts";
 import type { World } from "./world.ts";
 
 export type ScenarioKey = ScenarioName | "skirmish";
@@ -18,7 +18,7 @@ const SCENARIOS: readonly string[] = ["standard", "e2e", "perf", "perf200", "per
 
 /** e2e: resources per side, and the squad placed beside the small town. */
 export const E2E = {
-  resources: { food: 2000, wood: 2000, gold: 2000, crystal: 300 },
+  resources: { food: 2000, wood: 2000, gold: 2000 },
   spearmen: 6,
   ranged: 4,
   /** Squad centre for player 0 (player 1: mirrored), about 11 cells from the small town. */
@@ -116,7 +116,6 @@ function standard(w: World): void {
     w.res[p * 4 + Resource.Food] = START.resources.food;
     w.res[p * 4 + Resource.Wood] = START.resources.wood;
     w.res[p * 4 + Resource.Gold] = START.resources.gold;
-    w.res[p * 4 + Resource.Crystal] = NO_CRYSTAL.on ? 0 : START.resources.crystal;
   }
   placeTownGuards(w);
 }
@@ -327,7 +326,6 @@ function e2e(w: World): void {
     w.res[p * 4 + Resource.Food] = E2E.resources.food;
     w.res[p * 4 + Resource.Wood] = E2E.resources.wood;
     w.res[p * 4 + Resource.Gold] = E2E.resources.gold;
-    w.res[p * 4 + Resource.Crystal] = NO_CRYSTAL.on ? 0 : E2E.resources.crystal;
   }
   const s0 = w.map.spawns[0];
   for (const type of [BuildingType.House, BuildingType.House, BuildingType.Barracks]) {
@@ -371,7 +369,7 @@ function freeSpot(w: World, size: number, cx: number, cy: number): { x: number; 
 
 /** perf: every system running, for the iPhone measurement (PROTOCOL.md section 8). */
 export const PERF = {
-  resources: { food: 3000, wood: 3000, gold: 3000, crystal: 500 },
+  resources: { food: 3000, wood: 3000, gold: 3000 },
   houses: 22,
   farmers: 40,
   spearmen: 34,
@@ -415,7 +413,6 @@ function perf(w: World, c: typeof PERF): void {
     w.res[p * 4 + Resource.Food] = c.resources.food;
     w.res[p * 4 + Resource.Wood] = c.resources.wood;
     w.res[p * 4 + Resource.Gold] = c.resources.gold;
-    w.res[p * 4 + Resource.Crystal] = NO_CRYSTAL.on ? 0 : c.resources.crystal;
   }
   const s0 = w.map.spawns[0];
   const house = BUILDINGS[BuildingType.House];

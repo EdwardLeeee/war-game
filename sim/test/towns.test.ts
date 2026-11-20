@@ -6,7 +6,7 @@ import test from "node:test";
 import { KEEP } from "../src/core/keep.ts";
 import { Game } from "../src/core/game.ts";
 import { PERF } from "../src/core/scenarios.ts";
-import { BUILDINGS, governPerMinute, MAIN_CRYSTAL, NO_CRYSTAL, rules, TOWNS } from "../src/core/rules.ts";
+import { BUILDINGS, governPerMinute, rules, TOWNS } from "../src/core/rules.ts";
 import { UNIT_KINDS } from "../src/core/world.ts";
 import {
   BuildingType,
@@ -27,18 +27,6 @@ import {
 import { buildView } from "../src/view/view.ts";
 import { cmd, emptyGame, put, run, slotOf, switchedOff } from "./helpers.ts";
 
-/** A test of a town's own income: the main city's crystal (D-057) is off while it runs. */
-function townIncomeOnly(body: () => void): () => void {
-  return () => {
-    const saved = MAIN_CRYSTAL.every;
-    MAIN_CRYSTAL.every = 0;
-    try {
-      body();
-    } finally {
-      MAIN_CRYSTAL.every = saved;
-    }
-  };
-}
 
 function step(g: Game, p = 0): number[] {
   g.step();
@@ -111,7 +99,7 @@ test("a town with militia alive, or the big city with its tower standing, is not
   assert.equal(g.w.townState[0], TownState.Neutral);
 }));
 
-test("plunder: counts only while the holder's army is inside, pays out, ruins for 4 minutes, back to neutral with half the militia", townIncomeOnly(switchedOff([KEEP, NO_CRYSTAL], () => {
+test("plunder: counts only while the holder's army is inside, pays out, ruins for 4 minutes, back to neutral with half the militia", switchedOff(KEEP, () => {
   const { g, t, x, y } = smallTown();
   const spear = put(g, 0, UnitType.Spearman, x + 1, y);
   run(g, 2);
@@ -144,7 +132,7 @@ test("plunder: counts only while the holder's army is inside, pays out, ruins fo
   );
   assert.equal(g.w.plundered[0], 1);
   assert.equal(g.w.plunderIncome[0], rule.plunder.food + rule.plunder.gold + rule.plunder.crystal);
-  assert.deepEqual([rule.plunder.food, rule.plunder.gold, rule.plunder.crystal], [300, 300, 75], "GDD x 1.5 (ceo ruling)");
+  assert.deepEqual([rule.plunder.food, rule.plunder.gold, rule.plunder.crystal], [300, 300, 0], "GDD x 1.5 (ceo ruling); no crystal since D-135");
   assert.ok(g.w.firstCapture >= 0, "the capture was recorded");
   assert.equal(g.w.townState[t], TownState.Ruins);
   assert.equal(g.w.townOwner[t], NO_OWNER);
@@ -156,7 +144,7 @@ test("plunder: counts only while the holder's army is inside, pays out, ruins fo
   let militia = 0;
   for (let s = 0; s < g.w.units.count; s++) if (u.owner[s] === NEUTRAL && u.home[s] === t) militia++;
   assert.equal(militia, rule.militia >> 1);
-})));
+}));
 
 test("plundering is cancelled when the enemy takes the town", switchedOff(KEEP, () => {
   const { g, t, x, y } = smallTown();
@@ -171,7 +159,7 @@ test("plundering is cancelled when the enemy takes the town", switchedOff(KEEP, 
   assert.equal(g.w.townOwner[t], 1);
 }));
 
-test("govern: pays at the choice, repairs with the minimum garrison, then produces and raises the cap; revolts after 60 s without it", townIncomeOnly(switchedOff([KEEP, NO_CRYSTAL], () => {
+test("govern: pays at the choice, repairs with the minimum garrison, then produces and raises the cap; revolts after 60 s without it", switchedOff(KEEP, () => {
   const { g, t, x, y } = smallTown();
   const rule = TOWNS[TownSize.Small];
   const spear = put(g, 0, UnitType.Spearman, x + 1, y);
@@ -199,9 +187,9 @@ test("govern: pays at the choice, repairs with the minimum garrison, then produc
   // Paid every 20 ticks from an accumulator: any 1,200-tick window holds 40 give or take one.
   const food = g.w.res[Resource.Food] - food0;
   const crystal = g.w.res[Resource.Crystal] - crystal0;
-  // Round 7 (D-061, GOVERN_INCOME): 100 food and 30 crystal a minute (was 40 and 12).
+  // Round 7 (D-061, GOVERN_INCOME): 100 food a minute (was 40); its 30 crystal gone with D-135.
   const per = governPerMinute(TownSize.Small);
-  assert.deepEqual([per.food, per.gold, per.crystal], [100, 100, 30]);
+  assert.deepEqual([per.food, per.gold, per.crystal], [100, 100, 0]);
   assert.ok(Math.abs(food - per.food) <= 1, `food a minute: ${food}`);
   assert.ok(Math.abs(crystal - per.crystal) <= 1, `crystal a minute: ${crystal}`);
   const food10 = g.w.res[Resource.Food];
@@ -226,7 +214,7 @@ test("govern: pays at the choice, repairs with the minimum garrison, then produc
   assert.equal(g.w.governEnded[0], 1);
   assert.equal(g.w.governPaidBack[0], 1);
   assert.equal(g.w.populationCap(0), 10);
-})));
+}));
 
 test("surrender ends the game for the other side; later commands are refused", () => {
   const g = emptyGame();

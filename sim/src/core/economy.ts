@@ -59,9 +59,7 @@ export function nodeResource(kind: number): Resource {
     ? Resource.Wood
     : kind === NodeKind.GoldMine
       ? Resource.Gold
-      : kind === NodeKind.CrystalVein
-        ? Resource.Crystal
-        : Resource.Food;
+      : Resource.Food;
 }
 
 /** Walkable cells touching a node's cell (8-neighbourhood). */
@@ -462,8 +460,7 @@ export class Economy {
   /**
    * Every ECO_EVERY ticks, per player, idle farmers get work: during recall they go and
    * hide; otherwise they repair a damaged building nearby, and then, with the economy ratio
-   * on, go to the resource furthest below its share (ties: food, wood, gold). Crystal is
-   * never assigned: the vein is by hand only. Farmers the player placed (`stay`) are left
+   * on, go to the resource furthest below its share (ties: food, wood, gold). Farmers the player placed (`stay`) are left
    * where they are, except by recall, until STAY_LIMIT runs out. Then the farmers already at
    * work follow the ratio too (`rebalance`, operations round, D-050).
    */
@@ -559,7 +556,7 @@ export class Economy {
    * farmers, one farmer moves from the resource furthest above its share to the one furthest
    * below, the farmer with the shortest way to its new work. Within one farmer of the ratio
    * nobody moves, so a farmer is not sent back and forth. Never moved: farmers sent by hand
-   * (UnitFlag.HandPicked), on the crystal vein (not a share), placed to stay, building,
+   * (UnitFlag.HandPicked), placed to stay, building,
    * repairing or hiding (none of them is gathering a share); farmers sent by hand still count.
    */
   private rebalance(w: World, p: number, count: number[], ratio: number[]): void {
