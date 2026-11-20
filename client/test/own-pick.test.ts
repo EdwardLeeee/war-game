@@ -1,6 +1,7 @@
-// A tap on one of ours walking through one of our buildings picks the building (D-154: ours walk through our own
-// buildings; ceo 2026-11-18): not one standing still there (our gate's opening, an outpost), not on a farm, where
-// farmers stand to work; not an enemy's unit; not one of ours only beside the building.
+// A tap beside one of ours walking through one of our buildings, on that building, picks the building (D-154: ours walk
+// through our own buildings; ceo 2026-11-18); right on it (UNIT_CORE_HIT_PT), that one (ceo 2026-11-20). Not one
+// standing still there (our gate's opening, an outpost), not on a farm, where farmers stand to work; not an enemy's
+// unit; not one of ours only beside the building.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -56,12 +57,34 @@ function view(units: ([number, number, number, number, number] | [number, number
 const at = (x: number, y: number) => [x * TILE_PX, y * TILE_PX] as const;
 const BARRACKS: [number, number, number, number, number] = [50, 0, BuildingType.Barracks, 10, 10];
 
-test("我們的村民、兵走過我們的兵營（在占地裡）：點那裡選到兵營", () => {
+test("我們的村民、兵走過我們的兵營（在占地裡）：點在他旁邊（15 pt，還在兵營上）選到兵營", () => {
   for (const type of [UnitType.Farmer, UnitType.Spearman]) {
     const v = view([[1, 0, type, 11.5, 11.5]], [BARRACKS]);
-    const p = v.pick(...at(11.5, 11.5), 22);
-    assert.deepEqual(p, { kind: "building", id: 50, owner: 0, type: BuildingType.Barracks }, `type ${type}`);
+    const [x, y] = at(11.5, 11.5);
+    for (const [dx, dy] of [[15, 0], [-15, 0], [0, 15], [0, -15], [11, 11]]) {
+      assert.deepEqual(v.pick(x + dx, y + dy, 22), { kind: "building", id: 50, owner: 0, type: BuildingType.Barracks }, `type ${type} ${dx},${dy}`);
+    }
   }
+});
+
+test("我們的村民、兵走過我們的兵營：手指落在他身上（12 pt 以內）選到他", () => {
+  for (const type of [UnitType.Farmer, UnitType.Spearman]) {
+    const v = view([[1, 0, type, 11.5, 11.5]], [BARRACKS]);
+    const [x, y] = at(11.5, 11.5);
+    for (const [dx, dy] of [[0, 0], [8, 0], [0, -8], [-12, 0]]) {
+      assert.deepEqual(v.pick(x + dx, y + dy, 22), { kind: "unit", id: 1, owner: 0, type }, `type ${type} ${dx},${dy}`);
+    }
+  }
+});
+
+test("走在兵營占地邊上：點在他旁邊、但在兵營外面，選到他", () => {
+  const size = MOCK_RULES.buildings[BuildingType.Barracks]?.size ?? 3;
+  const edge = 10 + size - 0.2;
+  const v = view([[1, 0, UnitType.Farmer, edge, 11.5]], [BARRACKS]);
+  const [x, y] = at(edge, 11.5);
+  assert.equal(v.pick(x + 15, y, 22)?.kind, "unit");
+  // The same on the barracks' side of him: the barracks.
+  assert.equal(v.pick(x - 15, y, 22)?.kind, "building");
 });
 
 test("站在兵營旁邊（不在占地裡）、敵人的兵在我們兵營的占地裡：照舊選到那個兵", () => {
