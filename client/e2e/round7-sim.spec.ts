@@ -4,7 +4,7 @@
 // a stable and train cavalry. Each step through the screen's own buttons.
 
 import { expect, type Page, test } from "@playwright/test";
-import { armyButton, selectForCommands, shot, watchErrors } from "./helpers.ts";
+import { armyButton, selectForCommands, shot, tapOwnBuilding, watchErrors } from "./helpers.ts";
 import { tap } from "./touch.ts";
 
 const RANGED = 2;
@@ -51,13 +51,10 @@ async function tapBuilding(page: Page, b: Building): Promise<void> {
   throw new Error(`no cell of building ${b.id} to tap`);
 }
 
-/** Select a building of ours by tapping it, again if a villager walked onto the cell between the check and the tap (CI run 37657367728). */
+/** Select a building of ours by tapping it, the game paused for the tap (a villager walked onto the cell between the check and the tap, CI run 37657367728): tapOwnBuilding. */
 async function selectBuilding(page: Page, b: Building): Promise<void> {
-  await expect(async () => {
-    await page.evaluate(() => window.__proto?.game?.select([]));
-    await tapBuilding(page, b);
-    expect(await page.evaluate(() => window.__proto?.game?.selection().building ?? null)).toBe(b.id);
-  }).toPass({ timeout: 30_000 });
+  await page.evaluate(() => window.__proto?.game?.select([]));
+  await tapOwnBuilding(page, b.id);
 }
 
 /** 建造 → this building → the preview on the nearest spot where it may go (by the placement grid) → ✓. */

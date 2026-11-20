@@ -4,7 +4,7 @@
 // hashes CI computed with the headless runner (dist/expected-hashes.json).
 
 import { expect, type Page, test } from "@playwright/test";
-import { hintTownOf, openLab, resText, shot, watchErrors } from "./helpers.ts";
+import { hintTownOf, openLab, resText, shot, tapOwnBuilding, watchErrors } from "./helpers.ts";
 import { doubleTap, tap } from "./touch.ts";
 
 const FARMER = 0;
@@ -266,9 +266,7 @@ test("介面：資源列是模擬的數字；選主城 → 訓練村民 → 佇�
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
   const city = (await page.evaluate(() => window.__proto?.game?.buildings() ?? [])).find((b) => b.owner === me && b.type === 0);
   if (city === undefined) throw new Error("no main city");
-  const centre = { x: city.cx + Math.floor(city.size / 2), y: city.cy + Math.floor(city.size / 2) };
-  await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y), [centre.x, centre.y] as const);
-  await tap(page, await toScreen(page, centre));
+  await tapOwnBuilding(page, city.id);
   await expect(page.locator(".sel-info")).toContainText("主城");
   const before = (await farmers(page)).length;
   await page.getByRole("button", { name: /^訓練村民/ }).tap();
@@ -333,8 +331,7 @@ test("已經有的規則被拒時說明原因：主城連排 5 個村民，第 5
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
   const city = (await page.evaluate(() => window.__proto?.game?.buildings() ?? [])).find((b) => b.owner === me && b.type === 0);
   if (city === undefined) throw new Error("no main city");
-  const c = { x: city.cx + Math.floor(city.size / 2), y: city.cy + Math.floor(city.size / 2) };
-  await tap(page, await toScreen(page, c));
+  await tapOwnBuilding(page, city.id);
   await expect(page.locator(".sel-info")).toContainText("主城");
   // Standard start: 200 food, a farmer costs 50. Orders given while paused all run on the next tick.
   for (let i = 0; i < 5; i++) await page.getByRole("button", { name: /^訓練村民/ }).tap();
@@ -350,7 +347,7 @@ test("選了村民時點自己完好的建築是選取它（不是叫村民去�
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
   const city = (await page.evaluate(() => window.__proto?.game?.buildings() ?? [])).find((b) => b.owner === me && b.type === 0);
   if (city === undefined) throw new Error("no main city");
-  await tap(page, await toScreen(page, { x: city.cx + Math.floor(city.size / 2), y: city.cy + Math.floor(city.size / 2) }));
+  await tapOwnBuilding(page, city.id);
   await expect.poll(() => selection(page)).toEqual({ units: [], building: city.id });
   // The command area is the main city's now.
   await expect(page.getByRole("button", { name: /^訓練村民/ })).toBeVisible();

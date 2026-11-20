@@ -5,8 +5,7 @@
 // The pictures go to the user with art-v6, when the feature goes on.
 
 import { expect, type Page, test } from "@playwright/test";
-import { formalOn, meaningText, orderHelp, selectForCommands, shot, watchErrors } from "./helpers.ts";
-import { tap } from "./touch.ts";
+import { formalOn, meaningText, orderHelp, selectForCommands, shot, tapOwnBuilding, watchErrors } from "./helpers.ts";
 
 const SIEGE = 6;
 const SIEGE_WORKS = 14;
@@ -14,7 +13,6 @@ const units = (page: Page) => page.evaluate(() => window.__proto?.game?.units() 
 const buildings = (page: Page) => page.evaluate(() => window.__proto?.game?.buildings() ?? []);
 const siege = (page: Page) => page.evaluate(() => window.__proto?.game?.siege() ?? { shots: 0, rings: 0 });
 const centre = (page: Page, x: number, y: number, scale = 1) => page.evaluate(([cx, cy, s]) => window.__proto?.game?.centerOn(cx, cy, s), [x, y, scale] as const);
-const at = (page: Page, c: { x: number; y: number }) => page.evaluate(([x, y]) => window.__proto?.game?.cellToScreen(x, y) ?? { x: 0, y: 0 }, [c.x, c.y] as const);
 
 async function start(page: Page, query: string): Promise<void> {
   await page.goto(`./?test=1&mock=1&tps=20${query}`);
@@ -87,9 +85,7 @@ test("攻城砲（D-099）：石頭從攻城砲飛到落點、看不到的攻城
   // Our 砲坊: 訓練攻城砲, and 自動訓練 as at the barracks (D-098).
   const own = (await buildings(page)).find((b) => b.owner === me && b.type === SIEGE_WORKS);
   if (own === undefined) throw new Error("no siege works");
-  await centre(page, own.cx + 1.5, own.cy + 1.5, 1.2);
-  await tap(page, await at(page, { x: own.cx + 1.5, y: own.cy + 1.5 }));
-  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.selection()))?.building).toBe(own.id);
+  await tapOwnBuilding(page, own.id, 1.2);
   await expect(page.locator(".sel-info")).toContainText("砲坊");
   const train = page.locator(".cmds").getByRole("button", { name: /^訓練攻城砲/ });
   await expect(train).toBeVisible();

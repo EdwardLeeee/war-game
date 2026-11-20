@@ -4,8 +4,7 @@
 // the places up.
 
 import { expect, type Page, test } from "@playwright/test";
-import { expectSaid, recordToasts, watchErrors } from "./helpers.ts";
-import { tap } from "./touch.ts";
+import { expectSaid, recordToasts, tapOwnBuilding, watchErrors } from "./helpers.ts";
 
 const MAIN_CITY = 0;
 const RANGE = 7;
@@ -13,21 +12,9 @@ const RANGED = 2;
 
 const sent = (page: Page) => page.evaluate(() => (window.__proto?.game?.sent() ?? []) as Record<string, unknown>[]);
 
+/** One of our buildings selected by a tap, the game paused for it: tapOwnBuilding. */
 async function tapBuilding(page: Page, id: number): Promise<void> {
-  const b = (await page.evaluate(() => window.__proto?.game?.buildings() ?? [])).find((v) => v.id === id);
-  if (b === undefined) throw new Error(`no building ${id}`);
-  await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 1), [b.cx + b.size / 2, b.cy + b.size / 2] as const);
-  await page.waitForTimeout(300);
-  for (let y = b.cy; y < b.cy + b.size; y++) {
-    for (let x = b.cx; x < b.cx + b.size; x++) {
-      const at = await page.evaluate(([cx, cy]) => window.__proto?.game?.cellToScreen(cx + 0.5, cy + 0.5) ?? { x: 0, y: 0 }, [x, y] as const);
-      if ((await page.evaluate(([sx, sy]) => window.__proto?.game?.pickAt(sx, sy) ?? null, [at.x, at.y] as const)) !== "building") continue;
-      await tap(page, at);
-      await expect.poll(() => page.evaluate(() => window.__proto?.game?.selection().building ?? null)).toBe(id);
-      return;
-    }
-  }
-  throw new Error(`building ${id} not tappable`);
+  await tapOwnBuilding(page, id, 1);
 }
 
 test("＋遠程 附近沒有遠程：沒有射場就說練不出來；有射場就留位子、多練一名、練好走進主城；全部離開取消位子", async ({ page }) => {

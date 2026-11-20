@@ -8,7 +8,7 @@
 // the town is left short. The pictures for the user.
 
 import { expect, type Page, test } from "@playwright/test";
-import { command, expectGroupFolded, foldGroup, formalOn, saveGroup, selectForCommands, selTitle, shot, watchErrors } from "./helpers.ts";
+import { command, expectGroupFolded, foldGroup, formalOn, saveGroup, selectForCommands, selTitle, shot, tapOwnBuilding, watchErrors } from "./helpers.ts";
 import { tap } from "./touch.ts";
 
 const RANGED = 2;
@@ -207,8 +207,7 @@ test("新兵補進全部駐守的編隊就走進那座城當留守；編隊再�
   await page.evaluate((i) => window.__proto?.game?.remove(i), [spears[3]]);
   await expect(page.locator(GROUP_1)).toContainText("3/4");
   await page.evaluate(() => window.__proto?.game?.select([]));
-  await centre(page, BARRACKS.x + 1, BARRACKS.y + 1);
-  await tap(page, await at(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 }));
+  await tapOwnBuilding(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 });
   await page.getByRole("button", { name: /^訓練槍兵/ }).tap();
   await expect.poll(said, { timeout: 30_000 }).toContain("新的槍兵補進編隊 1，走進城裡留守");
   await expect(page.locator(GROUP_1)).toContainText("駐4");

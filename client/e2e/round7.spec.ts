@@ -6,7 +6,7 @@
 // side is tested by core.
 
 import { expect, type Page, test } from "@playwright/test";
-import { armyButton, command, expectSaid, formalOn, FULL_SCREEN, injectSafeArea, INTERACTIVE, IPHONE_SAFE, meaningText, openPanel, orderHelp, saveGroup, selectForCommands, shot, visibleBoxes, watchErrors, watchToasts } from "./helpers.ts";
+import { armyButton, command, expectSaid, formalOn, FULL_SCREEN, injectSafeArea, INTERACTIVE, IPHONE_SAFE, meaningText, openPanel, orderHelp, saveGroup, selectForCommands, shot, tapOwnBuilding, visibleBoxes, watchErrors, watchToasts } from "./helpers.ts";
 import { tap, tapOn } from "./touch.ts";
 
 // Fake-world layout with r7=1, in cells.
@@ -217,7 +217,7 @@ test("進駐主城（D-061、D-125）：主城的標籤寫進遠程和法師、�
   await expect.poll(() => soldiersIn(page, city), TICKS).toBe(hiders.length);
   await expect.poll(async () => (await units(page)).filter((u) => hiders.includes(u.id)).every((u) => u.action === 7 && u.order === 9), TICKS).toBe(true);
   // The city: how many hide inside, how many fit, and 全部離開.
-  await tap(page, await at(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 }));
+  await tapOwnBuilding(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 });
   const panel = page.locator(".sel-info");
   await expect(panel.locator(".garrison-count")).toHaveText(`${hiders.length}/6`);
   const out = panel.getByRole("button", { name: "全部離開" });
@@ -244,8 +244,7 @@ test("＋遠程／＋法師（D-080）：選自己的主城就能叫兵躲進來
   await page.evaluate(([id, x, y]) => window.__proto?.game?.send({ c: "move", u: [id], x, y }), [ranged[0], 50, 30] as const);
   await place(page, [ranged[1]], [{ x: MAIN_CITY.x + 12, y: MAIN_CITY.y }]);
   await place(page, [ranged[2], ranged[3], ...mages], [{ x: 60, y: 30 }, { x: 61, y: 30 }, { x: 62, y: 30 }, { x: 63, y: 30 }]);
-  await centre(page, MAIN_CITY.x + 2, MAIN_CITY.y + 2);
-  await tap(page, await at(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 }));
+  await tapOwnBuilding(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 });
   const panel = page.locator(".sel-info");
   await expect(panel.locator(".sel-head")).toContainText("主城");
   const callRanged = panel.getByRole("button", { name: "叫 1 名遠程兵躲進來" });
@@ -489,8 +488,7 @@ test("剋／怕（D-097）：訓練鈕寫「剋：…／怕：…」，只選一
   await start(page);
   await injectSafeArea(page);
   // The barracks' 訓練槍兵, two columns wide for the line.
-  await centre(page, BARRACKS.x + 1, BARRACKS.y + 1);
-  await tap(page, await at(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 }));
+  await tapOwnBuilding(page, { x: BARRACKS.x + 1, y: BARRACKS.y + 1 });
   const spear = page.locator(".cmds").getByRole("button", { name: /^訓練槍兵/ });
   await expect(spear.locator(".counter-sub")).toHaveText("剋：騎兵／怕：遠程");
   await checkLayout(page);
@@ -557,8 +555,7 @@ for (const viewport of [null, FULL_SCREEN]) {
     expect(rows.size, "rows of commands").toBe((await formalOn(page)) ? 1 : 2);
     const { width, height } = page.viewportSize() ?? { width: 0, height: 0 };
     await shot(page, info, `r7-layout-army-${width}x${height}`);
-    await centre(page, MAIN_CITY.x + 2, MAIN_CITY.y + 2);
-    await tap(page, await at(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 }));
+    await tapOwnBuilding(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 });
     await expect(page.locator(".sel-info .garrison-count")).toBeVisible();
     await checkLayout(page);
     await shot(page, info, `r7-layout-city-${width}x${height}`);
@@ -589,8 +586,7 @@ test("開關關著（沒有 r7）：沒有箭樓、馬廄、騎兵那一列、�
   await expect(page.locator(".sel-info .group-row").filter({ hasText: "騎兵" })).toHaveCount(0);
   // The group's panel could cover the main city at the centre of the screen.
   await page.evaluate(() => window.__proto?.game?.select([]));
-  await centre(page, MAIN_CITY.x + 2, MAIN_CITY.y + 2);
-  await tap(page, await at(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 }));
+  await tapOwnBuilding(page, { x: MAIN_CITY.x + 2, y: MAIN_CITY.y + 2 });
   const panel = page.locator(".sel-info");
   await expect(panel).toContainText("主城");
   await expect(panel.locator(".sel-garrison")).toHaveCount(0);
