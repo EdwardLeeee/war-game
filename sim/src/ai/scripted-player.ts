@@ -1104,10 +1104,13 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
           const outposts = tune.turtle.outposts.filter((m) => tick >= m * 1200).length;
           if (rules.features?.outpost === true && count(BuildingType.Outpost) < outposts) add(BuildingType.Outpost, outpostAt[count(BuildingType.Outpost) % outpostAt.length]);
         }
+        // The gold mine's drop-off before the farms and the market (war-game-ai, D-154; ceo 2026-11-18): the farm target
+        // grows with the farmers, and with the wood short a farm it cannot afford holds back everything after it in this list,
+        // so a faster economy (more farmers sooner) left the mine unbuilt and the army short of gold.
+        if (!has(BuildingType.Mine) && farmers.length >= 14) add(BuildingType.Mine, nearestNode(NodeKind.GoldMine));
         if (count(BuildingType.Farm) < Math.min(10, 2 + (farmers.length >> 2))) add(BuildingType.Farm, granary ? { x: granary.x + 1, y: granary.y + 1 } : base);
         // D-101 (while the market is on): a market once it has a granary and MARKET_FARMERS farmers.
         if (rules.features?.market === true && !has(BuildingType.Market) && granary && farmers.length >= MARKET_FARMERS) add(BuildingType.Market, base);
-        if (!has(BuildingType.Mine) && farmers.length >= 14) add(BuildingType.Mine, nearestNode(NodeKind.GoldMine));
         if (res.food + res.wood >= 600 && count(BuildingType.Barracks) + count(BuildingType.Range) < plan.production) {
           add(plan.noRange || count(BuildingType.Barracks) <= count(BuildingType.Range) ? BuildingType.Barracks : BuildingType.Range, rally);
         }
