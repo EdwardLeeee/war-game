@@ -3,7 +3,7 @@
 // 建造 offers 市場 (木 150), greyed until a granary; our market's panel has a line each for food and
 // wood, 買 100 and 賣 100 with the gold now; a tap trades one lot at once (`trade`), the toast says
 // what was bought or sold and the price moves; not enough, the button greys and says why; refused,
-// the line says why in plain words; how prices move, the first time the panel opens only. Off
+// the line says why in plain words; how prices move, until it has been seen (a trade made, or 4 s on the screen). Off
 // (every other page): no market.
 
 import { expect, type Page, test } from "@playwright/test";
@@ -94,6 +94,25 @@ test("市場（D-101）：面板寫買 100、賣 100 的價錢；按一下就成
   await expect(panel.locator(".market-note")).toHaveCount(0);
   expect(await page.evaluate(() => localStorage.getItem("war-game.proto.marketHint"))).toBe("seen");
   await shot(page, info, "market-panel-again");
+});
+
+test("市場的說明要看過才算（ceo 2026-11-20）：剛打開就暫停、繼續（面板重畫），說明還在；開著 4 秒以上才算看過，關掉再打開就不再出現", async ({ page }) => {
+  await start(page, "&market=1");
+  await openMarket(page);
+  const note = page.locator(".market .market-note");
+  await expect(note).toHaveText(NOTE);
+  // 暫停 and 繼續 at once: the panel built again each time (its line of waiting orders), the note still there.
+  await page.evaluate(() => window.__proto?.game?.pause());
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused)).toBe(true);
+  await expect(note).toHaveText(NOTE);
+  await page.getByRole("button", { name: "繼續", exact: true }).tap();
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.header().paused)).toBe(false);
+  await expect(note).toHaveText(NOTE);
+  // On the screen 4 s: seen (kept on this device); the panel opened again has none.
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("war-game.proto.marketHint")), { timeout: 15_000 }).toBe("seen");
+  await page.locator(".sel-info").getByRole("button", { name: "取消選取" }).tap();
+  await openMarket(page);
+  await expect(note).toHaveCount(0);
 });
 
 test("市場（D-101）：錢或貨不夠時按鈕變灰、寫原因；被拒時白話說原因（金不夠、沒有蓋好的市場）", async ({ page }, info) => {
