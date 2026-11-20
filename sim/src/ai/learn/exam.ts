@@ -11,10 +11,14 @@
 //       --parents-from) that parents are drawn from too (a search near them); never kept themselves, so never checked again.
 //   node src/ai/learn/exam.ts check --from DIR[,DIR...] --out DIR [--games 200] [--seed-from 6000001] [--top 12]
 //                                    [--shard K --shards N] [--cap 90] [--qualify 25] [--least 20] [--skip-checked]
+//                                    [--ids ID[,ID...]]
 //       The best plan of each kind across the searches (candidates.json under each DIR), the best `top` kinds, each
 //       `games` games on fresh seeds; examiners.json lists them, qualified with `qualify` percent wins or more.
 //       --skip-checked: examiners.json under the DIRs too (earlier checks): their plans are not checked again, nor
 //       plans of a kind already qualified (ceo 2026-11-18: no new seeds for a plan that failed; the qualified stand).
+//       --ids: exactly these plans, in this order, whatever their kind or share (ceo 2026-11-20: the examiners checked
+//       again on fresh seeds after a rule change, D-154); --top, --least and --skip-checked do not apply. A missing id
+//       is an error.
 // Every mode writes summary.md (Markdown) and its files under --out; never commits.
 // In CI (YIELD_REPO set, D-123; ceo 2026-11-16): every YIELD_EVERY it looks at the repository's other runs; a Pages job
 // waiting for a runner, or any other job waiting YIELD_WAIT or longer, and it stops at once (search: the cycle under way is
@@ -274,10 +278,20 @@ async function check(): Promise<void> {
     const b = best.get(k);
     if (b === undefined || share(c) > share(b) || (share(c) === share(b) && c.id < b.id)) best.set(k, c);
   }
-  const picked = [...best.values()].sort((a, b) => share(b) - share(a) || a.id.localeCompare(b.id)).slice(0, topN);
+  // --ids: these plans as they were kept, the first found of each id (search ids are unique: SEED-NUMBER).
+  const ids = arg("ids", "").split(",").filter((x) => x !== "");
+  let picked: Cand[];
+  if (ids.length > 0) {
+    const byId = new Map<string, Cand>();
+    for (const f of findFiles(dirs)) for (const c of JSON.parse(readFileSync(f, "utf8")).kept as Cand[]) if (!byId.has(c.id)) byId.set(c.id, c);
+    const missing = ids.filter((id) => !byId.has(id));
+    if (missing.length > 0) throw new Error(`--ids: not kept by any search under --from: ${missing.join(", ")}`);
+    picked = ids.map((id) => byId.get(id)!);
+  } else picked = [...best.values()].sort((a, b) => share(b) - share(a) || a.id.localeCompare(b.id)).slice(0, topN);
   const mine = picked.filter((_, i) => i % shards === shard);
-  summary(`# 驗考官（D-147）：${all.length} 個留下的打法、${best.size} 種，取前 ${picked.length} 種；這個 job 是第 ${shard + 1}/${shards} 份，${mine.length} 個\n`);
-  if (checkedIds.size > 0) summary(`跳過：驗過的 ${checkedIds.size} 個打法；已經合格的種類 ${[...qualifiedKinds].join("、") || "（沒有）"}。\n`);
+  if (ids.length > 0) summary(`# 驗考官（D-147）：指定的 ${picked.length} 個打法（${ids.join("、")}）；這個 job 是第 ${shard + 1}/${shards} 份，${mine.length} 個\n`);
+  else summary(`# 驗考官（D-147）：${all.length} 個留下的打法、${best.size} 種，取前 ${picked.length} 種；這個 job 是第 ${shard + 1}/${shards} 份，${mine.length} 個\n`);
+  if (ids.length === 0 && checkedIds.size > 0) summary(`跳過：驗過的 ${checkedIds.size} 個打法；已經合格的種類 ${[...qualifiedKinds].join("、") || "（沒有）"}。\n`);
   summary(`每個打新的種子 ${games} 局（從 ${seedFrom} 起），對困難、不給加成、${cap / MIN} 分算未分；贏 ${qualify}% 以上算合格。\n`);
   const fresh: Cand[] = mine.map((c) => ({ ...c, games: [] }));
   // One plan at a time, so a give-way keeps the plans done.
