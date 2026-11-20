@@ -19,6 +19,7 @@ import {
   retreatHome,
   selectIntents,
   tapIntents,
+  toCell,
   type WheelItem,
   wheelIntents,
   wheelItems,
@@ -103,7 +104,7 @@ import { stoneOf } from "./siege.ts";
 import { Charges } from "./follow.ts";
 import { SentStances } from "./stances.ts";
 import { type Callable, callFullText, callNoneText, isHiding, pickToHide } from "./garrison.ts";
-import { buildingPlan, ENTER_PROMPT, ENTER_WRONG_TARGET, enterNowhereText, type EnterPlan, type EnterSoldier, townPlan } from "./enter.ts";
+import { buildingPlan, ENTER_PROMPT, ENTER_WRONG_TARGET, enterNowhereText, enterOn, enterPlaceAt, type EnterPlan, type EnterSoldier, townPlan, walkingTo, withoutUnits } from "./enter.ts";
 import { EnterLayer } from "../ui/enter-layer.ts";
 import { allIn, orderState } from "./orders.ts";
 import { heldTown, leaveWalls } from "./walls.ts";
@@ -3247,7 +3248,7 @@ export class Game implements GestureHost {
     this.renderer?.setEnterRings(this.enterNow.map((c) => ({ id: c.id, corners: c.corners, off: c.plan.off })));
     // Rule 12: nowhere to go, here or off the screen: why, and only 取消.
     const open = this.enterNow.some((c) => !c.plan.off);
-    const full = this.enterNow.some((c) => c.plan.off && c.plan.head.startsWith("滿了"));
+    const full = this.enterNow.some((c) => c.plan.off && c.plan.full);
     const types = selected.length > 0 ? selected.map((s) => s.type) : this.enterTownGoing(-1).go.map((s) => s.type);
     const text = open ? ENTER_PROMPT : enterNowhereText(types, full, view.rules);
     if (text !== this.enterPrompt) {
@@ -3329,6 +3330,16 @@ export class Game implements GestureHost {
       this.toast(c.plan.why ?? ENTER_WRONG_TARGET);
       return;
     }
+    this.enterInto(c, true);
+  }
+
+  /**
+   * Those selected into place `c`, lit, as its tag says (進駐's tap; the mouse's right click, R26 06 a): the order, those
+   * who went out of what is selected (a town: all of their soldiers), what is said. `end`: out of picking (進駐's tap).
+   */
+  private enterInto(c: EnterChoice, end: boolean): void {
+    const view = this.view;
+    if (view === null) return;
     const went = c.plan.go;
     // Out of what is selected (the user's reports: a next order for those selected would take them out again).
     const leave = (ids: readonly number[]) => {
@@ -3342,7 +3353,7 @@ export class Game implements GestureHost {
       // Every soldier of theirs out of what is selected: those going, those already in this town and
       // those another town keeps back (as 駐軍 did): a next order would take them out of it.
       leave(this.army.withGroups(view.selection.units).filter((u) => view.unitRow(u) >= 0 && isSoldier(view.unitType(u))));
-      this.apply([{ kind: "endMode" }]);
+      if (end) this.apply([{ kind: "endMode" }]);
       if (ids.length === 0) return;
       this.command({ c: "guard", u: ids, town: c.town });
       this.keepIn(c.town, ids);
@@ -3351,7 +3362,7 @@ export class Game implements GestureHost {
       return;
     }
     const cmd: CommandBody = c.kind === "post" ? { c: "post", u: went, building: c.building } : { c: "garrison", u: went, building: c.building };
-    this.apply([{ kind: "command", cmd }, { kind: "endMode" }]);
+    this.apply(end ? [{ kind: "command", cmd }, { kind: "endMode" }] : [{ kind: "command", cmd }]);
     leave(went);
     this.toast(c.kind === "post" ? `${went.length} 名槍兵${outpostHide(view.rules) ? "躲進" : "去駐守"}哨所` : `${went.length} 名躲進${c.name}`);
   }
@@ -3410,7 +3421,8 @@ export class Game implements GestureHost {
 
   /**
    * The mouse's right click (R26 06 B): the order a tap would give the units selected; what is selected stays (ceo
-   * 2026-11-20). Nothing while placing a building or choosing a place, nor with no units selected.
+   * 2026-11-20), but for those who went into a place of ours (enterByClick). Nothing while placing a building or
+   * choosing a place, nor with no units selected.
    */
   order(x: number, y: number): void {
     const view = this.view;
@@ -3420,7 +3432,34 @@ export class Game implements GestureHost {
       return;
     }
     const w = this.world(x, y);
-    this.apply(commandIntents(view, view.selection, w.x, w.y, this.hitRadius(), UNIT_CORE_HIT_PT / (this.camera?.scale ?? 1)));
+    const r = this.hitRadius();
+    this.apply(this.enterByClick(commandIntents(view, view.selection, w.x, w.y, r, UNIT_CORE_HIT_PT / (this.camera?.scale ?? 1)), w.x, w.y, r));
+  }
+
+  /**
+   * The mouse's right click on a place of ours 進駐 goes into (R26 06 a, ceo 2026-11-20: 「右鍵點自己能進駐的地方：進得
+   * 去的進駐，進不去的走到旁邊」), where the click is a walk there (an enemy in our town is still 攻擊, a tree 採集, a
+   * farmer's building with work 修): lit, those its tag sends go in and out of what is selected (a town: as its tag
+   * says, those another town keeps stay), the rest walk there; grey, all walk there, as before. Full, saying so; their
+   * kind cannot, they are in it already, or their town keeps them (the order says that itself): nothing said.
+   * Returns the orders left of `out`.
+   */
+  private enterByClick(out: Intent[], wx: number, wy: number, r: number): Intent[] {
+    const view = this.view;
+    if (view === null || !enterOn(view.rules)) return out;
+    if (!walkingTo(out, toCell(wx), toCell(wy)).some((id) => isSoldier(view.unitType(id)))) return out;
+    const pick = view.pick(wx, wy, r);
+    const choices = this.enterChoices();
+    const at = enterPlaceAt(choices, pick !== null && pick.kind === "building" && pick.owner === view.me ? pick.id : null, wx, wy);
+    const c = choices.find((v) => v.id === at);
+    if (c === undefined) return out;
+    if (c.plan.off) {
+      if (c.plan.full && c.plan.why !== null) this.toast(c.plan.why);
+      return out;
+    }
+    const taken = c.kind === "town" ? this.army.withGroups(view.selection.units).filter((u) => isSoldier(view.unitType(u))) : c.plan.go;
+    this.enterInto(c, false);
+    return withoutUnits(out, taken);
   }
 
   /** The mouse's middle button dragged: the view, 1 to 1, even while a building is being placed. */

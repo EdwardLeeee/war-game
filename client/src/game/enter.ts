@@ -7,6 +7,7 @@
 // Room for fewer than can go: the nearest, chosen here (the simulation takes them in id order, and the
 // tag says who goes). What a tag says and whom it sends. Pure, for the unit tests.
 
+import type { Intent } from "../input/intent.ts";
 import { type Rules, UnitType } from "../sim.ts";
 import { garrisonTypes, outpostSlots } from "./features.ts";
 
@@ -45,6 +46,8 @@ export interface EnterPlan {
   short: string;
   /** Said when a grey one is tapped. */
   why: string | null;
+  /** Grey because it is full (a right click on it says `why`: R26 06 a, ceo 2026-11-20). */
+  full: boolean;
 }
 
 /** 「遠程 4・法師 2」: how many of each, in the tags' order. */
@@ -62,9 +65,9 @@ function kindsText(types: readonly number[]): string {
     .join("、");
 }
 
-const greyPlan = (head: string, why: string): EnterPlan => ({ go: [], off: true, head, sub: null, chip: "", short: "", why });
+const greyPlan = (head: string, why: string, full = false): EnterPlan => ({ go: [], off: true, head, sub: null, chip: "", short: "", why, full });
 
-const openPlan = (go: number[], head: string, sub: string | null): EnterPlan => ({ go, off: false, head, sub, chip: `進 ${go.length}`, short: `進 ${go.length} 名`, why: null });
+const openPlan = (go: number[], head: string, sub: string | null): EnterPlan => ({ go, off: false, head, sub, chip: `進 ${go.length}`, short: `進 ${go.length} 名`, why: null, full: false });
 
 /**
  * A place that takes some kinds and has room for some of them (a main city, an arrow tower, an
@@ -76,7 +79,7 @@ export function buildingPlan(selected: readonly EnterSoldier[], place: { name: s
     const kinds = kindsText(selected.map((s) => s.type));
     return greyPlan(`${kinds}進不去`, `${kinds}進不去${place.name}`);
   }
-  if (place.room <= 0) return greyPlan(`滿了 ${place.cap}/${place.cap}`, `${place.name}滿了（最多 ${place.cap} 名），沒有人進去`);
+  if (place.room <= 0) return greyPlan(`滿了 ${place.cap}/${place.cap}`, `${place.name}滿了（最多 ${place.cap} 名），沒有人進去`, true);
   if (fit.length <= place.room) {
     const stay = selected.filter((s) => !takes.includes(s.type)).map((s) => s.type);
     return openPlan(fit.map((s) => s.id).sort((a, b) => a - b), `進 ${whoText(fit.map((s) => s.type))}`, stay.length > 0 ? `留 ${whoText(stay)}` : null);
@@ -113,6 +116,49 @@ export function enterNowhereText(types: readonly number[], anyFull: boolean, rul
     seen.set(place, [...(seen.get(place) ?? []), type]);
   }
   return `選的兵沒有地方可以進駐：${[...seen].map(([place, kinds]) => `${kindsText(kinds)}只能進${place}`).join("，")}`;
+}
+
+/** A place 進駐 can go into, as the mouse's right click looks for one: which, and its box (world px). */
+export interface EnterSpot {
+  id: string;
+  kind: "town" | "hide" | "post";
+  /** Its building, for one that is not a town. */
+  building?: number;
+  corners: readonly { x: number; y: number }[];
+}
+
+/**
+ * The place of ours a point is on (R26 06 a, ceo 2026-11-20: the mouse's right click, and its cursor to come): the
+ * building seen there (`building`: the one a tap picks) when it is one of `places`; else the town whose box holds the
+ * point (its keep, its walls, our soldiers standing in it: the town). A building's before a town's, as 進駐's tap ranks
+ * their rings. Null: none.
+ */
+export function enterPlaceAt(places: readonly EnterSpot[], building: number | null, wx: number, wy: number): string | null {
+  if (building !== null) {
+    const b = places.find((p) => p.kind !== "town" && p.building === building);
+    if (b !== undefined) return b.id;
+  }
+  for (const p of places) {
+    if (p.kind !== "town" || p.corners.length === 0) continue;
+    const xs = p.corners.map((c) => c.x);
+    const ys = p.corners.map((c) => c.y);
+    if (wx >= Math.min(...xs) && wx < Math.max(...xs) && wy >= Math.min(...ys) && wy < Math.max(...ys)) return p.id;
+  }
+  return null;
+}
+
+/** Those the orders walk to cell (x, y) (移動 there, a farmer's move there): those a place of ours there may take instead. */
+export function walkingTo(intents: readonly Intent[], x: number, y: number): number[] {
+  return intents.flatMap((i) => (i.kind === "command" && (i.cmd.c === "retreat" || i.cmd.c === "move") && i.cmd.x === x && i.cmd.y === y ? i.cmd.u : []));
+}
+
+/** The orders without these units in them (an order left to nobody, gone). */
+export function withoutUnits(intents: readonly Intent[], ids: readonly number[]): Intent[] {
+  return intents.flatMap((i) => {
+    if (i.kind !== "command" || !("u" in i.cmd) || !Array.isArray(i.cmd.u)) return [i];
+    const u = i.cmd.u.filter((id) => !ids.includes(id));
+    return u.length === 0 ? [] : [{ kind: "command", cmd: { ...i.cmd, u } } as Intent];
+  });
 }
 
 /** Whether 進駐 is offered at all: something it could go into is on (features.ts). */

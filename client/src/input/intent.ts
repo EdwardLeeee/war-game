@@ -215,7 +215,7 @@ export function selectIntents(world: IntentWorld, wx: number, wy: number, count:
  * The mouse's right click (R26 06 B): the order a tap gives the units selected (the ground 移動, an enemy 攻擊, a tree
  * 採集, farmers on a building of ours with work there that work). It never changes what is selected (ceo 2026-11-20):
  * on one of ours, or a building of ours with no work for them, they walk there. Nothing selected (or a building): none.
- * Our own town is 移動 for now (進駐 by a right click is the next PR's, ceo 2026-11-20).
+ * A walk onto a place of ours 進駐 goes into is 進駐 for those it takes (Game.enterByClick, R26 06 a).
  */
 export function commandIntents(world: IntentWorld, sel: Selection, wx: number, wy: number, r: number, core = r): Intent[] {
   if (sel.units.length === 0) return [];
