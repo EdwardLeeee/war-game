@@ -22,7 +22,13 @@ async function start(page: Page, query: string): Promise<void> {
 }
 
 test("寫實地面（D-093）：?ground=real 時地面在顯示卡上混合，畫在地形的圖下面、迷霧下面；高、低畫質可以即時切換（觀戰，給 ceo 和 ui 看）", async ({ page, browserName }, info) => {
-  test.setTimeout(180_000);
+  // Chromium on CI draws it with the CPU, about as slow as the machine: Xeon 6975P 1.7 min (#527's run 44406586369),
+  // EPYC 9V74 2.3 and 2.4, Xeon 8370C 2.8 (main's 44381489236), and on the slowest, AMD EPYC 7763, 192–198 s against
+  // its 180 (#534's 44741715976 and #525's 44765482219 without --fully-parallel; main's 44768526848, #536's
+  // 44772107441, #537's 44783224608 with it). Twice the slowest, as a runner twice as slow may come (#535). Here alone
+  // 51 s: starting 6, each of the six pictures 3–3.5 (a frame of the real ground 120 ms), the 量測 panel 6, 量地面 9,
+  // 低 4, the last picture 6; all of it frames, so the slow machine's 3.8 times as long all through.
+  test.setTimeout(browserName === "chromium" ? 400_000 : 180_000);
   const check = watchErrors(page);
   await start(page, "watch=1&ai=0&art=x3&ground=real");
   // The water too, drawn by the shader (art-v6; the test page's stand-ins and the development set have its layer).
@@ -102,7 +108,8 @@ test("寫實地面開關（ceo 2026-10-25）：選單的「寫實地面：開」
 });
 
 test("R9 的地面和水（art-v7，?artlab=1：art-lab.lock.json 的美術）：起伏圖、沖溝、丘頂、風、河岸、深淺、漣漪、倒影、底片曲線；高、低畫質都畫得出來（兩種瀏覽器都要編得過著色器）", async ({ page, browserName }, info) => {
-  test.setTimeout(180_000);
+  // Chromium on the slowest CI machine (AMD EPYC 7763): 132 s (#534's run 44741715976); twice that.
+  test.setTimeout(browserName === "chromium" ? 270_000 : 180_000);
   const check = watchErrors(page);
   // 2 倍: lighter for CI's WebKit, the same ground.
   await start(page, "watch=1&ai=0&art=x2&artlab=1&ground=real");

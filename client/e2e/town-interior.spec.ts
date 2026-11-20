@@ -100,6 +100,8 @@ test("城內擺設不接點擊：選著兵點擺設的圖，照樣是點城鎮�
 });
 
 test("城裡的地（R8-36 B）：美術的 ground.json 有 rules.town 時，地面著色器畫土路和踩平的土", async ({ page }, info) => {
+  // 42.8 s of 60 on the slowest CI machine (AMD EPYC 7763, #535's run 44762845583); twice that.
+  test.setTimeout(120_000);
   const check = watchErrors(page);
   test.skip(!(await start(page, "&ground=real")), "art.lock 的城牆還不是 war-game castle 2（art-v6 之前）");
   await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.groundLook()))?.town, { timeout: 30_000 }).toBe(true);

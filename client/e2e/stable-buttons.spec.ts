@@ -12,7 +12,8 @@ import { watchErrors } from "./helpers.ts";
 test.use({ isMobile: false, hasTouch: false, deviceScaleFactor: 1, reducedMotion: "reduce" });
 // Chromium on CI draws 1920 × 950 with the CPU: 軍團畫面 took 59.7 s on a quick runner (#527's run 44406586369) and
 // timed out at 60 on a slow one (#534's run 44741715976); room for a runner twice as slow.
-test.describe.configure({ timeout: 120_000 });
+// On the slowest CI machine (AMD EPYC 7763, #535's run 44762845583) 軍團畫面 took 108 s: twice that.
+test.describe.configure({ timeout: 240_000 });
 // One worker, in order (as before --fully-parallel, #535): its tests draw a large battlefield with the CPU in CI's
 // Chromium, and two of them side by side on a runner's 4 cores each took twice as long (stable-buttons:137 144 s, beside
 // :126 and :162 for most of it: #535's run 44762845583). Other files' tests still take the other worker.
@@ -139,7 +140,8 @@ for (const size of [
     });
 
     test("主城＋遠程：點十下都點在「＋遠程」上；叫進來的到了、召回出現，＋遠程、＋法師還在原地", async ({ page }) => {
-      test.setTimeout(240_000);
+      // 144 s on the slowest CI machine (AMD EPYC 7763, #535's run 44762845583): twice that.
+      test.setTimeout(300_000);
       const check = watchErrors(page);
       await start(page, size);
       // Our ranged soldiers beside the main city, so that those called get there soon.
@@ -229,13 +231,22 @@ for (const size of [
       check();
     });
 
-    test("交易、加減：市場的買賣、經濟分配和軍團畫面的＋－，點十下都點在同一顆上", async ({ page }) => {
-      test.setTimeout(300_000);
+    // 交易、加減 in three (264 s of its 300 together on the slowest CI machine, AMD EPYC 7763, #535's run 44762845583):
+    // each about a third of that, and twice its share for its own time.
+    test("交易：市場的買賣，點十下都點在同一顆上", async ({ page }) => {
+      test.setTimeout(240_000);
       const check = watchErrors(page);
       await start(page, size);
       await openBuilding(page, MARKET);
       await tenClicks(page, /^買 100 糧/);
       await tenClicks(page, /^賣 100 木/);
+      check();
+    });
+
+    test("加減：經濟分配的＋－，點十下都點在同一顆上；過了 100%「－」不動", async ({ page }) => {
+      test.setTimeout(240_000);
+      const check = watchErrors(page);
+      await start(page, size);
       await openBuilding(page, MAIN);
       await page.getByRole("button", { name: "經濟分配" }).click();
       // Up to 100% and back: − stays as the number goes past 100.
@@ -244,7 +255,13 @@ for (const size of [
       await tenClicks(page, "糧多一點");
       expect(await box(page, '.dialog [aria-label="糧少一點"]')).toEqual(less);
       await tenClicks(page, "金少一點");
-      await page.getByRole("dialog").getByRole("button", { name: "取消" }).first().click();
+      check();
+    });
+
+    test("加減：軍團畫面的＋－，點十下都點在同一顆上；槍兵過了 9、10、20「－」不動", async ({ page }) => {
+      test.setTimeout(240_000);
+      const check = watchErrors(page);
+      await start(page, size);
       await page.evaluate(() => window.__proto?.game?.select([]));
       await page.locator(".army-btn").click();
       await page.locator(".groups > button").first().click();
