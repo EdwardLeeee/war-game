@@ -2402,9 +2402,6 @@ test("D-086 A3 (plan.peekFirst): no enemy soldier seen for a minute, one goes to
   assert.ok(march(second) || march(ai.think(buildView(g, 0))), "then it marches");
 });
 
-/** D-096 (core 2026-10-22): gates, when the rules have them (GATE). */
-const GATES = (RULES as unknown as { GATE?: { on: boolean } }).GATE;
-
 // --- D-130: a far work spot where hard's farmers fell ---------------------------------------------------------------
 
 /**
@@ -2517,22 +2514,18 @@ test("D-130 (plan.farAvoid): two spots remembered at most; a third puts out the 
 
 test(
   "D-086 A3: hard never changes an order after sending it (the log must replay), with its farmers hunted far from home",
-  // The bug was the AI's, not the map's: with gates hard plays seed 7 otherwise and never sends its farmers home
-  // (war-game-core 2026-10-22), so they are off here.
-  // The game found was on the rules before the D-100 batch (KEEP, SIEGE, RICH, MARKET), off here too; and with crystal
-  // (D-135's NO_CRYSTAL off: without it the game goes otherwise and its farmers are not hunted).
-  // D-154 (OWN_PASS) came later still: off for the game as found, on with the batch as it ships.
-  switchedOff([...(GATES === undefined ? [] : [GATES]), ...[KEEP, RULES.SIEGE, RULES.RICH, RULES.MARKET, NO_CRYSTAL, RULES.OWN_PASS]], () => {
+  // The game first found (seed 7, war-game-core 2026-10-22: farmers sent home from one spot twice from minute 11, an order
+  // shared with its list changed then) needed crystal, which D-135 took out. On the rules as they ship (2026-11-21: gates,
+  // the D-100 batch, no crystal, D-154 OWN_PASS) hard sends its farmers home in seed 3 without D-086 A6 and in seed 5 with
+  // it (seeds 1-12 scanned; none does both). If a rule change ends that (hid 0), scan seeds with this play for farmersHid > 0.
+  // With the gathering point on (STAGING), as the game has it; this file turns it off.
+  () => {
     // The late group with its farmer hunters (scripted-games --late --harass 10) against hard, 20 minutes.
-
-    // Seed 7 (D-089's map): farmers sent home from one spot twice from minute 11 (an order shared with its list was changed then).
-    // That game is hard's without D-086 A6 (with it, its farmers are not hunted far from home there); with it on, the orders
-    // are checked too.
-    const play = (a6: boolean) => {
+    const play = (seed: number, a6: boolean) => {
       const was = { holdTowns: HARD.holdTowns, econBehind: HARD.econBehind, goldCavalry: HARD.goldCavalry, crystalStop: HARD.crystalStop, woodShift: HARD.woodShift };
       if (!a6) Object.assign(HARD, { holdTowns: false, econBehind: false, goldCavalry: 0, crystalStop: false, woodShift: false });
       try {
-        const r = new Runner({ seed: 7, scenario: "standard", ai: [false, true], maxTicks: 0, difficulty: ["normal", "hard"] });
+        const r = new Runner({ seed, scenario: "standard", ai: [false, true], maxTicks: 0, difficulty: ["normal", "hard"] });
         const g = r.game;
         const m = g.w.map;
         const plan = planFor("push", "h1", "close");
@@ -2553,21 +2546,14 @@ test(
         Object.assign(HARD, was);
       }
     };
-    const before = play(false);
-    assert.ok(before.hid > 0, "its farmers were sent home");
+    const before = staging(() => play(3, false));
+    assert.ok(before.hid > 0, "its farmers were sent home (seed 3, without D-086 A6)");
     assert.deepEqual(before.changed, [], "orders as sent");
-    assert.deepEqual(play(true).changed, [], "orders as sent, with D-086 A6");
-    // And with the D-100 batch, gates and D-135 (no crystal) on, as they ship.
-    const batch = [...(GATES === undefined ? [] : [GATES]), ...[KEEP, RULES.SIEGE, RULES.RICH, RULES.MARKET, NO_CRYSTAL, RULES.OWN_PASS]];
-    for (const sw of batch) sw.on = true;
-    try {
-      assert.deepEqual(play(true).changed, [], "orders as sent, with the D-100 batch");
-    } finally {
-      for (const sw of batch) sw.on = false;
-    }
-  }),
+    const after = staging(() => play(5, true));
+    assert.ok(after.hid > 0, "its farmers were sent home (seed 5, with D-086 A6)");
+    assert.deepEqual(after.changed, [], "orders as sent, with D-086 A6");
+  },
 );
-
 
 // --- D-089: gathering outside the enemy main city before the attack ----------------------------------
 
