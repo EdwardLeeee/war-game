@@ -10,6 +10,9 @@ import { watchErrors } from "./helpers.ts";
 // Without the pressed look (a pressed button sinks 2 px and comes back 0.12 s after): it is how a press feels, not the
 // layout moving; measured right after a click it was a pixel or two off.
 test.use({ isMobile: false, hasTouch: false, deviceScaleFactor: 1, reducedMotion: "reduce" });
+// Chromium on CI draws 1920 × 950 with the CPU: 軍團畫面 took 59.7 s on a quick runner (#527's run 44406586369) and
+// timed out at 60 on a slow one (#534's run 44741715976); room for a runner twice as slow.
+test.describe.configure({ timeout: 120_000 });
 
 type Box = { x: number; y: number; w: number; h: number };
 const MARKET = 15;
@@ -105,6 +108,9 @@ for (const size of [
   { width: 932, height: 336 },
 ]) {
   test.describe(`${size.width}×${size.height}`, () => {
+    // 1366 × 768 in WebKit only (ceo 2026-11-20): Chromium on CI draws with the CPU (no graphics card), and these 7
+    // tests at that size were 5 of the Client CI's longest shard's minutes; 1920 × 950 and 932 × 336 run in both.
+    test.skip(({ browserName }) => browserName === "chromium" && size.width === 1366, "1366×768 只在 WebKit 跑");
     test("兵種：點選兵那一條的「只選槍兵」，那一格不動，點十下都點在它上面", async ({ page }) => {
       const check = watchErrors(page);
       await start(page, size);
@@ -129,7 +135,7 @@ for (const size of [
     });
 
     test("主城＋遠程：點十下都點在「＋遠程」上；叫進來的到了、召回出現，＋遠程、＋法師還在原地", async ({ page }) => {
-      test.setTimeout(120_000);
+      test.setTimeout(240_000);
       const check = watchErrors(page);
       await start(page, size);
       // Our ranged soldiers beside the main city, so that those called get there soon.
@@ -220,7 +226,7 @@ for (const size of [
     });
 
     test("交易、加減：市場的買賣、經濟分配和軍團畫面的＋－，點十下都點在同一顆上", async ({ page }) => {
-      test.setTimeout(180_000);
+      test.setTimeout(300_000);
       const check = watchErrors(page);
       await start(page, size);
       await openBuilding(page, MARKET);
