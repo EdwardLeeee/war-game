@@ -30,7 +30,7 @@
 #   To stop: set AI_TRAIN to "off" (no next segment; the one running ends within its hour), or cancel the run in the Actions
 #   tab to stop at once.
 name: AI train
-run-name: "${{ (github.event_name == 'schedule' || inputs.mode == 'dispatch') && 'AI train: dispatch' || format('AI train: {0}', inputs.mode || github.ref_name) }}"
+run-name: "${{ (github.event_name == 'schedule' && vars.AI_TRAIN != 'on') && 'AI train: dispatch (off)' || ((github.event_name == 'schedule' || inputs.mode == 'dispatch') && 'AI train: dispatch' || format('AI train: {0}', inputs.mode || github.ref_name)) }}"
 
 on:
   # D-147: the dispatcher, every 30 minutes (off the hour, when GitHub's schedules crowd).
@@ -85,40 +85,36 @@ concurrency:
 jobs:
   # D-147: decides whether to start the next segment, and starts it. See the top of this file.
   dispatch:
-    if: github.repository == 'EdwardLeeee/war-game' && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'dispatch'))
+    # Off, a scheduled tick skips this job too: no runner, nothing to add up ("AI train: dispatch (off)" in the list).
+    if: github.repository == 'EdwardLeeee/war-game' && ((github.event_name == 'schedule' && vars.AI_TRAIN == 'on') || (github.event_name == 'workflow_dispatch' && inputs.mode == 'dispatch'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       actions: write
       contents: read
     steps:
-      - name: The last ledger
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-        run: |
-          id=$(gh api "repos/$REPO/actions/artifacts?name=ai-train-ledger&per_page=30" -q '[.artifacts[] | select(.expired == false)] | max_by(.created_at) | .workflow_run.id // empty' || true)
-          if [ -n "$id" ]; then gh run download "$id" --repo "$REPO" -n ai-train-ledger -D prev || echo "no ledger downloaded"; fi
       - name: Decide and dispatch
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
+          REPO_ID: ${{ github.repository_id }}
           REF: ${{ github.ref_name }}
           RUN_ID: ${{ github.run_id }}
           AI_TRAIN: ${{ vars.AI_TRAIN }}
           ARGS: ${{ inputs.args }}
         run: |
           python3 - <<'PY'
-          import datetime as dt, json, os, re, urllib.error, urllib.request
+          import datetime as dt, json, os, re, subprocess, urllib.error, urllib.request
 
           # The caps (D-147, ceo 2026-11-21): written here; AI_TRAIN and the inputs can only lower them.
           DAY_CAP, TOTAL_CAP = 200.0, 5000.0
           # The ledger counts AI train runs created from this time on (trial segments too; not the examiner search before it).
           LEDGER_START = "2026-11-21T00:00:00Z"
           SEGMENT_HOURS, SEGMENT_JOBS = 1.0, 1
+          DISPATCH_HOURS = 0.01  # each dispatcher run that adds up the hours books itself this (it takes about half a minute)
           RUNNERS, RESERVE = 20, 4  # D-123
           TPE = dt.timezone(dt.timedelta(hours=8))
-          repo, ref, run_id = os.environ["REPO"], os.environ["REF"], int(os.environ["RUN_ID"])
+          repo, ref, run_id, repo_id = os.environ["REPO"], os.environ["REF"], int(os.environ["RUN_ID"]), int(os.environ["REPO_ID"])
           args = os.environ.get("ARGS", "").split()
 
           def opt(name, cap):
@@ -166,19 +162,51 @@ jobs:
           # are listed each time (GitHub lists at most 1,000 runs by creation date), the done ones kept in `runs`. The
           # checkpoint stays at least two days back, so a run re-run within two days is added up again.
           ledger = {"start": LEDGER_START, "checkpoint": LEDGER_START, "closed": {}, "runs": {}}
+
+          def sound(old):
+              """A ledger of this book, its checkpoint not in the future, no negative hours."""
+              if old.get("start") != LEDGER_START or "checkpoint" not in old:
+                  return False
+              if when(old["checkpoint"]) > now or when(old["checkpoint"]) < when(LEDGER_START):
+                  return False
+              hours = list(old["closed"].values()) + [h for r in old["runs"].values() for h in r["days"].values()]
+              return all(isinstance(h, (int, float)) and h >= 0 for h in hours)
+
+          # The last ledger, only from this repository's own dispatcher (ai-train.yml, on this ref, by the schedule or a
+          # hand dispatch): anything else could upload an artifact of the same name. Anything else, or none: from the start.
           try:
-              with open("prev/ledger.json") as f:
-                  old = json.load(f)
-              if old.get("start") == LEDGER_START and "checkpoint" in old:
-                  ledger = old
-              else:
-                  notes.append("上一份帳不是這一本，從頭算")
-          except (OSError, ValueError):
-              notes.append("沒有上一份帳，從頭算")
+              arts, _ = api(f"repos/{repo}/actions/artifacts?name=ai-train-ledger&per_page=50")
+              found = False
+              for a in sorted(arts["artifacts"], key=lambda a: a["created_at"], reverse=True):
+                  wr = a.get("workflow_run") or {}
+                  if a.get("expired") or wr.get("repository_id") != repo_id or wr.get("head_repository_id") != repo_id or wr.get("head_branch") != ref:
+                      continue
+                  r, _ = api(f"repos/{repo}/actions/runs/{wr['id']}")
+                  if r.get("path") != ".github/workflows/ai-train.yml" or r.get("event") not in ("schedule", "workflow_dispatch") or not r.get("display_title", "").startswith("AI train: dispatch"):
+                      continue
+                  subprocess.run(["gh", "run", "download", str(wr["id"]), "--repo", repo, "-n", "ai-train-ledger", "-D", "prev"], check=True, capture_output=True)
+                  with open("prev/ledger.json") as f:
+                      old = json.load(f)
+                  if sound(old):
+                      ledger = old
+                      notes.append(f"沿用 run {wr['id']} 的帳")
+                  else:
+                      notes.append(f"run {wr['id']} 的帳不對（不是這一本、結算點在未來或有負數），從頭算")
+                  found = True
+                  break
+              if not found:
+                  notes.append("沒有可以用的上一份帳，從頭算")
+          except Exception as e:
+              notes.append(f"讀不到上一份帳（{type(e).__name__}: {e}），從頭算")
+              ledger = {"start": LEDGER_START, "checkpoint": LEDGER_START, "closed": {}, "runs": {}}
 
           day_hours = total_hours = None
           try:
-              listed = every(f"repos/{repo}/actions/workflows/ai-train.yml/runs?created=%3E%3D{ledger['checkpoint']}&per_page=100", "workflow_runs")
+              # Training runs are started by hand dispatch (the dispatcher's too) or by a push; the schedule's own ticks are
+              # not listed (48 a day would reach GitHub's 1,000 in three weeks off): each dispatcher adds its own time below.
+              listed = []
+              for event in ("workflow_dispatch", "push"):
+                  listed += every(f"repos/{repo}/actions/workflows/ai-train.yml/runs?created=%3E%3D{ledger['checkpoint']}&event={event}&per_page=100", "workflow_runs")
               if len(listed) >= 1000:
                   raise RuntimeError(f"從 {ledger['checkpoint']} 起有 {len(listed)} 個 run，GitHub 最多列 1,000 個，帳可能不完整")
               sums = dict(ledger["closed"])
@@ -186,15 +214,12 @@ jobs:
               for r in listed:
                   key = str(r["id"])
                   known = ledger["runs"].get(key)
+                  if r["id"] == run_id or r.get("display_title", "").startswith("AI train: dispatch"):
+                      continue  # a dispatcher: it adds its own time (below)
                   # A run done and since re-run (a new attempt) is added up again: its jobs of every attempt.
                   if known is None or not known["done"] or known.get("attempt") != r.get("run_attempt", 1):
                       days = {}
-                      if r.get("display_title") == "AI train: dispatch":
-                          # The dispatcher: one job, as long as its run.
-                          s, e = r.get("run_started_at"), (r["updated_at"] if r["status"] == "completed" else None)
-                          spans = [(s, e)] if s else []
-                      else:
-                          spans = [(j.get("started_at"), j.get("completed_at")) for j in every(f"repos/{repo}/actions/runs/{r['id']}/jobs?filter=all&per_page=100", "jobs") if j["status"] != "queued"]
+                      spans = [(j.get("started_at"), j.get("completed_at")) for j in every(f"repos/{repo}/actions/runs/{r['id']}/jobs?filter=all&per_page=100", "jobs") if j["status"] != "queued"]
                       for s, e in spans:
                           if not s:
                               continue
@@ -237,7 +262,7 @@ jobs:
           try:
               for status in ("in_progress", "queued"):
                   for r in every(f"repos/{repo}/actions/runs?status={status}&per_page=100", "workflow_runs"):
-                      if r["id"] == run_id or r.get("display_title") == "AI train: dispatch":
+                      if r["id"] == run_id or r.get("display_title", "").startswith("AI train: dispatch"):
                           continue
                       if r["name"] == "AI train":
                           reasons.append(f"已經有一段訓練在{'跑' if status == 'in_progress' else '等'}（run {r['id']}）")
@@ -279,6 +304,8 @@ jobs:
               f.write("\n".join(lines) + "\n")
           print("\n".join(lines))
           if day_hours is not None:
+              # This dispatcher's own time (about half a minute), on today's line of the ledger.
+              ledger["closed"][today] = ledger["closed"].get(today, 0.0) + DISPATCH_HOURS
               os.makedirs("ledger", exist_ok=True)
               with open("ledger/ledger.json", "w") as f:
                   json.dump(ledger, f)
