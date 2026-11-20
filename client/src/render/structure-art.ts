@@ -10,6 +10,7 @@
 import { Container, Sprite } from "pixi.js";
 import { type Culture, M_PER_CELL } from "../art/spec.ts";
 import { buildingEntry, buildingFrame, buildingState, type BuildingEntry, cropStage, nodeFrame, type NodeEntry, RUBBLE_FADE_S, RUBBLE_HOLD_S, type Side, viewFits } from "../art/structures.ts";
+import { buildingDepth, inAFootprint } from "./building-depth.ts";
 import { buildingFront, depthOf, nodeFront } from "./depth.ts";
 import { type CrewSpot, crewSpots } from "./outpost-crew.ts";
 import { outpostHide } from "../game/features.ts";
@@ -43,6 +44,8 @@ interface Slot {
 /** A building drawn this frame standing up: its footprint (cells), depth, and picture (plane). */
 interface Drawn {
   id: number;
+  /** Its foundation (the first stage of building it): flat on the ground, as a field is (building-depth.ts). */
+  flat: boolean;
   cellX: number;
   cellY: number;
   size: number;
@@ -267,7 +270,8 @@ export class ArtStructures {
     }
     // A keep's full hit points are its town's (D-100: a small town's 600, buildings[Keep] the big city's 1000).
     const max = this.view.buildingMaxHp(b, o);
-    name = buildingFrame(entry, buildingState(progress, b[o + B.hp], max));
+    const state = buildingState(progress, b[o + B.hp], max);
+    name = buildingFrame(entry, state);
     s.ground.visible = false;
     const color = this.art.buildingFrame(side, "color", name ?? "");
     if (color === null) {
@@ -288,7 +292,7 @@ export class ArtStructures {
     const w = color.texture.width * this.scale;
     const h = color.texture.height * this.scale;
     const top = at.y - color.ay * h;
-    this.drawn.push({ id: b[o + B.id], cellX, cellY, size, z, x0: at.x - color.ax * w, y0: top, x1: at.x + (1 - color.ax) * w, y1: at.y + (1 - color.ay) * h });
+    this.drawn.push({ id: b[o + B.id], flat: state === "build1", cellX, cellY, size, z, x0: at.x - color.ax * w, y0: top, x1: at.x + (1 - color.ax) * w, y1: at.y + (1 - color.ay) * h });
     // Those hiding in a finished outpost in view, on its walk (D-121): as many as its soldiers.
     const inside = type === BuildingType.Outpost && outpostHide(this.view.rules) ? b[o + B.soldiers] : 0;
     if (inside > 0 && entry.stand_m !== undefined && progress >= 1000 && tint !== OUT_OF_VIEW) {
@@ -368,33 +372,18 @@ export class ArtStructures {
     s.frontTeam.tint = team;
   }
 
-  /**
-   * A unit's depth at (px, py) on the plane (section 6): in front of a building whose footprint
-   * lies wholly at smaller x or smaller y than it, behind one wholly at larger; else by its place
-   * on the screen. Buildings within a few cells only.
-   */
+  /** A unit's depth at (px, py) on the plane, among the buildings drawn (building-depth.ts). */
   unitDepth(px: number, py: number): number {
-    // Square on (D-088): its own y is its front edge (depth.ts); nothing to correct.
-    if (this.drawn.length === 0 || this.projection.kind === "oblique") return py;
+    if (this.drawn.length === 0) return py;
     const w = this.projection.toWorld(px, py);
-    const ux = w.x / TILE_PX;
-    const uy = w.y / TILE_PX;
-    const n = this.view.map.size;
-    const cx = Math.floor(ux);
-    const cy = Math.floor(uy);
-    let depth = py;
-    let last = 0;
-    for (let y = Math.max(0, cy - 4); y <= Math.min(n - 1, cy + 4); y++) {
-      for (let x = Math.max(0, cx - 4); x <= Math.min(n - 1, cx + 4); x++) {
-        const k = this.cellOwner[y * n + x];
-        if (k === 0 || k === last) continue;
-        last = k;
-        const d = this.drawn[k - 1];
-        if (ux >= d.cellX + d.size || uy >= d.cellY + d.size) depth = Math.max(depth, d.z + 0.01);
-        else if (ux <= d.cellX || uy <= d.cellY) depth = Math.min(depth, d.z - 0.01);
-      }
-    }
-    return depth;
+    return buildingDepth(this.drawn, this.cellOwner, this.view.map.size, w.x / TILE_PX, w.y / TILE_PX, py, this.projection.kind === "oblique");
+  }
+
+  /** A unit at (px, py) on the plane stands inside a standing building's footprint (drawn behind it, unitDepth). */
+  inFootprint(px: number, py: number): boolean {
+    if (this.drawn.length === 0) return false;
+    const w = this.projection.toWorld(px, py);
+    return inAFootprint(this.drawn, this.cellOwner, this.view.map.size, w.x / TILE_PX, w.y / TILE_PX);
   }
 
   /** The buildings drawn now, their pictures on the plane (the test page). */

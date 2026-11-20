@@ -7,6 +7,9 @@
 import { expect, type Page, test } from "@playwright/test";
 import { watchErrors } from "./helpers.ts";
 
+// 1920 × 950 drawn with the CPU in CI's Chromium: on the slowest machine (AMD EPYC 7763, #535's run 44762845583) 50.9,
+// 57.1 and 59.8 s of the 60 these had; twice that.
+test.describe.configure({ timeout: 120_000 });
 test.use({ isMobile: false, hasTouch: false, deviceScaleFactor: 1 });
 
 const BIG = { width: 1920, height: 950 };
