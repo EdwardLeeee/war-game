@@ -108,7 +108,7 @@ import { SHORT_GARRISON_TEXT, SHORT_PLUNDER_TEXT } from "./station.ts";
 import { affords, costText, GovernWaits, shortfall } from "./govern-wait.ts";
 import { CallSlots, withCalls } from "./call-slots.ts";
 import { AutoArmyBook, type ArmyNeed, armyNeed, affordsAbove, type Block, GROW_MARGIN, type GrowBlock, type GroupNeed, missingText, pickGrowth, pickTrains, POPULATION_CEILING_TEXT, type SentTrain, type Site, stillSent, villagersMissing } from "./auto-army.ts";
-import { ASSAULT_JOIN_CELLS, type Attacker, type AssaultScene, Assaults, assaultOrders, GATE_FOCUS_TEXT, type Target, type WallTarget } from "./assault.ts";
+import { ASSAULT_JOIN_CELLS, type AssaultOrder, type Attacker, type AssaultScene, Assaults, assaultOrders, GATE_FOCUS_TEXT, type Target, type WallTarget } from "./assault.ts";
 import { AUTO_HOUSE_TEXT, type Footprint, type Gatherer, HOME_CELLS, HOUSE_SENT_TICKS, type HouseBlock, houseBlock, houseSpot, nearFootprint, pickBuilder, type TownGround } from "./auto-house.ts";
 import { type Alarm, alarmText, GroupAlarms, groupAdvancing } from "./alarm.ts";
 import { isPosted, outpostModeText, POST_TYPE } from "./outpost.ts";
@@ -614,6 +614,8 @@ export class Game implements GestureHost {
   private readonly houseSkip = new Set<number>();
   /** 攻城打到底 (assault.ts): soldiers the player sent at a town not ours, until it is taken or they are given another order. */
   private readonly assaults = new Assaults();
+  /** The last orders the screen sent a town's attackers and what it saw then (the test page: why). */
+  lastAssault: { tick: number; town: number; scene: AssaultScene; orders: AssaultOrder[] } | null = null;
   /** While 攻擊 on a gate sends its two parts (command): that gate, its town and the cell before it. */
   private focusing: { gate: number; town: number; front: { x: number; y: number } } | null = null;
   private houseTold = false;
@@ -1617,7 +1619,9 @@ export class Game implements GestureHost {
       if (!this.assaults.due(town, tick, (id) => view.unitRow(id) >= 0 && view.unitOrder(id) !== Order.None)) continue;
       const scene = this.assaultScene(town, [...ids, ...late]);
       if (scene === null) continue;
-      for (const o of assaultOrders(scene)) this.assaults.sentNow(town, this.autoCommand(o), tick, o.u);
+      const orders = assaultOrders(scene);
+      if (orders.length > 0) this.lastAssault = { tick, town, scene, orders };
+      for (const o of orders) this.assaults.sentNow(town, this.autoCommand(o), tick, o.u);
     }
   }
 
@@ -1727,16 +1731,17 @@ export class Game implements GestureHost {
     }
     // A gate broken: an opening we see with no gate in it (one out of sight counts as standing).
     const fog = view.fog;
-    const open = (view.castleOf(spot)?.gates ?? []).some((cells) => {
+    const openings = (view.castleOf(spot)?.gates ?? []).flatMap((cells) => {
       const c = cells[0];
-      if (c === undefined) return false;
+      if (c === undefined) return [];
       const i = (spot.cellY + c[1]) * size + spot.cellX + c[0];
-      return fog !== null && fog[i] === Fog.Visible && !standing.has(i);
+      return [{ x: spot.cellX + c[0], y: spot.cellY + c[1], visible: fog !== null && fog[i] === Fog.Visible, standing: standing.has(i) }];
     });
+    const open = openings.some((g) => g.visible && !g.standing);
     // The gate tapped, while it stands and we see it.
     const tapped = this.assaults.focusOf(town);
     const focus = tapped === null ? null : (gates.find((g) => g.id === tapped) ?? null);
-    return { attackers, defenders, gates, open, centre: { x: spot.cellX + 0.5, y: spot.cellY + 0.5 }, focus, wall };
+    return { attackers, defenders, gates, open, centre: { x: spot.cellX + 0.5, y: spot.cellY + 0.5 }, focus, wall, openings };
   }
 
   /** 自動訓練 paused for this building (D-098: the screen's own, kept in the save). */
