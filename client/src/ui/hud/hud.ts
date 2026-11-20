@@ -332,7 +332,7 @@ export class Hud {
       beforeGroupCount: () => game.beforeGroupCount(),
       saveBeforeIntoGroup: (i: number) => {
         const n = game.saveBeforeIntoGroup(i);
-        if (n > 0) game.toast(`已存成編隊 ${i + 1}（${n} 個）`);
+        if (n > 0) game.toast(`已存成編隊 ${i + 1}（${n} 名）`);
       },
       collapsed: () => (game.groupView !== null ? this.groupCollapsed : this.collapsed),
       toggleCollapsed: () => {
@@ -1031,7 +1031,7 @@ export class Hud {
       return false;
     }
     const n = this.game.saveSelectionIntoGroup(i);
-    if (n > 0) this.game.toast(`已存成編隊 ${i + 1}（${n} 個）`);
+    if (n > 0) this.game.toast(`已存成編隊 ${i + 1}（${n} 名）`);
     return n > 0;
   }
 

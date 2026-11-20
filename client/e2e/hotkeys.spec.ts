@@ -164,7 +164,7 @@ test("按鍵：Space 暫停、再按繼續（剛點過按鈕也只切一次）�
   const two = ids.slice(0, 2);
   await page.evaluate((u) => window.__proto?.game?.select(u), two);
   await page.keyboard.press("Shift+Digit2");
-  await expectSaid(page, "已存成編隊 2（2 個）");
+  await expectSaid(page, "已存成編隊 2（2 名）");
   await page.evaluate(() => window.__proto?.game?.select([]));
   await page.keyboard.press("Digit2");
   await expect.poll(async () => sorted(await selection(page))).toEqual(two);
