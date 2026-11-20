@@ -13,6 +13,18 @@ export class RecordingHost implements GestureHost {
   tap(x: number, y: number, count: 1 | 2): void {
     this.calls.push(["tap", x, y, count]);
   }
+  click(x: number, y: number, count: 1 | 2): void {
+    this.calls.push(["click", x, y, count]);
+  }
+  order(x: number, y: number): void {
+    this.calls.push(["order", x, y]);
+  }
+  drag(dx: number, dy: number): void {
+    this.calls.push(["drag", dx, dy]);
+  }
+  dragEnd(vx: number, vy: number): void {
+    this.calls.push(["dragEnd", vx, vy]);
+  }
   longPress(x: number, y: number): LongPressResult {
     this.calls.push(["longPress", x, y]);
     return this.longPressAnswer;

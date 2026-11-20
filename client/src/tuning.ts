@@ -33,3 +33,8 @@ export const HIT_RADIUS_PT = 22;
  * next to it, unless the finger is this close to the unit (it is right on it).
  */
 export const UNIT_CORE_HIT_PT = 12;
+
+/** With a mouse (R26 06 B): the arrow keys and the pointer at the window's edge move the view this many screen px a second, whatever the zoom (ceo 2026-11-20: 900 for now, tuned when the user plays). */
+export const SCROLL_PX_PER_S = 900;
+/** How near the window's edge the pointer moves the view (design/r26/spec.md 06). */
+export const EDGE_SCROLL_PX = 6;

@@ -364,7 +364,7 @@ export class Tutor implements TutorHooks {
     const done = this.doneAt !== null || this.finished;
     const s = stepOf(this.step);
     const title = done ? s.doneTitle : this.phase.title;
-    const body = done ? s.doneBody : this.phase.body(c);
+    const body = done ? (typeof s.doneBody === "function" ? s.doneBody() : s.doneBody) : this.phase.body(c);
     const list = done ? null : (this.phase.list?.(c) ?? null);
     const wait = done ? null : (this.phase.wait?.(c) ?? null);
     const go = !done && this.offScreen !== null;

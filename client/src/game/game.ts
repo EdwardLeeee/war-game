@@ -12,16 +12,19 @@ import {
   holdIntents,
   type Intent,
   type Pick,
+  commandIntents,
   longPressKind,
   moveIntents,
   type Mode,
   retreatHome,
+  selectIntents,
   tapIntents,
   type WheelItem,
   wheelIntents,
   wheelItems,
 } from "../input/intent.ts";
 import { attachPointer } from "../input/pointer.ts";
+import { attachViewScroll, ViewScroll } from "../input/view-scroll.ts";
 import { enemyTooClose, type GroupOrder, oneCluster, REFORM_CLEAR_CELLS, reformCell, reformFacing, reformMode, type Spot } from "./reform.ts";
 import { type CheckResult, loadExpected, runCheck } from "../lab/determinism.ts";
 import { type Culture, cultureOf, SIEGE_ATLASES } from "../art/spec.ts";
@@ -339,6 +342,8 @@ export class Game implements GestureHost {
     return this.options.measure === true || phase === "warmup" || phase === "measuring";
   }
   private readonly recognizer: GestureRecognizer;
+  /** The arrow keys and the window's edge (R26 06 B, with a mouse). */
+  private readonly viewScroll = new ViewScroll();
   private renderer: WorldRenderer | null = null;
   /** 浮空大陸's edge round the map (render/edge.ts), with the diamond and ui's edge pictures. */
   private edge: EdgeRenderer | null = null;
@@ -448,9 +453,14 @@ export class Game implements GestureHost {
       const cam = this.camera;
       if (cam === null) return;
       cam.zoomAt(e.offsetX, e.offsetY, cam.scale * Math.exp(-e.deltaY * 0.0015));
+      // 新手教學's 第 1 步: zooming with the wheel is its 縮放 too (R26 06 B: 滾輪縮放).
+      this.tutor?.pinched();
     };
     app.canvas.addEventListener("wheel", wheel, { passive: false });
     this.cleanups.push(() => app.canvas.removeEventListener("wheel", wheel));
+    // With a mouse (design/r26/spec.md section 0): the arrow keys and the window's edge move the view.
+    const mouse = typeof matchMedia === "function" ? matchMedia("(hover: hover) and (pointer: fine)") : null;
+    this.cleanups.push(attachViewScroll(this.viewScroll, () => mouse?.matches === true && this.view !== null));
     app.ticker.add(this.tick);
     // GDD §11 (ceo 2026-09-30): going to the background or turning the phone upright pauses
     // the game; coming back leaves it paused until the player presses 繼續.
@@ -3038,6 +3048,7 @@ export class Game implements GestureHost {
     const cam = this.camera;
     const view = this.view;
     if (cam === null || view === null || this.renderer === null) return;
+    this.scrollView(cam, dt);
     cam.update(dt);
     this.renderer.paused = this.paused;
     this.edge?.update(now, cam, view.ground, view.groundVersion, view.fog, view.fogVersion);
@@ -3376,6 +3387,56 @@ export class Game implements GestureHost {
     this.overlays.closeWheel();
   }
 
+  /**
+   * The mouse's left click (R26 06 B): it selects, never orders (intent.ts selectIntents). Placing a building or
+   * choosing a place (進駐, 攻擊, 移動, 集合點), it picks the place, as a tap.
+   */
+  click(x: number, y: number, count: 1 | 2): void {
+    const view = this.view;
+    if (view === null) return;
+    if (this.placement !== null || this.mode !== "normal") return this.tap(x, y, count);
+    if (this.tutor !== null && !this.tutor.tapAllowed(x, y)) {
+      this.tutor.blocked();
+      return;
+    }
+    const w = this.world(x, y);
+    this.apply(selectIntents(view, w.x, w.y, count, this.hitRadius()));
+  }
+
+  /**
+   * The mouse's right click (R26 06 B): the order a tap would give the units selected; what is selected stays (ceo
+   * 2026-11-20). Nothing while placing a building or choosing a place, nor with no units selected.
+   */
+  order(x: number, y: number): void {
+    const view = this.view;
+    if (view === null || this.placement !== null || this.mode !== "normal") return;
+    if (this.tutor !== null && !this.tutor.tapAllowed(x, y)) {
+      this.tutor.blocked();
+      return;
+    }
+    const w = this.world(x, y);
+    this.apply(commandIntents(view, view.selection, w.x, w.y, this.hitRadius(), UNIT_CORE_HIT_PT / (this.camera?.scale ?? 1)));
+  }
+
+  /** The mouse's middle button dragged: the view, 1 to 1, even while a building is being placed. */
+  drag(dx: number, dy: number): void {
+    this.camera?.panBy(dx, dy);
+    this.tutor?.panned();
+  }
+
+  dragEnd(vx: number, vy: number): void {
+    this.camera?.fling(vx, vy);
+  }
+
+  /** The arrow keys and the window's edge (R26 06 B): the view along, at SCROLL_PX_PER_S. */
+  private scrollView(cam: Camera, dt: number): void {
+    const v = this.viewScroll.velocity(innerWidth, innerHeight, document.hasFocus(), this.recognizer.state === "box");
+    if (v.x === 0 && v.y === 0) return;
+    const ms = Math.min(dt, 100);
+    cam.panBy(-v.x * ms, -v.y * ms);
+    this.tutor?.panned();
+  }
+
   panStart(x: number, y: number): void {
     if (this.placement !== null) this.moveGhost(x, y);
   }
@@ -3398,6 +3459,15 @@ export class Game implements GestureHost {
   }
 
   box(x0: number, y0: number, x1: number, y1: number, phase: "start" | "move" | "end" | "cancel"): void {
+    // The mouse's left button dragged while a building is placed (R26 06 B): it drags the building, as a finger does.
+    if (this.placement !== null) {
+      if (phase === "start" || phase === "move") this.moveGhost(x1, y1);
+      else if (phase === "end") {
+        this.placement.release();
+        this.showPlaceButtons();
+      }
+      return;
+    }
     if (phase === "cancel") {
       this.overlays.hideBox();
       return;

@@ -221,11 +221,12 @@ test("pointercancel ends a box without selecting", () => {
   assert.equal(g.state, "idle");
 });
 
-// 右鍵框選 (R26): the mouse's right button is a box as soon as it is dragged, a click of it nothing.
-test("the right button dragged past the slop is a box at once (no hold), let go it ends; a quick one too", () => {
+// 滑鼠操作 06 B (R26): the left button a box as soon as it is dragged, else a click; the right an order, dragged
+// nothing; the middle the view. No long press for any of them.
+test("the left button dragged past the slop is a box at once (no hold), let go it ends; no click, no long press", () => {
   const { host, g } = setup();
   host.longPressAnswer = "wheel";
-  g.rightDown(1, 100, 100, 0);
+  g.mouseDown(1, 0, 100, 100, 0);
   g.move(1, 100 + TAP_SLOP_PX - 1, 100, 10);
   assert.equal(host.of("box").length, 0);
   g.move(1, 140, 130, 30);
@@ -238,43 +239,91 @@ test("the right button dragged past the slop is a box at once (no hold), let go 
     ["box", 100, 100, 180, 160, "end"],
   ]);
   assert.equal(host.of("longPress").length, 0, "never asks for a long press");
-  assert.equal(host.of("tap").length, 0);
+  assert.equal(host.of("click").length + host.of("tap").length, 0);
   assert.equal(g.state, "idle");
 });
 
-test("a right click without a drag does nothing, however long it is held", () => {
+test("a left click is a click, however long it is held; a second one soon after on the same spot is a double", () => {
   const { host, g } = setup();
-  g.rightDown(1, 100, 100, 0);
+  g.mouseDown(1, 0, 100, 100, 0);
   g.update(LONG_PRESS_MS + 200);
   g.up(1, 101, 100, LONG_PRESS_MS + 300);
-  assert.deepEqual(host.calls, []);
+  assert.deepEqual(host.calls, [["click", 100, 100, 1]], "no hold cue, no long press");
+  g.mouseDown(2, 0, 103, 101, LONG_PRESS_MS + 350);
+  g.up(2, 103, 101, LONG_PRESS_MS + 400);
+  assert.deepEqual(host.of("click").at(-1), ["click", 103, 101, 2]);
+  g.mouseDown(3, 0, 300, 300, 5000);
+  g.up(3, 300, 300, 5050);
+  assert.deepEqual(host.of("click").at(-1), ["click", 300, 300, 1]);
+  assert.equal(host.of("tap").length, 0);
+});
+
+test("a right click is an order; the right button dragged does nothing", () => {
+  const { host, g } = setup();
+  g.mouseDown(1, 2, 100, 100, 0);
+  g.update(LONG_PRESS_MS + 200);
+  g.up(1, 104, 100, LONG_PRESS_MS + 300);
+  assert.deepEqual(host.calls, [["order", 100, 100]]);
+  g.mouseDown(2, 2, 100, 100, 2000);
+  g.move(2, 160, 160, 2020);
+  g.move(2, 100, 100, 2040);
+  g.up(2, 100, 100, 2060);
+  assert.deepEqual(host.calls, [["order", 100, 100]], "dragged, then back: still nothing");
   assert.equal(g.state, "idle");
 });
 
-test("a right button while a gesture goes on is not taken; a press after a right box is a press again", () => {
+test("the middle button dragged moves the view 1 to 1 and flings; held still and let go, nothing else", () => {
+  const { host, g } = setup();
+  g.mouseDown(1, 1, 100, 100, 0);
+  g.move(1, 104, 100, 8);
+  g.move(1, 124, 110, 16);
+  g.up(1, 124, 110, 24);
+  assert.deepEqual(host.of("drag"), [
+    ["drag", 4, 0],
+    ["drag", 20, 10],
+  ]);
+  const end = host.of("dragEnd");
+  assert.equal(end.length, 1);
+  assert.ok((end[0][1] as number) > 0, "it flings");
+  assert.equal(host.of("pan").length + host.of("tap").length + host.of("click").length + host.of("box").length, 0);
+  g.mouseDown(2, 1, 50, 50, 1000);
+  g.up(2, 50, 50, 1100);
+  assert.deepEqual(host.of("dragEnd").at(-1), ["dragEnd", 0, 0]);
+  assert.equal(host.of("click").length, 0);
+});
+
+test("a mouse button while a gesture goes on is not taken (the first one's); a finger press after it is a press again", () => {
   const { host, g } = setup();
   g.down(1, 100, 100, 0);
-  g.rightDown(2, 100, 100, 10);
+  g.mouseDown(2, 2, 100, 100, 10);
   assert.equal(g.state, "press");
   g.up(1, 100, 100, 50);
   assert.deepEqual(host.of("tap"), [["tap", 100, 100, 1]]);
-  g.rightDown(3, 50, 50, 1000);
+  g.mouseDown(3, 0, 50, 50, 1000);
+  g.mouseDown(4, 2, 50, 50, 1005);
+  assert.equal(g.state, "left");
   g.move(3, 90, 90, 1010);
   g.up(3, 90, 90, 1020);
-  g.down(4, 200, 200, 2000);
-  g.up(4, 200, 200, 2050);
+  assert.equal(host.of("order").length, 0);
+  g.down(5, 200, 200, 2000);
+  g.up(5, 200, 200, 2050);
   assert.deepEqual(host.of("tap").at(-1), ["tap", 200, 200, 1]);
 });
 
-test("the capture lost in a right box (let go outside the window) ends it with what it holds; lost in a press, no tap", () => {
+test("the capture lost in a left box (let go outside the window) ends it with what it holds; lost in a click, nothing", () => {
   const { host, g } = setup();
-  g.rightDown(1, 100, 100, 0);
+  g.mouseDown(1, 0, 100, 100, 0);
   g.move(1, 160, 160, 20);
   g.lost(1, 40);
   assert.deepEqual(host.of("box").at(-1), ["box", 100, 100, 160, 160, "end"]);
   assert.equal(g.state, "idle");
-  g.down(2, 100, 100, 100);
+  g.mouseDown(2, 0, 100, 100, 100);
   g.lost(2, 150);
-  assert.equal(host.of("tap").length, 0);
+  g.mouseDown(3, 2, 100, 100, 200);
+  g.lost(3, 250);
+  assert.equal(host.of("click").length + host.of("order").length, 0);
   assert.equal(g.state, "idle");
+  g.down(4, 100, 100, 300);
+  g.lost(4, 350);
+  assert.equal(host.of("tap").length, 0);
 });

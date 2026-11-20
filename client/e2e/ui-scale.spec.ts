@@ -73,9 +73,9 @@ test("滑鼠開局拉近 1.3 倍；框選的框、指令輪盤、放建築的 �
   const check = watchErrors(page);
   await start(page);
   expect((await page.evaluate(() => window.__proto?.game?.camera().scale ?? 0)) ?? 0).toBeCloseTo(1.3, 2);
-  // The right button's box: on the screen where it was dragged.
+  // The left button's box (R26 06 B): on the screen where it was dragged.
   await page.mouse.move(700, 300);
-  await page.mouse.down({ button: "right" });
+  await page.mouse.down();
   await page.mouse.move(900, 420, { steps: 4 });
   const box = await rect(page, ".marquee");
   expect(Math.abs(box.x - 700)).toBeLessThan(3);
@@ -83,8 +83,8 @@ test("滑鼠開局拉近 1.3 倍；框選的框、指令輪盤、放建築的 �
   // Its border outside the dragged box (2 px, 3 on the screen at 1.5).
   expect(Math.abs(box.w - 200)).toBeLessThan(8);
   expect(Math.abs(box.h - 120)).toBeLessThan(8);
-  await page.mouse.up({ button: "right" });
-  // The wheel: a long press on a soldier of ours, its buttons round that point.
+  await page.mouse.up();
+  // The wheel: a finger's long press on a soldier of ours (a mouse has none, 06 B), its buttons round that point.
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
   const spear = (await page.evaluate(() => window.__proto?.game?.units() ?? [])).find((u) => u.owner === me && u.type === 1);
   if (spear === undefined) throw new Error("no spearman");
@@ -92,10 +92,14 @@ test("滑鼠開局拉近 1.3 倍；框選的框、指令輪盤、放建築的 �
   await page.waitForTimeout(300);
   const at = (await page.evaluate(() => window.__proto?.game?.units() ?? [])).find((u) => u.id === spear.id);
   if (at === undefined) throw new Error("gone");
-  await page.mouse.move(at.sx, at.sy);
-  await page.mouse.down();
+  const touch = (type: string) =>
+    page.evaluate(
+      ([t, x, y]) => document.querySelector("canvas")?.dispatchEvent(new PointerEvent(t, { pointerId: 7, pointerType: "touch", isPrimary: true, button: 0, buttons: t === "pointerup" ? 0 : 1, clientX: x, clientY: y, bubbles: true, cancelable: true })),
+      [type, at.sx, at.sy] as const,
+    );
+  await touch("pointerdown");
   await expect.poll(() => page.evaluate(() => window.__proto?.game?.wheel() ?? null)).not.toBeNull();
-  await page.mouse.up();
+  await touch("pointerup");
   const items = await page.locator(".wheel-item").evaluateAll((es) => es.map((e) => e.getBoundingClientRect()).map((r) => ({ x: r.x + r.width / 2, y: r.y + r.height / 2 })));
   expect(items.length).toBeGreaterThan(0);
   for (const p of items) expect(Math.hypot(p.x - at.sx, p.y - at.sy), "a wheel button round the point").toBeLessThan(200);
