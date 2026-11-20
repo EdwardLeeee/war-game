@@ -329,6 +329,17 @@ export class ArtUnits {
     return { units: this.slots.filter((s) => s.box.visible && s.color.visible).length, corpses: this.corpses.length };
   }
 
+  /**
+   * Slot `i`'s own picture and shadow not shown this frame, its ghost as it is: a unit inside one of the standing
+   * buildings (world.ts: none of it peeps out under the building's picture; the selected show as their ghost).
+   */
+  hideBody(i: number): void {
+    const s = this.slots[i];
+    if (s === undefined) return;
+    s.box.visible = false;
+    s.shadow.visible = false;
+  }
+
   /** Slot `i` shows nobody this frame (a unit hidden in a building, or no unit). */
   hideSlot(i: number): void {
     const s = this.slots[i];
