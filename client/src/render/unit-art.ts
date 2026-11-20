@@ -8,6 +8,7 @@ import { type Compressed, gpuBytes, ktxFor } from "../art/compressed.ts";
 import { ATLAS_NAMES, type AtlasJson, type EffectsJson, type FrameRect, parseAtlas, parseEffects } from "../art/spec.ts";
 import { type CastleJson, parseCastle } from "../art/castle.ts";
 import { parseTerrain, type TerrainJson } from "../art/terrain.ts";
+import { parseMasks, type PictureMask } from "./picture-mask.ts";
 import { type BuildingsJson, type NodesJson, parseBuildings, parseNodes, type Side } from "../art/structures.ts";
 import type { LoadRecorder } from "../lab/load-times.ts";
 
@@ -36,6 +37,8 @@ export interface UnitArt {
   buildings: Partial<Record<Side, BuildingsJson>>;
   nodes: NodesJson | null;
   buildingFrame(side: Side, layer: "color" | "team" | "shadow", name: string): ArtFrame | null;
+  /** Which cells of a building picture are drawn (buildings_<culture>.mask.json, picture-mask.ts); null: no mask, all its box. */
+  buildingMask?(side: Side, name: string): PictureMask | null;
   nodeFrame(layer: "color" | "shadow", name: string): ArtFrame | null;
   /** The castles' walls (art-v4 on, D-089): 東陸's only, as the prototype's towns all look (GDD section 12); null: drawn as blocks. */
   castle: CastleJson | null;
@@ -217,6 +220,7 @@ export async function loadUnitArt(
   }
   // Buildings and nodes (art-v2 on): a set of pages a culture, one for the nodes; none, the shapes.
   const buildings: Partial<Record<Side, BuildingsJson>> = {};
+  const masks: Partial<Record<Side, Map<string, PictureMask>>> = {};
   const buildingPages = new Map<string, Texture[]>();
   let nodes: NodesJson | null = null;
   const nodePages = new Map<string, Texture[]>();
@@ -234,6 +238,12 @@ export async function loadUnitArt(
         return;
       }
       buildings[side] = b;
+      // Its pictures' masks (the cover test, picture-mask.ts): none to be had, the pictures' boxes as before.
+      try {
+        masks[side] = parseMasks(await json(`${base}buildings/buildings_${side}.mask.json`, times)) ?? undefined;
+      } catch {
+        masks[side] = undefined;
+      }
       for (const layer of ["color", "team", "shadow"] as const) buildingPages.set(`${side}|${layer}`, await pagesOf(`${base}buildings/`, b.pages[layer]));
     }),
     (async () => {
@@ -301,6 +311,9 @@ export async function loadUnitArt(
     buildings,
     get nodes() {
       return nodes;
+    },
+    buildingMask(side, name) {
+      return masks[side]?.get(name) ?? null;
     },
     buildingFrame(side, layer, name) {
       const key = `buildings_${side}|${layer}|${name}`;

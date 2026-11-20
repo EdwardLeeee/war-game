@@ -10,7 +10,8 @@
 import { Container, Sprite } from "pixi.js";
 import { type Culture, M_PER_CELL } from "../art/spec.ts";
 import { buildingEntry, buildingFrame, buildingState, type BuildingEntry, cropStage, nodeFrame, type NodeEntry, RUBBLE_FADE_S, RUBBLE_HOLD_S, type Side, viewFits } from "../art/structures.ts";
-import { buildingDepth, inAFootprint } from "./building-depth.ts";
+import { buildingDepth, coverPicture, inAFootprint } from "./building-depth.ts";
+import type { PictureMask } from "./picture-mask.ts";
 import { buildingFront, depthOf, nodeFront } from "./depth.ts";
 import { type CrewSpot, crewSpots } from "./outpost-crew.ts";
 import { outpostHide } from "../game/features.ts";
@@ -46,6 +47,8 @@ interface Drawn {
   id: number;
   /** Its foundation (the first stage of building it): flat on the ground, as a field is (building-depth.ts). */
   flat: boolean;
+  /** Which of its picture is drawn (picture-mask.ts), or null: its whole box. */
+  mask: PictureMask | null;
   cellX: number;
   cellY: number;
   size: number;
@@ -292,7 +295,7 @@ export class ArtStructures {
     const w = color.texture.width * this.scale;
     const h = color.texture.height * this.scale;
     const top = at.y - color.ay * h;
-    this.drawn.push({ id: b[o + B.id], flat: state === "build1", cellX, cellY, size, z, x0: at.x - color.ax * w, y0: top, x1: at.x + (1 - color.ax) * w, y1: at.y + (1 - color.ay) * h });
+    this.drawn.push({ id: b[o + B.id], flat: state === "build1", mask: this.art.buildingMask?.(side, name ?? "") ?? null, cellX, cellY, size, z, x0: at.x - color.ax * w, y0: top, x1: at.x + (1 - color.ax) * w, y1: at.y + (1 - color.ay) * h });
     // Those hiding in a finished outpost in view, on its walk (D-121): as many as its soldiers.
     const inside = type === BuildingType.Outpost && outpostHide(this.view.rules) ? b[o + B.soldiers] : 0;
     if (inside > 0 && entry.stand_m !== undefined && progress >= 1000 && tint !== OUT_OF_VIEW) {
@@ -398,12 +401,13 @@ export class ArtStructures {
     return best?.id ?? null;
   }
 
-  /** The building whose picture is under (px, py) and drawn in front of a unit standing at (ux, uy): it hides the unit there. */
+  /**
+   * The building whose picture is drawn at (px, py), in front of a unit standing at (ux, uy): it hides the unit there
+   * (building-depth.ts coverPicture: not where its picture is transparent, nor a flat foundation).
+   */
   coverAt(px: number, py: number, ux: number, uy: number): number | null {
-    const depth = this.unitDepth(ux, uy);
-    let best: Drawn | null = null;
-    for (const d of this.drawn) if (d.z > depth && px >= d.x0 && px <= d.x1 && py >= d.y0 && py <= d.y1 && (best === null || d.z > best.z)) best = d;
-    return best?.id ?? null;
+    const i = coverPicture(this.drawn, px, py, this.unitDepth(ux, uy));
+    return i < 0 ? null : this.drawn[i].id;
   }
 
   /**
