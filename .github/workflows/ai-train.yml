@@ -148,15 +148,17 @@ jobs:
                   return (json.loads(text) if text else None), (nxt.group(1) if nxt else None)
 
           def every(path, key):
-              """All items of a paged list; an error if fewer came back than total_count says."""
-              items, url, total = [], path, None
-              while url:
-                  page, url = api(url)
-                  total = page["total_count"]
-                  items += page[key]
-              if len(items) < total:
-                  raise RuntimeError(f"{path}: {len(items)} of {total}")
-              return items
+              """All items of a paged list; an error if fewer came back than total_count says, three times running (a
+              list filtered by status can come back one short while a run changes status)."""
+              for attempt in range(3):
+                  items, url, total = [], path, None
+                  while url:
+                      page, url = api(url)
+                      total = page["total_count"]
+                      items += page[key]
+                  if len(items) >= total:
+                      return items
+              raise RuntimeError(f"{path}: {len(items)} of {total}")
 
           reasons, notes = [], []
           today = now.astimezone(TPE).date().isoformat()
