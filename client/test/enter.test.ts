@@ -3,7 +3,8 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildingPlan, enterNowhereText, enterOn, townPlan, whoText } from "../src/game/enter.ts";
+import { buildingPlan, enterNowhereText, enterOn, enterPlaceAt, type EnterSpot, townPlan, walkingTo, whoText, withoutUnits } from "../src/game/enter.ts";
+import type { Intent } from "../src/input/intent.ts";
 import { around, edgeArrows, hit, placeTags, tappedItem, type TagItem } from "../src/ui/enter-tags.ts";
 import { type Rules, UnitType } from "../src/sim.ts";
 
@@ -137,4 +138,51 @@ test("點（B2 規則 1）：標籤、小籤、金框都算點到那棟，至少
   assert.equal(tappedItem([tower, town], 260, 220), "t");
   assert.equal(tappedItem([tower, town], 700, 50), null);
   assert.deepEqual(around(10, 10, 4, 2), { x: 8, y: 9, w: 4, h: 2 });
+});
+
+// The mouse's right click (R26 06 a, ceo 2026-11-20): 「右鍵點自己能進駐的地方：進得去的進駐，進不去的走到旁邊」.
+
+test("右鍵點的地方：看到的那棟是能進的建築就是它；否則是框住那一點的城（城裡的箭樓先算箭樓）；都不是就沒有", () => {
+  const box = (x0: number, y0: number, x1: number, y1: number) => [
+    { x: x0, y: y0 },
+    { x: x1, y: y0 },
+    { x: x1, y: y1 },
+    { x: x0, y: y1 },
+  ];
+  const places: EnterSpot[] = [
+    { id: "t7", kind: "town", corners: box(0, 0, 100, 100) },
+    { id: "b20", kind: "hide", building: 20, corners: box(40, 40, 60, 60) },
+    { id: "b30", kind: "post", building: 30, corners: box(200, 0, 230, 30) },
+  ];
+  assert.equal(enterPlaceAt(places, 20, 50, 50), "b20", "a tower in the town: the tower");
+  assert.equal(enterPlaceAt(places, 30, 210, 10), "b30");
+  assert.equal(enterPlaceAt(places, null, 10, 90), "t7", "the town's ground");
+  assert.equal(enterPlaceAt(places, 99, 10, 90), "t7", "a building of the town no one goes into (its keep, a wall): the town");
+  assert.equal(enterPlaceAt(places, null, 100, 50), null, "just outside the box");
+  assert.equal(enterPlaceAt(places, null, 150, 150), null);
+  assert.equal(enterPlaceAt(places, 20, 150, 150), "b20", "its picture seen above its footprint: still it");
+});
+
+test("右鍵：走到點的那一格的（移動、村民的 move）才換成進駐；去掉進去的人，沒人的指令拿掉", () => {
+  const out: Intent[] = [
+    { kind: "command", cmd: { c: "retreat", u: [1, 2, 3], x: 5, y: 6 } },
+    { kind: "command", cmd: { c: "move", u: [9], x: 5, y: 6 } },
+    { kind: "command", cmd: { c: "gather", u: [10], node: 4 } },
+  ];
+  assert.deepEqual(walkingTo(out, 5, 6), [1, 2, 3, 9]);
+  assert.deepEqual(walkingTo(out, 5, 7), []);
+  assert.deepEqual(walkingTo([{ kind: "command", cmd: { c: "attack", u: [1], target: 3 } }], 5, 6), []);
+  assert.deepEqual(withoutUnits(out, [2, 3, 9]), [
+    { kind: "command", cmd: { c: "retreat", u: [1], x: 5, y: 6 } },
+    { kind: "command", cmd: { c: "gather", u: [10], node: 4 } },
+  ]);
+});
+
+test("滿了才標 full（右鍵點滿了的要說）；這種兵進不去、已經在城裡、都要留下守城不標", () => {
+  const tower = { name: "箭樓", x: 0, y: 0, cap: 3, room: 0 };
+  assert.equal(buildingPlan(squad, tower, HIDES).full, true);
+  assert.equal(buildingPlan(squad.filter((s) => s.type === S), { ...tower, room: 3 }, HIDES).full, false);
+  assert.equal(buildingPlan(squad, { ...tower, room: 3 }, HIDES).full, false);
+  assert.equal(townPlan([], 0, true).full, false);
+  assert.equal(townPlan([], 4, true).full, false);
 });
