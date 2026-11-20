@@ -69,12 +69,16 @@ export function steerDirect(w: World, i: number, dx: number, dy: number, speed: 
   u.action[i] = Action.Move;
 }
 
+const openAt = (grid: Uint8Array, n: number, cx: number, cy: number) => cx >= 0 && cy >= 0 && cx < n && cy < n && grid[cy * n + cx] === 0;
+
 /**
  * Can a unit walk straight from (x0, y0) to (x1, y1): every cell the line crosses is walkable,
  * checked every half cell, and a diagonal step between two cells needs both cells beside it
- * open too (as in the flow field, no cutting corners).
+ * open too (as in the flow field, no cutting corners). `grid`: the grid walked (World.grid, or a
+ * unit's own, World.passGrid: through its own buildings, D-154).
  */
-export function openLine(w: World, x0: number, y0: number, x1: number, y1: number): boolean {
+export function openLine(w: World, x0: number, y0: number, x1: number, y1: number, grid: Uint8Array = w.grid): boolean {
+  const n = w.size;
   const dx = x1 - x0;
   const dy = y1 - y0;
   const steps = (Math.max(Math.abs(dx), Math.abs(dy)) >> (CELL_SHIFT - 1)) + 1;
@@ -84,8 +88,8 @@ export function openLine(w: World, x0: number, y0: number, x1: number, y1: numbe
     const cx = (x0 + idiv(dx * k, steps)) >> CELL_SHIFT;
     const cy = (y0 + idiv(dy * k, steps)) >> CELL_SHIFT;
     if (cx === px && cy === py) continue;
-    if (!w.walkable(cx, cy)) return false;
-    if (cx !== px && cy !== py && (!w.walkable(cx, py) || !w.walkable(px, cy))) return false;
+    if (!openAt(grid, n, cx, cy)) return false;
+    if (cx !== px && cy !== py && (!openAt(grid, n, cx, py) || !openAt(grid, n, px, cy))) return false;
     px = cx;
     py = cy;
   }

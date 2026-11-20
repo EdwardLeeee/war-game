@@ -3,14 +3,17 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { BUILDINGS, CHASE_ROUND } from "../src/core/rules.ts";
+import { BUILDINGS, CHASE_ROUND, OWN_PASS } from "../src/core/rules.ts";
 import { BuildingType, CELL_SHIFT, Order, Stance, TownState, UnitType } from "../src/protocol.ts";
 import { cmd, emptyGame, openArea, put, run, slotOf, switchedOff } from "./helpers.ts";
 
 type G = ReturnType<typeof emptyGame>;
 const T = 0;
 
-/** A barracks of player 0 in the open, its soldier north of it, an enemy south of it standing still. */
+/**
+ * A barracks of player 0 in the open, its soldier north of it, an enemy south of it standing still. Its own barracks is
+ * in its way only with OWN_PASS (D-154) off: the two tests of it have it off.
+ */
 function aroundBarracks(): { g: G; a: number; foe: number } {
   const g = emptyGame();
   const at = openArea(g, 12);
@@ -24,15 +27,15 @@ function aroundBarracks(): { g: G; a: number; foe: number } {
   return { g, a, foe };
 }
 
-test("a building between them: it walks round and fights, it does not stand against the wall", () => {
+test("a building between them: it walks round and fights, it does not stand against the wall", switchedOff(OWN_PASS, () => {
   const { g, foe } = aroundBarracks();
   const u = g.w.units.col;
   const hp = u.hp[slotOf(g, foe)];
   run(g, 30 * 20);
   assert.ok(g.w.unit(foe) < 0 || u.hp[slotOf(g, foe)] < hp, "it got at it");
-});
+}));
 
-test("CHASE_ROUND off: as before, it presses against the building", switchedOff(CHASE_ROUND, () => {
+test("CHASE_ROUND off: as before, it presses against the building", switchedOff([CHASE_ROUND, OWN_PASS], () => {
   const { g, a, foe } = aroundBarracks();
   const u = g.w.units.col;
   const hp = u.hp[slotOf(g, foe)];

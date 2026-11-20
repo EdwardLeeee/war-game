@@ -706,7 +706,8 @@ export class Economy {
         u.action[i] = Action.Idle;
         return;
       }
-      if (nearD <= WORK_REACH * WORK_REACH) {
+      // D-154: not from inside one of its own buildings (it walks on to the drop cells, outside).
+      if (nearD <= WORK_REACH * WORK_REACH && !w.insideOwn(i)) {
         u.working[i] = 1;
         u.action[i] = Action.Idle;
         return;
@@ -730,7 +731,7 @@ export class Economy {
     }
     const tx = center(w.nodeX[t]);
     const ty = center(w.nodeY[t]);
-    if (rectDist2(u.x[i], u.y[i], w.nodeX[t], w.nodeY[t], 1) <= WORK_REACH * WORK_REACH) {
+    if (rectDist2(u.x[i], u.y[i], w.nodeX[t], w.nodeY[t], 1) <= WORK_REACH * WORK_REACH && !w.insideOwn(i)) {
       u.working[i] = 1;
       u.action[i] = Action.Gather;
       return;
@@ -758,7 +759,7 @@ export class Economy {
       return;
     }
     const [tx, ty] = buildingCentre(w, bs);
-    if (distToBuilding2(w, i, bs) <= WORK_REACH * WORK_REACH) {
+    if (distToBuilding2(w, i, bs) <= WORK_REACH * WORK_REACH && !w.insideOwn(i)) {
       u.working[i] = 1;
       u.action[i] = build ? Action.Build : Action.Repair;
       return;
