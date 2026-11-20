@@ -384,6 +384,8 @@ export class WorldRenderer {
   ghostCount = 0;
   /** Which (the test page). */
   readonly ghostIds = new Set<number>();
+  /** Ours selected inside our standing buildings, drawn again over them this frame (the test page). */
+  readonly insideIds = new Set<number>();
   /** Units with their owner's colour under their feet this frame (寫實地面), for the test page. */
   footCount = 0;
   /** Our units drawn up on a castle's wall this frame (D-096, test page; the militia on theirs not counted). */
@@ -1531,6 +1533,7 @@ export class WorldRenderer {
     this.ghostCount = 0;
     this.ackedCount = 0;
     this.ghostIds.clear();
+    this.insideIds.clear();
     this.footCount = 0;
     this.wallLifted = 0;
     // A layer with no one behind a wall this frame is hidden: its filter's pass is skipped.
@@ -1644,15 +1647,21 @@ export class WorldRenderer {
         p.ring.tint = 0xffffff;
       }
       // Behind a castle's wall (D-089): drawn again over it, its ring too when selected. Not one
-      // standing on the wall (D-096): it is drawn in front of it.
-      if (walls && top !== null) {
-        const box = this.artUnits?.pictureBox(i) ?? null;
-        const behind = onWall === null && box !== null && this.castle.covers(box, box.z);
+      // standing on the wall (D-096): it is drawn in front of it. One of ours selected inside one of
+      // our standing buildings (drawn behind it while in it, structure-art.ts unitDepth): the same, so
+      // that it is not lost from sight (ceo 2026-11-20); those not selected stay hidden, going through.
+      if (top !== null) {
+        const box = walls ? (this.artUnits?.pictureBox(i) ?? null) : null;
+        const behindWall = onWall === null && box !== null && this.castle.covers(box, box.z);
+        const inOurs = selected && onWall === null && !behindWall && (this.artStructures?.inFootprint(at.x, at.y) ?? false);
         const side = owner === view.me ? "own" : owner === NEUTRAL || owner === NO_OWNER ? "neutral" : "enemy";
-        this.artUnits?.ghost(i, behind ? this.ghostLayers[side] : null, this.ghostStyle === "outline");
-        if (behind) {
+        this.artUnits?.ghost(i, behindWall || inOurs ? this.ghostLayers[side] : null, this.ghostStyle === "outline");
+        if (behindWall) {
           this.ghostCount++;
           this.ghostIds.add(id);
+        }
+        if (inOurs) this.insideIds.add(id);
+        if (behindWall || inOurs) {
           ghosts[side]++;
           if (selected) this.ghostRings.ellipse(at.x, at.y, ringX, ringY).stroke({ width: 2, color: 0xfff3b0 });
         }
