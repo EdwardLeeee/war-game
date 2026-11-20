@@ -10,7 +10,7 @@
 import { Container, Sprite } from "pixi.js";
 import { type Culture, M_PER_CELL } from "../art/spec.ts";
 import { buildingEntry, buildingFrame, buildingState, type BuildingEntry, cropStage, nodeFrame, type NodeEntry, RUBBLE_FADE_S, RUBBLE_HOLD_S, type Side, viewFits } from "../art/structures.ts";
-import { buildingDepth, coverPicture, inAFootprint } from "./building-depth.ts";
+import { buildingDepth, coverPicture, holding, inAFootprint } from "./building-depth.ts";
 import type { PictureMask } from "./picture-mask.ts";
 import { buildingFront, depthOf, nodeFront } from "./depth.ts";
 import { type CrewSpot, crewSpots } from "./outpost-crew.ts";
@@ -402,10 +402,14 @@ export class ArtStructures {
   }
 
   /**
-   * The building whose picture is drawn at (px, py), in front of a unit standing at (ux, uy): it hides the unit there
+   * The building that hides a unit standing at (ux, uy) where the finger is, (px, py): the one whose footprint holds it
+   * (it is not drawn there at all, world.ts), else the one whose picture is drawn at (px, py) in front of it
    * (building-depth.ts coverPicture: not where its picture is transparent, nor a flat foundation).
    */
   coverAt(px: number, py: number, ux: number, uy: number): number | null {
+    const w = this.projection.toWorld(ux, uy);
+    const h = this.drawn.length === 0 ? -1 : holding(this.drawn, this.cellOwner, this.view.map.size, w.x / TILE_PX, w.y / TILE_PX);
+    if (h >= 0) return this.drawn[h].id;
     const i = coverPicture(this.drawn, px, py, this.unitDepth(ux, uy));
     return i < 0 ? null : this.drawn[i].id;
   }

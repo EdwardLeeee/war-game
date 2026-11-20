@@ -54,11 +54,16 @@ export function buildingDepth(drawn: readonly DrawnFootprint[], owner: Int32Arra
 
 /** The unit at (ux, uy) in cells is inside a standing building's footprint (drawn behind it). */
 export function inAFootprint(drawn: readonly DrawnFootprint[], owner: Int32Array, n: number, ux: number, uy: number): boolean {
+  return holding(drawn, owner, n, ux, uy) >= 0;
+}
+
+/** The standing building whose footprint holds the unit at (ux, uy) in cells (index; -1 none, or a flat foundation's). */
+export function holding(drawn: readonly DrawnFootprint[], owner: Int32Array, n: number, ux: number, uy: number): number {
   const cx = Math.floor(ux);
   const cy = Math.floor(uy);
-  if (cx < 0 || cy < 0 || cx >= n || cy >= n) return false;
+  if (cx < 0 || cy < 0 || cx >= n || cy >= n) return -1;
   const k = owner[cy * n + cx];
-  return k !== 0 && inside(drawn[k - 1], ux, uy);
+  return k !== 0 && inside(drawn[k - 1], ux, uy) ? k - 1 : -1;
 }
 
 /** A building drawn standing up, its picture's box on the plane, and which of it is drawn (null: all of the box). */
