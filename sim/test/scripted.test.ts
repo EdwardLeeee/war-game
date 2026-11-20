@@ -34,6 +34,8 @@ test("the scripted player plays the same game twice from one seed", () => {
   assert.ok(a.game.log.some((c) => c.p === 0), "it sent commands");
 });
 
+// With OWN_PASS (D-154) on: before the mine was put ahead of the farms in its build list (#531) the push set off a minute
+// later and lost the town on seed 1 (10.4 minutes); with it, these hold as they were (core 2026-11-20).
 test("the push plan trains an army and takes the small town nearest its main city by minute 10", () => {
   const r = play(1, planFor("push", "h1", "close"), 12000);
   const w = r.game.w;
