@@ -497,8 +497,17 @@
 }
 
 /* 收起: only the title line, the pinned row too. */
-:root[data-ui="r6"] .sel-info.collapsed > .group-actions {
+:root[data-ui="r6"] .sel-info.collapsed > .group-actions,
+:root[data-ui="r6"] .sel-info.collapsed > .sel-pinned {
   display: none;
+}
+
+/* A building's rows pressed again and again (村民目標 − +, ＋遠程 ＋法師 全部離開), pinned at its foot out of what scrolls
+   (panels.ts building(), R26 按鈕不動): what comes and goes is over them, and they stay in sight. */
+:root[data-ui="r6"] .sel-info > .sel-pinned {
+  flex: none;
+  display: flex;
+  flex-direction: column;
 }
 
 :root[data-ui="r6"] .sel-info > .group-actions .chip.b > .sub {
@@ -773,7 +782,8 @@
 
 :root[data-ui="r6"] .sel-info .group-row .group-want,
 :root[data-ui="r6"] .sel-info .sel-keep output {
-  min-width: 26px;
+  /* Three figures' room (100 at 16 px bold is 28): − and + stay put as the number grows (R26 按鈕不動). */
+  min-width: 30px;
   font-size: 16px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -2646,6 +2656,62 @@
 /* Narrower beside it: 雙方數字 keeps the room its numbers need, 關鍵時刻 wraps. */
 :root[data-ui="r6"] #hud:has(> .tut-card.side:not([hidden])) .stats-page .st-two {
   grid-template-columns: minmax(0, 230fr) minmax(0, 346fr);
+}
+
+/* --- 按下去以後，手指或滑鼠底下的按鈕不動（the user 2026-11-18: 「點交易、兵種、加減符號那些一直跳來跳去」）------------------
+   What changes as a click is taken moves nothing beside it, on a phone and a computer alike. The bar's title keeps one
+   width (it was its words', 編隊 1 21/21 over 待命 20・攻擊 1 one moment and 已選 12 over 待命 the next: every kind's
+   cell moved, 34 px after 只選槍兵, 9 clicks in 10 then beside it); a kind's count keeps two figures' room. Numbers
+   between − and + are in figures of one width in a column of their own width (軍團畫面 22, 村民目標 and 經濟分配 30): a
+   longer number never moves − or +. A panel's lines that come and
+   go are over the rows pressed again and again (panels.ts building(): the panel grows upward from its foot). */
+:root[data-ui="r6"] .sel-bar .bar-title {
+  width: 132px;
+  overflow: hidden;
+}
+
+:root[data-ui="r6"] .sel-bar .bar-title .t1,
+:root[data-ui="r6"] .sel-bar .bar-title .t2 {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+:root[data-ui="r6"] .sel-bar .bar-cell .cnt {
+  display: inline-block;
+  min-width: 2ch;
+  text-align: right;
+}
+
+/* The kind's name and 現有 N whole, on a line each: 遠程兵 wrapped in WebKit (its column 29 wide at 640, 4 kinds a line)
+   and the panel grew by a line's worth now and then. Their column 40 wide at 4 kinds a line (from 37: 3 off the row's
+   left padding; the number keeps its 22): 遠程兵 and 現有 34 are 36 in WebKit at 1.5. */
+:root[data-ui="r6"] .sel-info.legion-pop .group-row {
+  padding-left: 3px;
+}
+
+:root[data-ui="r6"] .sel-info.legion-pop .group-row .group-type,
+:root[data-ui="r6"] .sel-info.legion-pop .group-row .group-has {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+:root[data-ui="r6"] .sel-info .group-want,
+:root[data-ui="r6"] .dialog .ratio-value,
+:root[data-ui="r6"] .sel-info .villager-target output {
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+/* Whose they are, with 召回, on a line of its own under the squares (only while there are any): 0/6 growing to
+   「0/6，1 名正過來」 moved 召回 200 px aside. Over the pinned rows, so it grows the panel upward. */
+:root[data-ui="r6"] .sel-info .seat-row .seat-groups:not(:empty) {
+  display: flex;
+  flex-basis: 100%;
+  align-items: center;
+  gap: 5px;
 }
 
 /* --- 介面放大 (R26-01, design/r26/spec.md 01): a large window (600 tall or more, ui-scale.ts sets .ui-large) ---------

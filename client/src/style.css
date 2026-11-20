@@ -951,6 +951,11 @@ button.order-retreat {
   margin-top: 4px;
 }
 
+/* D-138 B's line under ＋遠程／＋法師, while nothing waits. */
+.sel-garrison.call-waiting.empty {
+  display: none;
+}
+
 /* 躲進建築 (D-061) and ＋遠程／＋法師 (D-080): the count on a line of its own, the buttons together under it. */
 .sel-garrison {
   display: flex;
