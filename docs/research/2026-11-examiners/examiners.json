@@ -1,0 +1,621 @@
+{
+ "note": "D-147 examiners: the scripted player's plans that beat hard with no bonus (war-game-ai). Re-checked on main 254a644d (sim build id 40b95e9b4837; the scripted player with #531), 200 games each against hard, seeds from 8000001, 90 minutes a draw, qualify at 25%.",
+ "examiners": [
+  {
+   "id": "6-132",
+   "kind": "march mid, forts 5+, turtle",
+   "map": "random",
+   "search": {
+    "run": "43762744582",
+    "wins": "24/60"
+   },
+   "qualified": {
+    "run": "43804939019",
+    "wins": "71/200",
+    "seedFrom": 6000001
+   },
+   "recheck": {
+    "run": "44809691007",
+    "wins": "86/200",
+    "seedFrom": 8000001,
+    "open": 10,
+    "hits": 91
+   },
+   "base": "push/eco/shooters",
+   "set": {
+    "farmers": 55,
+    "cavalryShare": 39,
+    "userEco": true,
+    "choice": "govern",
+    "corners": true,
+    "guards": 7,
+    "pushAhead": true,
+    "engines": 4,
+    "turtle": true,
+    "earlyTowns": true,
+    "tune.turtle.max": 8,
+    "tune.turtle.outpostAt": 28,
+    "tune.turtle.boomBy": 16200,
+    "tune.turtle.goldLow": 550,
+    "tune.turtle.goldGlut": 150,
+    "tune.turtle.tripTowers": 17
+   },
+   "plan": {
+    "farmers": 55,
+    "production": 6,
+    "spearShare": 50,
+    "townAt": 6,
+    "choice": "govern",
+    "again": true,
+    "guards": 7,
+    "townGuard": false,
+    "hallFirst": true,
+    "mageReserve": 10,
+    "counterAt": 14,
+    "pushAt": 24,
+    "vein": 0,
+    "loose": 1,
+    "woodBias": true,
+    "focus": 0,
+    "staticRatio": false,
+    "noMage": false,
+    "noRange": false,
+    "corners": true,
+    "autoTrain": false,
+    "raid": 0,
+    "steal": "",
+    "race": "",
+    "raceAt": 30,
+    "raceSeen": 12,
+    "raceBy": 24000,
+    "userEco": true,
+    "mageRush": false,
+    "bigTown": false,
+    "raceStage": false,
+    "towerRush": 0,
+    "rushBuildersOnly": false,
+    "fortress": false,
+    "fortressHold": 0,
+    "fortGuards": -1,
+    "homeTowers": 0,
+    "cavalryShare": 39,
+    "pushAhead": true,
+    "harass": 0,
+    "turtle": true,
+    "crush": false,
+    "earlyTowns": true,
+    "lateSiege": false,
+    "engines": 4,
+    "tune": {
+     "fort": {
+      "from": 14400,
+      "dist": 37,
+      "towers": 5,
+      "holdUntil": 36000
+     },
+     "harass": {
+      "from": 12000,
+      "far": 20,
+      "rest": 1200
+     },
+     "rush": {
+      "dist": 12,
+      "builders": 4
+     },
+     "homeTowerAt": 9,
+     "turtle": {
+      "towers": [
+       [
+        14,
+        0
+       ],
+       [
+        20,
+        7
+       ],
+       [
+        25,
+        10
+       ],
+       [
+        30,
+        20
+       ],
+       [
+        35,
+        22
+       ]
+      ],
+      "max": 8,
+      "townTowers": 2,
+      "outposts": [
+       16,
+       18,
+       20,
+       23,
+       26,
+       29
+      ],
+      "outpostAt": 28,
+      "manned": 2,
+      "outpostGuards": 3,
+      "boomBy": 16200,
+      "boomFood": [
+       55,
+       30,
+       15
+      ],
+      "boomSoldiers": 25,
+      "goldLow": 550,
+      "goldGlut": 150,
+      "sites": 3,
+      "homeR": 20,
+      "tripTowers": 17,
+      "bigAt": 40
+     },
+     "crush": {
+      "wave": 15,
+      "min": 30,
+      "ratio": 13,
+      "seen": 600,
+      "near": 14
+     },
+     "lateSiege": {
+      "farmers": [
+       [
+        30,
+        60
+       ],
+       [
+        60,
+        80
+       ],
+       [
+        90,
+        85
+       ]
+      ],
+      "towers": [
+       [
+        14,
+        0
+       ],
+       [
+        20,
+        7
+       ],
+       [
+        25,
+        10
+       ],
+       [
+        30,
+        20
+       ],
+       [
+        45,
+        24
+       ],
+       [
+        60,
+        31
+       ],
+       [
+        90,
+        40
+       ]
+      ],
+      "governed": 4,
+      "worksAt": 72000,
+      "worksTowers": 31,
+      "engines": 3,
+      "army": 60
+     }
+    }
+   }
+  },
+  {
+   "id": "2-89",
+   "kind": "march mid, forts 1-4",
+   "map": "random",
+   "search": {
+    "run": "43762744582",
+    "wins": "12/60"
+   },
+   "qualified": {
+    "run": "43804939019",
+    "wins": "52/200",
+    "seedFrom": 6000001
+   },
+   "recheck": {
+    "run": "44809691007",
+    "wins": "56/200",
+    "seedFrom": 8000001,
+    "open": 0,
+    "hits": 62
+   },
+   "base": "push/eco/shooters",
+   "set": {
+    "farmers": 77,
+    "hallFirst": false,
+    "engines": 6,
+    "homeTowers": 4
+   },
+   "plan": {
+    "farmers": 77,
+    "production": 6,
+    "spearShare": 50,
+    "townAt": 6,
+    "choice": "plunder",
+    "again": true,
+    "guards": 2,
+    "townGuard": false,
+    "hallFirst": false,
+    "mageReserve": 10,
+    "counterAt": 14,
+    "pushAt": 24,
+    "vein": 0,
+    "loose": 1,
+    "woodBias": true,
+    "focus": 0,
+    "staticRatio": false,
+    "noMage": false,
+    "noRange": false,
+    "corners": false,
+    "autoTrain": false,
+    "raid": 0,
+    "steal": "",
+    "race": "",
+    "raceAt": 30,
+    "raceSeen": 12,
+    "raceBy": 24000,
+    "userEco": false,
+    "mageRush": false,
+    "bigTown": false,
+    "raceStage": false,
+    "towerRush": 0,
+    "rushBuildersOnly": false,
+    "fortress": false,
+    "fortressHold": 0,
+    "fortGuards": -1,
+    "homeTowers": 4,
+    "cavalryShare": 0,
+    "pushAhead": false,
+    "harass": 0,
+    "turtle": false,
+    "crush": false,
+    "earlyTowns": false,
+    "lateSiege": false,
+    "engines": 6,
+    "tune": {
+     "fort": {
+      "from": 14400,
+      "dist": 37,
+      "towers": 5,
+      "holdUntil": 36000
+     },
+     "harass": {
+      "from": 12000,
+      "far": 20,
+      "rest": 1200
+     },
+     "rush": {
+      "dist": 12,
+      "builders": 4
+     },
+     "homeTowerAt": 9,
+     "turtle": {
+      "towers": [
+       [
+        14,
+        0
+       ],
+       [
+        20,
+        7
+       ],
+       [
+        25,
+        10
+       ],
+       [
+        30,
+        20
+       ],
+       [
+        35,
+        22
+       ]
+      ],
+      "max": 24,
+      "townTowers": 2,
+      "outposts": [
+       16,
+       18,
+       20,
+       23,
+       26,
+       29
+      ],
+      "outpostAt": 14,
+      "manned": 2,
+      "outpostGuards": 3,
+      "boomBy": 18000,
+      "boomFood": [
+       55,
+       30,
+       15
+      ],
+      "boomSoldiers": 25,
+      "goldLow": 300,
+      "goldGlut": 400,
+      "sites": 3,
+      "homeR": 20,
+      "tripTowers": 7,
+      "bigAt": 40
+     },
+     "crush": {
+      "wave": 15,
+      "min": 30,
+      "ratio": 13,
+      "seen": 600,
+      "near": 14
+     },
+     "lateSiege": {
+      "farmers": [
+       [
+        30,
+        60
+       ],
+       [
+        60,
+        80
+       ],
+       [
+        90,
+        85
+       ]
+      ],
+      "towers": [
+       [
+        14,
+        0
+       ],
+       [
+        20,
+        7
+       ],
+       [
+        25,
+        10
+       ],
+       [
+        30,
+        20
+       ],
+       [
+        45,
+        24
+       ],
+       [
+        60,
+        31
+       ],
+       [
+        90,
+        40
+       ]
+      ],
+      "governed": 4,
+      "worksAt": 72000,
+      "worksTowers": 31,
+      "engines": 3,
+      "army": 60
+     }
+    }
+   }
+  },
+  {
+   "id": "10-79",
+   "kind": "march mid, forts 0, harass",
+   "map": "random",
+   "search": {
+    "run": "44347962709",
+    "wins": "19/60"
+   },
+   "qualified": {
+    "run": "44569272785",
+    "wins": "59/200",
+    "seedFrom": 7000001
+   },
+   "recheck": {
+    "run": "44809691007",
+    "wins": "63/200",
+    "seedFrom": 8000001,
+    "open": 0,
+    "hits": 75
+   },
+   "base": "push/h1/all",
+   "set": {
+    "farmers": 78,
+    "pushAt": 1,
+    "focus": 7,
+    "engines": 6,
+    "harass": 17
+   },
+   "plan": {
+    "farmers": 78,
+    "production": 2,
+    "spearShare": 50,
+    "townAt": 6,
+    "choice": "plunder",
+    "again": true,
+    "guards": 2,
+    "townGuard": false,
+    "hallFirst": true,
+    "mageReserve": 10,
+    "counterAt": 14,
+    "pushAt": 1,
+    "vein": 0,
+    "loose": 2,
+    "woodBias": false,
+    "focus": 7,
+    "staticRatio": false,
+    "noMage": false,
+    "noRange": false,
+    "corners": false,
+    "autoTrain": false,
+    "raid": 0,
+    "steal": "",
+    "race": "",
+    "raceAt": 30,
+    "raceSeen": 12,
+    "raceBy": 24000,
+    "userEco": false,
+    "mageRush": false,
+    "bigTown": false,
+    "raceStage": false,
+    "towerRush": 0,
+    "rushBuildersOnly": false,
+    "fortress": false,
+    "fortressHold": 0,
+    "fortGuards": -1,
+    "homeTowers": 0,
+    "cavalryShare": 0,
+    "pushAhead": false,
+    "harass": 17,
+    "turtle": false,
+    "crush": false,
+    "earlyTowns": false,
+    "lateSiege": false,
+    "engines": 6,
+    "tune": {
+     "fort": {
+      "from": 14400,
+      "dist": 37,
+      "towers": 5,
+      "holdUntil": 36000
+     },
+     "harass": {
+      "from": 12000,
+      "far": 20,
+      "rest": 1200
+     },
+     "rush": {
+      "dist": 12,
+      "builders": 4
+     },
+     "homeTowerAt": 9,
+     "turtle": {
+      "towers": [
+       [
+        14,
+        0
+       ],
+       [
+        20,
+        7
+       ],
+       [
+        25,
+        10
+       ],
+       [
+        30,
+        20
+       ],
+       [
+        35,
+        22
+       ]
+      ],
+      "max": 24,
+      "townTowers": 2,
+      "outposts": [
+       16,
+       18,
+       20,
+       23,
+       26,
+       29
+      ],
+      "outpostAt": 14,
+      "manned": 2,
+      "outpostGuards": 3,
+      "boomBy": 18000,
+      "boomFood": [
+       55,
+       30,
+       15
+      ],
+      "boomSoldiers": 25,
+      "goldLow": 300,
+      "goldGlut": 400,
+      "sites": 3,
+      "homeR": 20,
+      "tripTowers": 7,
+      "bigAt": 40
+     },
+     "crush": {
+      "wave": 15,
+      "min": 30,
+      "ratio": 13,
+      "seen": 600,
+      "near": 14
+     },
+     "lateSiege": {
+      "farmers": [
+       [
+        30,
+        60
+       ],
+       [
+        60,
+        80
+       ],
+       [
+        90,
+        85
+       ]
+      ],
+      "towers": [
+       [
+        14,
+        0
+       ],
+       [
+        20,
+        7
+       ],
+       [
+        25,
+        10
+       ],
+       [
+        30,
+        20
+       ],
+       [
+        45,
+        24
+       ],
+       [
+        60,
+        31
+       ],
+       [
+        90,
+        40
+       ]
+      ],
+      "governed": 4,
+      "worksAt": 72000,
+      "worksTowers": 31,
+      "engines": 3,
+      "army": 60
+     }
+    }
+   }
+  }
+ ]
+}
