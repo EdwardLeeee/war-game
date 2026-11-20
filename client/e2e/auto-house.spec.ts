@@ -53,9 +53,24 @@ async function selectCity(page: Page): Promise<void> {
   const city = await mainCity(page);
   const c = { x: city.cx + city.size / 2, y: city.cy + city.size / 2 };
   await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 1), [c.x, c.y] as const);
-  const p = await page.evaluate(([x, y]) => window.__proto?.game?.cellToScreen(x, y) ?? { x: 0, y: 0 }, [c.x, c.y] as const);
-  await tap(page, p);
-  await expect(page.locator(".sel-info")).toContainText("主城");
+  // At a point of it where the tap is on it, as main-flow's 8d: not on one of ours going by just in front of it, whose
+  // body stands over its middle (#525: ours walk through our own buildings and come out at its front edge; #525's run
+  // 44402475083 picked a villager there). The game runs on: once more if one came by between the look and the tap
+  // (a second apart, not a double tap).
+  await expect(async () => {
+    const p = await page.evaluate(([x, y, id]) => {
+      const g = window.__proto?.game;
+      for (const [dx, dy] of [[0, 0], [-1, -1], [1, -1], [-1, 0], [1, 0], [0, -1]]) {
+        const s = g?.cellToScreen(x + dx, y + dy);
+        const hit = s === undefined ? null : g?.pickIdAt(s.x, s.y);
+        if (s !== undefined && hit?.kind === "building" && hit.id === id) return s;
+      }
+      return null;
+    }, [c.x, c.y, city.id] as const);
+    if (p === null) throw new Error("no point of the main city free to tap");
+    await tap(page, p);
+    await expect(page.locator(".sel-info")).toContainText("主城", { timeout: 1000 });
+  }).toPass({ timeout: 15_000 });
 }
 
 /** Where a house went: its centre's distance from the main city's, and whether it is away from the map's centre. */
