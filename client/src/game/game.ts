@@ -26,6 +26,7 @@ import {
 } from "../input/intent.ts";
 import { attachPointer } from "../input/pointer.ts";
 import { attachViewScroll, ViewScroll } from "../input/view-scroll.ts";
+import { attachHotkeys, type HotKey } from "../input/hotkeys.ts";
 import { enemyTooClose, type GroupOrder, oneCluster, REFORM_CLEAR_CELLS, reformCell, reformFacing, reformMode, type Spot } from "./reform.ts";
 import { type CheckResult, loadExpected, runCheck } from "../lab/determinism.ts";
 import { type Culture, cultureOf, SIEGE_ATLASES } from "../art/spec.ts";
@@ -462,6 +463,8 @@ export class Game implements GestureHost {
     // With a mouse (design/r26/spec.md section 0): the arrow keys and the window's edge move the view.
     const mouse = typeof matchMedia === "function" ? matchMedia("(hover: hover) and (pointer: fine)") : null;
     this.cleanups.push(attachViewScroll(this.viewScroll, () => mouse?.matches === true && this.view !== null));
+    // 快捷鍵 (R26 02 B), with a mouse too.
+    this.cleanups.push(attachHotkeys(() => mouse?.matches === true && this.view !== null, (k) => this.hotkey(k)));
     app.ticker.add(this.tick);
     // GDD §11 (ceo 2026-09-30): going to the background or turning the phone upright pauses
     // the game; coming back leaves it paused until the player presses 繼續.
@@ -2677,6 +2680,14 @@ export class Game implements GestureHost {
     this.camera?.centerOn(x / alive.length, y / alive.length);
   }
 
+  /** Shift+1–4 (R26 02 B): what is selected now made group i, as 改成剛才選的 N 名 does; how many (none selected: 0, the group as it was). */
+  saveSelectionIntoGroup(i: number): number {
+    const view = this.view;
+    if (view === null || view.selection.units.length === 0) return 0;
+    this.beforeGroup = [...view.selection.units];
+    return this.saveBeforeIntoGroup(i);
+  }
+
   /** How many units 改成剛才選的 N 名 would put in the group shown (the living ones selected before). */
   beforeGroupCount(): number {
     const view = this.view;
@@ -3421,12 +3432,16 @@ export class Game implements GestureHost {
 
   /**
    * The mouse's right click (R26 06 B): the order a tap would give the units selected; what is selected stays (ceo
-   * 2026-11-20), but for those who went into a place of ours (enterByClick). Nothing while placing a building or
-   * choosing a place, nor with no units selected.
+   * 2026-11-20), but for those who went into a place of ours (enterByClick). With no units selected, nothing. Placing
+   * a building, 取消; choosing a place, that place (as the left button).
    */
   order(x: number, y: number): void {
     const view = this.view;
-    if (view === null || this.placement !== null || this.mode !== "normal") return;
+    if (view === null) return;
+    // A building being placed: 取消, as ✗ (ceo 2026-11-20). Picking a place (攻擊, 移動, 進駐, 集結點): that place, as the
+    // left button (ceo 2026-11-20: one who orders with the right button presses Q, then the right button on an enemy).
+    if (this.placement !== null) return this.cancelPlacement();
+    if (this.mode !== "normal") return this.tap(x, y, 1);
     if (this.tutor !== null && !this.tutor.tapAllowed(x, y)) {
       this.tutor.blocked();
       return;
@@ -3460,6 +3475,43 @@ export class Game implements GestureHost {
     const taken = c.kind === "town" ? this.army.withGroups(view.selection.units).filter((u) => isSoldier(view.unitType(u))) : c.plan.go;
     this.enterInto(c, false);
     return withoutUnits(out, taken);
+  }
+
+  /**
+   * 快捷鍵 (R26 02 B, with a mouse): Esc the game's own (escape); while a dialog is up, nothing else (its buttons take
+   * no keys); otherwise the interface presses the key's button (Hud.hotkey). True: the key did something.
+   */
+  private hotkey(k: HotKey): boolean {
+    if (k.kind === "escape") return this.escape();
+    if (this.hud.dialogOpen || document.querySelector(".tut-confirm:not([hidden])") !== null) return false;
+    return this.hud.hotkey(k);
+  }
+
+  /**
+   * Esc (R26 02, ceo 2026-11-20): the first of these there is, one a press. A dialog shut (as its 取消; the result
+   * screen stays); a building being placed, 取消 (as ✗); a place being picked, the prompt's 取消 (攻擊, 移動: they stop
+   * and hold, D-054); 更多, ？, 軍團畫面 or 建造's page shut; the selection cleared (as ✕); else 選單.
+   */
+  escape(): boolean {
+    if (this.hud.shutDialog()) return true;
+    if (document.querySelector(".tut-confirm:not([hidden])") !== null) return false;
+    if (this.placement !== null) {
+      this.cancelPlacement();
+      return true;
+    }
+    if (this.mode !== "normal") {
+      if (this.mode === "advance" || this.mode === "retreat") this.cancelToHold();
+      else this.setMode("normal");
+      return true;
+    }
+    if (this.hud.shutOne()) return true;
+    const view = this.view;
+    if (view !== null && (view.selection.units.length > 0 || view.selection.building !== null || view.inspected !== null || this.groupView !== null)) {
+      this.hud.clearSelection();
+      return true;
+    }
+    this.hud.openMenu();
+    return true;
   }
 
   /** The mouse's middle button dragged: the view, 1 to 1, even while a building is being placed. */

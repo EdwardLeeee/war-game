@@ -48,6 +48,8 @@ import { costText } from "../../game/govern-wait.ts";
 import { Minimap } from "./minimap.ts";
 import { armyText, buildingName, clock, GAME_OVER_REASON, UNIT_NAME } from "./names.ts";
 import { CommandArea, PLUNDERED_TEXT, ResourceBar, SelectionInfo } from "./panels.ts";
+import type { HotKey } from "../../input/hotkeys.ts";
+import { hasMouse, keyOn, paintBadges, pressByKey, reachable } from "./keys.ts";
 import { statsModel } from "../stats/model.ts";
 import { StatsPage } from "../stats/page.ts";
 
@@ -56,6 +58,8 @@ const UPDATE_MS = 100;
 const RES_GAP = 8;
 const ALERT_MS = 6000;
 /** Attacks closer than this (cells) to a live alert refresh it instead of adding another. */
+/** Two presses of a group's key within this: as a double tap on its button (R26 02: 300 ms). */
+const GROUP_KEY_TWICE_MS = 300;
 const ALERT_MERGE_CELLS = 8;
 const MAX_ARROWS = 3;
 /** Half an alert arrow's side (style.css .alert-arrow, 52), and a little room round it. */
@@ -148,6 +152,9 @@ export class Hud {
   /** What 全體回城 shows now: "home" (家裡被攻擊), "work" (回去工作), or "" (put away). */
   private recallLook = "";
   private readonly groupBtns: HTMLButtonElement[] = [];
+  private readonly retreatAllBtn: HTMLButtonElement;
+  /** When each group's key was last pressed (two within GROUP_KEY_TWICE_MS: the camera to it). */
+  private readonly groupKeyAt = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
   /** 「退1」–「退4」 (D-081): beside each group button while that group advances. */
   private readonly retreatBtns: HTMLButtonElement[] = [];
   private idleIndex = 0;
@@ -174,6 +181,8 @@ export class Hud {
     const menu = btn(controlsBar, "選單", () => this.openMenu(), this.formal ? "b sec" : "secondary");
     if (this.formal) dress(menu, { ic: "menu", label: "選單" });
     menu.setAttribute("aria-haspopup", "dialog");
+    // 快捷鍵 (R26 02 B): Esc, whose last step opens 選單.
+    keyOn(menu, "escape");
 
     const left = el("div", root, "side-left");
     if (!this.formal) {
@@ -197,6 +206,7 @@ export class Hud {
       this.mapBadge.hidden = true;
     }
     this.idleBtn.type = "button";
+    keyOn(this.idleBtn, "idle");
     this.cleanups.push(
       pressable(this.idleBtn, {
         tap: () => this.nextIdle(),
@@ -237,9 +247,12 @@ export class Hud {
     }
     this.armyBtn = btn(right, armyText(0), () => this.selectArmy(), this.formal ? "army-btn b army" : "army-btn secondary");
     if (this.formal) dress(this.armyBtn, { ic: "army", label: "全軍", count: 0, name: armyText(0) });
+    keyOn(this.armyBtn, "army");
     // 全軍撤退 (user 2026-10-01): nothing to select first. Top left, far from 全軍.
     const retreatAll = btn(root, "全軍撤退", () => game.retreatAll(), `retreat-all-btn ${this.formal ? "b blue " : ""}${ORDER_TONE.retreat}`);
     if (this.formal) dress(retreatAll, { ic: "retreat", label: "全軍撤退" });
+    keyOn(retreatAll, "retreatAll");
+    this.retreatAllBtn = retreatAll;
 
     const host = {
       view: () => game.view,
@@ -446,6 +459,10 @@ export class Hud {
     }
     this.info.update();
     this.cmds.update();
+    // 快捷鍵's badges (R26 02 B), with a mouse.
+    const mouse = hasMouse();
+    paintBadges(this.root, mouse);
+    if (!this.root.contains(this.controlsBar)) paintBadges(this.controlsBar, mouse);
     this.warnPopulationFull();
     // The message strip sits above the selection info, which grows with what is selected
     // (the stance lines, the group panel; D-026, D-054), so that neither covers the other; and
@@ -957,7 +974,78 @@ export class Hud {
     return !this.dialog.hidden;
   }
 
-  private openMenu(): void {
+  /**
+   * 快捷鍵 (R26 02 B, ceo 2026-11-20): the key's button pressed as a click on it would be, when a click could (shown,
+   * not grey, 新手教學 letting it); true when one was. Esc is the game's (Game.escape).
+   */
+  hotkey(k: HotKey): boolean {
+    const blocked = () => this.game.tutor?.blocked();
+    switch (k.kind) {
+      case "slot":
+        return this.cmds.pressKey(k.key, blocked);
+      case "group":
+        return k.save ? this.saveGroupByKey(k.n) : this.groupByKey(k.n, blocked);
+      case "army":
+        return pressByKey(this.armyBtn, this.armyBtn, blocked);
+      case "idle":
+        return reachable(this.idleBtn) && pressByKey(this.idleBtn, this.idleBtn, blocked);
+      case "pause": {
+        const pause = this.controlsBar.querySelector<HTMLElement>("[data-hotkey='pause']") ?? document.querySelector<HTMLElement>("[data-hotkey='pause']");
+        return pause !== null && pressByKey(pause, pause, blocked);
+      }
+      case "retreatAll":
+        return pressByKey(this.retreatAllBtn, this.retreatAllBtn, blocked);
+      case "escape":
+        return false;
+    }
+  }
+
+  /** 1–4: the group's button, as a tap; twice within GROUP_KEY_TWICE_MS, as a double tap (the camera to it). */
+  private groupByKey(i: number, blocked: () => void): boolean {
+    const b = this.groupBtns[i];
+    if (b === undefined || !pressByKey(b, b, blocked)) return false;
+    const now = performance.now();
+    if (now - this.groupKeyAt[i] <= GROUP_KEY_TWICE_MS) {
+      this.game.showGroup(i, true);
+      this.groupKeyAt[i] = Number.NEGATIVE_INFINITY;
+    } else this.groupKeyAt[i] = now;
+    return true;
+  }
+
+  /** Shift+1–4: what is selected made group i, as 軍團畫面's 改成剛才選的 N 名 (nothing selected: nothing). */
+  private saveGroupByKey(i: number): boolean {
+    const b = this.groupBtns[i];
+    if (!reachable(b ?? null) || b === undefined) return false;
+    const r = b.getBoundingClientRect();
+    if (this.game.tutor !== null && !this.game.tutor.tapAllowed(r.left + r.width / 2, r.top + r.height / 2)) {
+      this.game.tutor.blocked();
+      return false;
+    }
+    const n = this.game.saveSelectionIntoGroup(i);
+    if (n > 0) this.game.toast(`已存成編隊 ${i + 1}（${n} 個）`);
+    return n > 0;
+  }
+
+  /** Esc on a dialog (R26 02): shut it, as its 取消, 知道了 or 稍後再決定 would; not the result screen. True: one was there. */
+  shutDialog(): boolean {
+    if (!this.dialogOpen) return false;
+    if (!this.dialog.classList.contains("result")) this.closeDialog();
+    return true;
+  }
+
+  /** Esc's second step (R26 02): 更多, ？, 軍團畫面, 建造's page: the first of them open, shut; true when one was. */
+  shutOne(): boolean {
+    return this.cmds.shutOne() || this.info.shutOne();
+  }
+
+  /** Esc's third step: nothing selected, as ✕ (取消選取) does. */
+  clearSelection(): void {
+    if (this.formal) this.game.reset();
+    else this.game.apply([{ kind: "clear" }]);
+  }
+
+  /** 選單 (Esc's last step too, R26 02). */
+  openMenu(): void {
     const card = this.openDialog("選單", "menu");
     const list = el("div", card, "dialog-buttons column");
     // 開局提示 again (D-044), also after 不再提示.

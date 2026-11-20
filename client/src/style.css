@@ -1722,3 +1722,48 @@ b.seat-label {
   align-items: center;
   gap: 6px;
 }
+
+/* 快捷鍵's badge (R26 02 B, design/r26/spec.md section 02): a button's key in its top right corner, 2 in from its
+   edges, off its words; with a mouse only (keys.ts puts it there then). */
+.hk {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  box-sizing: border-box;
+  border-radius: 4px;
+  background: rgba(18, 12, 6, 0.85);
+  border: 1px solid rgba(242, 200, 98, 0.75);
+  color: #f2c862;
+  font: 700 10px/13px sans-serif;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Two letters or more (Space, Esc, Bksp, F2), and a letter that would cover the words or the icon (自動訓練, 法術營…;
+   keys.ts measures it): over the button's top right corner, off its icon and its words (in R26-02 B's board they
+   covered ▷, ≡ and 退; ceo 2026-11-20: a badge never over them). */
+.hk.wide {
+  font-size: 9px;
+}
+
+.hk.wide,
+.hk.out {
+  top: -6px;
+  right: -4px;
+}
+
+.hk.left {
+  left: 2px;
+  right: auto;
+}
+
+@media (hover: none), (pointer: coarse), (pointer: none) {
+  .hk {
+    display: none;
+  }
+}
