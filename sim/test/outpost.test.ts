@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Game } from "../src/core/game.ts";
 import { postedAt, towerLand } from "../src/core/commands.ts";
-import { BUILDINGS, OUTPOST, OUTPOST_HIDE, TOWER_REACH } from "../src/core/rules.ts";
+import { BUILDINGS, OUTPOST, OUTPOST_HIDE, OWN_PASS, TOWER_REACH } from "../src/core/rules.ts";
 import { PERF } from "../src/core/scenarios.ts";
 import { rectDist2 } from "../src/core/units.ts";
 import { BLOCK_BUILDING, BLOCK_GATE, BLOCK_ROCK } from "../src/core/world.ts";
@@ -311,7 +311,8 @@ test("D-115: its owner's soldier walks through its outpost, finished or going up
   assert.ok(w.buildings.col.hp[w.building(id)] < hp, "it breaks through it (D-024)");
 });
 
-test("D-115: when it falls its cells are open to everyone; an arrow tower still stops its owner too", () => {
+// With OWN_PASS (D-154) off: the main cities give both players a grid of their own, and a tower is its owner's to walk.
+test("D-115 (OWN_PASS off): when it falls its cells are open to everyone; an arrow tower still stops its owner too", switchedOff(OWN_PASS, () => {
   const { g, w, x, y, id } = corridor();
   const n = w.size;
   const c = (y + 11) * n + x + 12;
@@ -329,9 +330,9 @@ test("D-115: when it falls its cells are open to everyone; an arrow tower still 
   assert.ok(b >= 0);
   assert.notEqual(w.grid[c] & BLOCK_BUILDING, 0, "a tower blocks");
   assert.equal(w.passGrid(w.passClass(0))[c] & BLOCK_BUILDING, BLOCK_BUILDING);
-});
+}));
 
-test("switched off (OUTPOST.ownersWalk): an outpost stops its owner as any building", () => {
+test("switched off (OUTPOST.ownersWalk, and OWN_PASS): an outpost stops its owner as any building", switchedOff(OWN_PASS, () => {
   OUTPOST.ownersWalk = false;
   try {
     const { w, x, y } = corridor();
@@ -340,4 +341,4 @@ test("switched off (OUTPOST.ownersWalk): an outpost stops its owner as any build
   } finally {
     OUTPOST.ownersWalk = true;
   }
-});
+}));
