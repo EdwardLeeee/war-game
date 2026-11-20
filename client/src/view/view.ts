@@ -37,7 +37,7 @@ import {
   UnitFlag,
 } from "../sim.ts";
 import { features } from "../game/features.ts";
-import { TILE_PX } from "../tuning.ts";
+import { HIT_RADIUS_PT, TILE_PX, UNIT_CORE_HIT_PT } from "../tuning.ts";
 import { type Projection, tilted, TOP } from "../camera/projection.ts";
 
 /** World px per fixed-point unit. */
@@ -477,13 +477,16 @@ export class GameView implements IntentWorld {
       }
     }
     if (best !== null) {
-      // One of ours walking through one of our buildings' footprint (D-154: ours walk through our own buildings): the
-      // building, so that a tap on it is not taken by whoever goes by (ceo 2026-11-18). Only while walking: one standing
-      // there (in our gate's opening, at an outpost) is picked as ever. Not a farm, where farmers work. A box still takes
-      // them; the enemy's are not touched.
-      if (best.owner === this.me && u[bestRow + U.action] === Action.Move) {
+      // One of ours walking through one of our buildings' footprint (D-154: ours walk through our own buildings), the
+      // finger beside it on that building: the building, so that a tap on it is not taken by whoever goes by (ceo
+      // 2026-11-18). The finger right on it (its feet or body, UNIT_CORE_HIT_PT): that one (ceo 2026-11-20: at the start
+      // the villagers walk out through the main city, and a tap on one of them picked the city). Only while walking: one
+      // standing there (in our gate's opening, at an outpost) is picked as ever. Not a farm, where farmers work. A box
+      // still takes them; the enemy's are not touched.
+      const core = (r * UNIT_CORE_HIT_PT) / HIT_RADIUS_PT;
+      if (best.owner === this.me && u[bestRow + U.action] === Action.Move && bestD > core * core) {
         const through = this.ownBuildingUnder(u[bestRow + U.x], u[bestRow + U.y]);
-        if (through !== null) return through;
+        if (through !== null && (this.buildingAt(wx, wy)?.id === through.id || this.pictureAt?.(t.x, t.y) === through.id)) return through;
       }
       // Behind a building's picture where the finger is, the unit is hidden: the building.
       return this.buildingById(this.coverAt?.(t.x, t.y, bestAt.x, bestAt.y) ?? null) ?? best;
