@@ -1647,13 +1647,17 @@ export class WorldRenderer {
         p.ring.tint = 0xffffff;
       }
       // Behind a castle's wall (D-089): drawn again over it, its ring too when selected. Not one
-      // standing on the wall (D-096): it is drawn in front of it. One of ours selected inside one of
-      // our standing buildings (drawn behind it while in it, structure-art.ts unitDepth): the same, so
-      // that it is not lost from sight (ceo 2026-11-20); those not selected stay hidden, going through.
+      // standing on the wall (D-096): it is drawn in front of it. Inside one of the standing buildings
+      // (ours walk through our own, D-154; building-depth.ts): not drawn at all till it is out, so that
+      // none of it peeps out under the building's picture (ceo 2026-11-20: the feet showed under the main
+      // city's steps and tower); one of ours selected there drawn again over it as behind a wall, its ring
+      // too, not to be lost from sight.
+      let inside = false;
       if (top !== null) {
         const box = walls ? (this.artUnits?.pictureBox(i) ?? null) : null;
         const behindWall = onWall === null && box !== null && this.castle.covers(box, box.z);
-        const inOurs = selected && onWall === null && !behindWall && (this.artStructures?.inFootprint(at.x, at.y) ?? false);
+        inside = onWall === null && !behindWall && (this.artStructures?.inFootprint(at.x, at.y) ?? false);
+        const inOurs = selected && inside;
         const side = owner === view.me ? "own" : owner === NEUTRAL || owner === NO_OWNER ? "neutral" : "enemy";
         this.artUnits?.ghost(i, behindWall || inOurs ? this.ghostLayers[side] : null, this.ghostStyle === "outline");
         if (behindWall) {
@@ -1664,6 +1668,11 @@ export class WorldRenderer {
         if (behindWall || inOurs) {
           ghosts[side]++;
           if (selected) this.ghostRings.ellipse(at.x, at.y, ringX, ringY).stroke({ width: 2, color: 0xfff3b0 });
+        }
+        if (inside) {
+          this.artUnits?.hideBody(i);
+          if (p.foot.visible) this.footCount--;
+          p.foot.visible = false;
         }
       }
       const info = view.rules.units[type];
@@ -1678,7 +1687,7 @@ export class WorldRenderer {
         p.shield.scale.set(1.25);
         p.shield.alpha = 0.35 + 0.65 * (shield / shieldMax);
       }
-      if (selected || hp < max || (shieldMax > 0 && shield < shieldMax)) {
+      if ((selected || hp < max || (shieldMax > 0 && shield < shieldMax)) && (selected || !inside)) {
         this.bar(p.hpBack, p.hpFront, at.x, barY, BAR_W, max > 0 ? hp / max : 1, ownerTint(owner, view.me));
         if (shieldMax > 0) this.bar(p.shBack, p.shFront, at.x, barY - BAR_H - 1, BAR_W, shield / shieldMax, SHIELD_TINT);
       }
