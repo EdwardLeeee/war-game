@@ -7,7 +7,7 @@ import { Action, BuildingFlag, BuildingType, CELL, CELL_SHIFT, NEUTRAL, Order, P
 import { IDENTITY, spawnCentre, stepOrder, xIsCanonY } from "../frame.ts";
 import { type Castle, castleOf } from "./castle.ts";
 import type { GameMap } from "./map.ts";
-import { AUTO_TRAIN, BUILDINGS, ECO_DEFAULT, GATE, KEEP, MARKET, MAX_POPULATION, OUTPOST, POPULATION_200, TOWNS, UNITS } from "./rules.ts";
+import { AUTO_TRAIN, BUILDINGS, ECO_DEFAULT, GATE, KEEP, MARKET, MAX_POPULATION, OUTPOST, OWN_PASS, POPULATION_200, TOWNS, UNITS } from "./rules.ts";
 
 export const UNIT_COLS = [
   "id", "owner", "type", "x", "y", "hp", "shield", "action", "facing", "carryKind", "carryAmount",
@@ -238,6 +238,8 @@ export class World {
   private readonly ownGates = new Int32Array(PLAYER_COUNT);
   /** The cells under outposts (D-115, OUTPOST.ownersWalk); gateOwner says whose. */
   private readonly outpostCells: number[] = [];
+  /** D-154 (OWN_PASS): each player's buildings' blocked cells (BLOCK_BUILDING), which its own pass grid opens. */
+  private readonly ownBuilt = new Int32Array(PLAYER_COUNT);
   private readonly passGrids: Uint8Array[] = [];
   private readonly passBlock: number[] = [];
   private readonly passOpen: number[] = [];
@@ -732,7 +734,7 @@ export class World {
    * to someone closed) unless some gate opens to it alone, then owner + 1 (passGrid).
    */
   passClass(owner: number): number {
-    return owner >= 0 && owner < PLAYER_COUNT && this.ownGates[owner] > 0 ? owner + 1 : 0;
+    return owner >= 0 && owner < PLAYER_COUNT && (this.ownGates[owner] > 0 || (OWN_PASS.on && this.ownBuilt[owner] > 0)) ? owner + 1 : 0;
   }
 
   /** The grid of pass class cls (passClass): World.grid, or a copy with that player's own gates open. */
@@ -749,10 +751,59 @@ export class World {
       const p = cls - 1;
       for (const c of this.gateCells) if (this.gateOwner[c] === p) g[c] &= ~BLOCK_GATE;
       for (const c of this.outpostCells) if (this.gateOwner[c] === p) g[c] &= ~BLOCK_GATE;
+      // D-154 (OWN_PASS): and its own buildings' (not the shared grid's: goals, slots and others stay outside them).
+      if (OWN_PASS.on) {
+        const b = this.buildings.col;
+        const n = this.size;
+        for (let s = 0; s < this.buildings.count; s++) {
+          if (b.owner[s] !== p || !this.ownPasses(b.type[s] as BuildingType)) continue;
+          const sx = this.wide(s);
+          const sy = this.tall(s);
+          for (let y = b.cellY[s]; y < b.cellY[s] + sy; y++) for (let x = b.cellX[s]; x < b.cellX[s] + sx; x++) g[y * n + x] &= ~BLOCK_BUILDING;
+        }
+      }
       this.passBlock[cls] = this.blockVersion;
       this.passOpen[cls] = this.openVersion;
     }
     return g;
+  }
+
+  /**
+   * D-154 (OWN_PASS): a building of this type its owner's units walk through: one that blocks (BLOCK_BUILDING), not a
+   * gate (D-096) nor an outpost (D-115, as before).
+   */
+  ownPasses(type: BuildingType): boolean {
+    return !BUILDINGS[type].walkable && type !== BuildingType.Gate && !(OUTPOST.ownersWalk && type === BuildingType.Outpost);
+  }
+
+  /** D-154: building slot s goes to `owner` (a town's keep on a revolt): the pass grids follow. */
+  setBuildingOwner(s: number, owner: number): void {
+    const b = this.buildings.col;
+    const was = b.owner[s];
+    if (was === owner) return;
+    const type = b.type[s] as BuildingType;
+    if (this.ownPasses(type)) {
+      const cells = this.wide(s) * this.tall(s);
+      if (was >= 0 && was < PLAYER_COUNT) this.ownBuilt[was] -= cells;
+      if (owner >= 0 && owner < PLAYER_COUNT) this.ownBuilt[owner] += cells;
+    }
+    b.owner[s] = owner;
+    if (!OWN_PASS.on || !this.ownPasses(type)) return;
+    this.blockVersion++;
+    this.openVersion++;
+  }
+
+  /**
+   * D-154 (OWN_PASS): unit slot i stands in one of its owner's buildings it walks through (callers leave out the
+   * hidden and those on walls). Off: never.
+   */
+  insideOwn(i: number): boolean {
+    const u = this.units.col;
+    if (!OWN_PASS.on || u.owner[i] >= PLAYER_COUNT) return false;
+    const c = (u.y[i] >> CELL_SHIFT) * this.size + (u.x[i] >> CELL_SHIFT);
+    if ((this.grid[c] & BLOCK_BUILDING) === 0) return false;
+    const s = this.building(this.buildingAt[c]);
+    return s >= 0 && this.buildings.col.owner[s] === u.owner[i];
   }
 
   /** Does player p hold town t (D-096: its walls and gates are p's): awaiting the choice, plundering, repairing or governed? */
@@ -842,6 +893,12 @@ export class World {
       }
     }
     if (info.walkable || gate) return;
+    // D-154: its owner's count of cells it may walk through (passClass).
+    if (this.ownPasses(type)) {
+      const bs = this.building(id);
+      const p = bs >= 0 ? this.buildings.col.owner[bs] : -1;
+      if (p >= 0 && p < PLAYER_COUNT) this.ownBuilt[p] += (on ? 1 : -1) * sx * sy;
+    }
     if (on) this.blockVersion++;
     else this.openVersion++;
   }
