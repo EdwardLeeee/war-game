@@ -143,18 +143,34 @@ test("點城門（使用者 2026-11-01，近戰打門、遠程打牆上）：槍
   await expectSaid(page, "近戰打這座城門；弓手和法師到門前，先射牆上的守軍", { ok: true });
   await shot(page, info, "assault-6-gate-tapped");
   // While it stands, what the screen sends the spearmen at is the gate tapped (the gate and the orders read at once).
+  // Sent at something else: why, with it (what it was sent at, where the spearmen stood, and what the screen saw when it
+  // sent it: `open` and each opening, who was `inside`: assault.ts). CI's WebKit once sent one (#536's run 44772107441).
   const check = () =>
     page.evaluate(([ids, target]) => {
       const g = window.__proto?.game;
       const standing = (g?.buildings() ?? []).some((b) => b.id === target);
       const wrong = ((g?.sent() ?? []) as Record<string, unknown>[]).filter((c) => c.auto === true && c.c === "attack" && (c.u as number[]).some((id) => ids.includes(id)) && c.target !== target);
-      return { standing, wrong: wrong.length };
+      if (wrong.length === 0) return { standing, wrong: 0, why: "" };
+      const units = g?.units() ?? [];
+      const at = (id: unknown) => {
+        const u = units.find((v) => v.id === id);
+        if (u !== undefined) return `unit ${u.id} owner ${u.owner} type ${u.type} at ${u.fx.toFixed(1)},${u.fy.toFixed(1)}`;
+        const b = (g?.buildings() ?? []).find((v) => v.id === id);
+        return b === undefined ? `${String(id)} (gone)` : `building ${b.id} type ${b.type} at ${b.cx},${b.cy}`;
+      };
+      const why = JSON.stringify({
+        tick: g?.header().tick,
+        wrong: wrong.map((c) => ({ u: c.u, target: at(c.target) })),
+        spearmen: units.filter((u) => ids.includes(u.id)).map((u) => `${u.id} at ${u.fx.toFixed(1)},${u.fy.toFixed(1)} order ${u.order} action ${u.action}`),
+        last: g?.lastAssault() ?? null,
+      });
+      return { standing, wrong: wrong.length, why };
     }, [spears, gate.id] as const);
   const end0 = Date.now() + 150_000;
   for (;;) {
     const r = await check();
     if (!r.standing) break;
-    expect(r.wrong, "the spearmen: the gate tapped").toBe(0);
+    expect(r.wrong, `the spearmen: the gate tapped; ${r.why}`).toBe(0);
     expect(Date.now() < end0, "the gate falls").toBe(true);
     await page.waitForTimeout(500);
   }

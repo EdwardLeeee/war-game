@@ -49,6 +49,8 @@ export interface GameHook {
   log(line: string): void;
   /** Latest snapshot header values. */
   header(): { tick: number; paused: boolean; speed: number; scenario: number };
+  /** The last orders the screen sent a town's attackers by itself (攻城, assault.ts), and what it saw then; null for none. */
+  lastAssault(): { tick: number; town: number; scene: unknown; orders: unknown[] } | null;
   /** Pause the game now, as 暫停 does (a test that must stop the clock at once: a tap's round trip is ticks at 400 a second). */
   pause(): void;
   /** Buildings in the latest snapshot: top-left cell and footprint size. */
@@ -342,6 +344,7 @@ export function gameHook(game: Game): GameHook {
       if (game.portForTest instanceof MockPort) game.portForTest.employ(ids, node);
     },
     pauseMarks: () => game.pauseMarksForTest,
+    lastAssault: () => (game.lastAssault === null ? null : (JSON.parse(JSON.stringify(game.lastAssault)) as { tick: number; town: number; scene: unknown; orders: unknown[] })),
     pause: () => game.pause(),
     groups: () => game.army.groups.map((g) => [...g.ids]),
     garrison: (town) => game.army.garrisonOf(town),

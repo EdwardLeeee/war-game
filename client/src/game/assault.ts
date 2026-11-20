@@ -66,6 +66,8 @@ export interface AssaultScene {
   focus: Target | null;
   /** Its defenders on the walls (among `defenders` too). */
   wall: readonly WallTarget[];
+  /** Each gate opening of its castle (the test page: which made it `open`): its first cell, seen now, a gate standing there. */
+  openings?: readonly { x: number; y: number; visible: boolean; standing: boolean }[];
 }
 
 export type AssaultOrder = { c: "attack"; u: number[]; target: number } | { c: "move"; u: number[]; x: number; y: number };
