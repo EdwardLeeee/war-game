@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildingDepth, type DrawnFootprint, inAFootprint } from "../src/render/building-depth.ts";
 
-const N = 40;
+const N = 100;
 /** The cells each drawn building covers (1-based), as structure-art.ts keeps them. */
 function owners(drawn: DrawnFootprint[]): Int32Array {
   const o = new Int32Array(N * N);
@@ -62,4 +62,28 @@ test("方形斜看（D-088）：本來就照畫面上的位置；只有占地裡
   assert.equal(buildingDepth(drawn, own, N, 14.2, 12, 450, true), 450, "outside: as before");
   assert.equal(buildingDepth(drawn, own, N, 9.8, 12, 550, true), 550, "outside: as before");
   assert.ok(buildingDepth(drawn, own, N, 12, 12, 700, true) < CITY.z, "inside: behind it");
+});
+
+test("剛開工、還是平的地基（第一階段）：跟農田一樣，占地裡照畫面上的位置，不算被蓋住", () => {
+  const site: DrawnFootprint = { cellX: 20, cellY: 20, size: 3, z: 900, flat: true };
+  const o = owners([site]);
+  assert.equal(buildingDepth([site], o, N, 21.5, 21.5, 950, false), 950, "inside, in front of its middle");
+  assert.equal(buildingDepth([site], o, N, 21.5, 21.5, 850, false), 850, "inside, behind its middle");
+  assert.equal(inAFootprint([site], o, N, 21.5, 21.5), false);
+  assert.ok(buildingDepth([site], o, N, 23.2, 21.5, 850, false) > site.z, "out past its edge: in front, as before");
+});
+
+test("占地裡、又在旁邊民居的前緣外（e2e 的配置）：民居在畫面上比主城中間低，照樣畫在主城後面", () => {
+  // The e2e scenario's: the main city 4 × 4 at (14, 76), a house 2 × 2 at (19, 75); as a diamond the house's middle
+  // (20, 76) is lower on the screen than the city's (16, 78). The spearman at (17.06, 77.05): inside the city, past the
+  // house's lower edge.
+  const city: DrawnFootprint = { cellX: 14, cellY: 76, size: 4, z: 940 };
+  const house: DrawnFootprint = { cellX: 19, cellY: 75, size: 2, z: 960 };
+  for (const order of [
+    [city, house],
+    [house, city],
+  ]) {
+    const o = owners(order);
+    assert.ok(buildingDepth(order, o, N, 17.06, 77.05, 950, false) < city.z, "behind the city");
+  }
 });

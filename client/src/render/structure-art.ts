@@ -44,6 +44,8 @@ interface Slot {
 /** A building drawn this frame standing up: its footprint (cells), depth, and picture (plane). */
 interface Drawn {
   id: number;
+  /** Its foundation (the first stage of building it): flat on the ground, as a field is (building-depth.ts). */
+  flat: boolean;
   cellX: number;
   cellY: number;
   size: number;
@@ -268,7 +270,8 @@ export class ArtStructures {
     }
     // A keep's full hit points are its town's (D-100: a small town's 600, buildings[Keep] the big city's 1000).
     const max = this.view.buildingMaxHp(b, o);
-    name = buildingFrame(entry, buildingState(progress, b[o + B.hp], max));
+    const state = buildingState(progress, b[o + B.hp], max);
+    name = buildingFrame(entry, state);
     s.ground.visible = false;
     const color = this.art.buildingFrame(side, "color", name ?? "");
     if (color === null) {
@@ -289,7 +292,7 @@ export class ArtStructures {
     const w = color.texture.width * this.scale;
     const h = color.texture.height * this.scale;
     const top = at.y - color.ay * h;
-    this.drawn.push({ id: b[o + B.id], cellX, cellY, size, z, x0: at.x - color.ax * w, y0: top, x1: at.x + (1 - color.ax) * w, y1: at.y + (1 - color.ay) * h });
+    this.drawn.push({ id: b[o + B.id], flat: state === "build1", cellX, cellY, size, z, x0: at.x - color.ax * w, y0: top, x1: at.x + (1 - color.ax) * w, y1: at.y + (1 - color.ay) * h });
     // Those hiding in a finished outpost in view, on its walk (D-121): as many as its soldiers.
     const inside = type === BuildingType.Outpost && outpostHide(this.view.rules) ? b[o + B.soldiers] : 0;
     if (inside > 0 && entry.stand_m !== undefined && progress >= 1000 && tint !== OUT_OF_VIEW) {
