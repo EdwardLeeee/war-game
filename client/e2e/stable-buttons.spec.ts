@@ -13,6 +13,10 @@ test.use({ isMobile: false, hasTouch: false, deviceScaleFactor: 1, reducedMotion
 // Chromium on CI draws 1920 × 950 with the CPU: 軍團畫面 took 59.7 s on a quick runner (#527's run 44406586369) and
 // timed out at 60 on a slow one (#534's run 44741715976); room for a runner twice as slow.
 test.describe.configure({ timeout: 120_000 });
+// One worker, in order (as before --fully-parallel, #535): its tests draw a large battlefield with the CPU in CI's
+// Chromium, and two of them side by side on a runner's 4 cores each took twice as long (stable-buttons:137 144 s, beside
+// :126 and :162 for most of it: #535's run 44762845583). Other files' tests still take the other worker.
+test.describe.configure({ mode: "default" });
 
 type Box = { x: number; y: number; w: number; h: number };
 const MARKET = 15;

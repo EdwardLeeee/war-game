@@ -6,6 +6,11 @@
 import { expect, type Page, test } from "@playwright/test";
 import { openLab, shot, watchErrors } from "./helpers.ts";
 
+// One worker, in order (as before --fully-parallel, #535): its tests draw a large battlefield with the CPU in CI's
+// Chromium, and two of them side by side on a runner's 4 cores each took twice as long (ground.spec:19 192 s against
+// 180, beside :71 and :99 the whole time: main's run 44768526848). Other files' tests still take the other worker.
+test.describe.configure({ mode: "default" });
+
 const look = (page: Page) => page.evaluate(() => window.__proto?.game?.groundLook() ?? null);
 /** Units with their owner's colour under their feet (寫實地面 only, ceo 2026-10-25). */
 const feet = (page: Page) => page.evaluate(() => window.__proto?.game?.feet() ?? -1);
