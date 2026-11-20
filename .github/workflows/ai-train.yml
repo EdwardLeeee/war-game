@@ -13,15 +13,35 @@
 #   exam    D-147: search the scripted player's plays for examiners that beat hard (src/ai/learn/exam.ts search), one
 #           search per job (islands), each its own seeds
 #   examcheck  D-147: the best of each kind from an exam run (from_run), on fresh seeds (exam.ts check), split over the jobs
+#   chaintest  D-147 PR A: one segment of the chain for its trial, dryrun again and again until `hours`; gives way (D-123)
+#   dispatch   D-147: the dispatcher alone (as the schedule runs it), its `args` for the trial (lower caps only)
+#
+# D-147 (ceo 2026-11-21) — the chain that trains with nobody watching:
+#   every 30 minutes the schedule runs the dispatch job alone (plan, train and hours are skipped). It starts one segment
+#   (at most an hour) with `gh workflow run`, or says why not, in its step summary. It is the only job with actions: write;
+#   it uses no secret. It starts nothing unless all hold:
+#     - the repository variable AI_TRAIN is "on" (unset or anything else: off). It can only stop the chain: the caps are
+#       written below and nothing raises them;
+#     - the runner hours of every AI train run since LEDGER_START (failed and cancelled ones too, and what jobs running now
+#       have used so far), plus the segment it would start, stay within 200 a day (Taipei's date) and 5,000 in all. Hours it
+#       cannot add up (the API failing, a list coming back short) start nothing;
+#     - no AI train segment is running or waiting, no job of any other workflow is waiting (D-123), and of the 20 runners at
+#       least 4 stay free with the segment's jobs.
+#   To stop: set AI_TRAIN to "off" (no next segment; the one running ends within its hour), or cancel the run in the Actions
+#   tab to stop at once.
 name: AI train
+run-name: "${{ (github.event_name == 'schedule' || inputs.mode == 'dispatch') && 'AI train: dispatch' || format('AI train: {0}', inputs.mode || github.ref_name) }}"
 
 on:
+  # D-147: the dispatcher, every 30 minutes (off the hour, when GitHub's schedules crowd).
+  schedule:
+    - cron: "7,37 * * * *"
   workflow_dispatch:
     inputs:
       mode:
-        description: dryrun, record, es, eval, exam or examcheck
+        description: dryrun, record, es, eval, exam, examcheck, chaintest or dispatch
         type: choice
-        options: [dryrun, record, es, eval, exam, examcheck]
+        options: [dryrun, record, es, eval, exam, examcheck, chaintest, dispatch]
         default: dryrun
       from_run:
         description: The run whose artifacts this one starts from (es, eval)
@@ -48,7 +68,7 @@ on:
         description: "examcheck: more runs to read (comma-separated ids: searches, and earlier checks for --skip-checked)"
         default: ""
       args:
-        description: "more options for the mode's program, split on spaces (exam, examcheck: exam.ts's)"
+        description: "more options for the mode's program, split on spaces (exam, examcheck: exam.ts's; dispatch: --day-cap H --total-cap H --segment-hours H, each only lower, and --api-fail)"
         default: ""
   push:
     branches: ["ai/train-*"]
@@ -57,13 +77,221 @@ permissions:
   contents: read
   actions: read
 
+# Training runs one at a time in ai-train; the dispatcher in a group of its own, so neither ever cancels or holds up the other.
 concurrency:
-  group: ai-train
+  group: ${{ (github.event_name == 'schedule' || inputs.mode == 'dispatch') && 'ai-train-dispatch' || 'ai-train' }}
   cancel-in-progress: false
 
 jobs:
+  # D-147: decides whether to start the next segment, and starts it. See the top of this file.
+  dispatch:
+    if: github.repository == 'EdwardLeeee/war-game' && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'dispatch'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: The last ledger
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          id=$(gh api "repos/$REPO/actions/artifacts?name=ai-train-ledger&per_page=30" -q '[.artifacts[] | select(.expired == false)] | max_by(.created_at) | .workflow_run.id // empty' || true)
+          if [ -n "$id" ]; then gh run download "$id" --repo "$REPO" -n ai-train-ledger -D prev || echo "no ledger downloaded"; fi
+      - name: Decide and dispatch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref_name }}
+          RUN_ID: ${{ github.run_id }}
+          AI_TRAIN: ${{ vars.AI_TRAIN }}
+          ARGS: ${{ inputs.args }}
+        run: |
+          python3 - <<'PY'
+          import datetime as dt, json, os, re, urllib.error, urllib.request
+
+          # The caps (D-147, ceo 2026-11-21): written here; AI_TRAIN and the inputs can only lower them.
+          DAY_CAP, TOTAL_CAP = 200.0, 5000.0
+          # The ledger counts AI train runs created from this time on (trial segments too; not the examiner search before it).
+          LEDGER_START = "2026-11-21T00:00:00Z"
+          SEGMENT_HOURS, SEGMENT_JOBS = 1.0, 1
+          RUNNERS, RESERVE = 20, 4  # D-123
+          TPE = dt.timezone(dt.timedelta(hours=8))
+          repo, ref, run_id = os.environ["REPO"], os.environ["REF"], int(os.environ["RUN_ID"])
+          args = os.environ.get("ARGS", "").split()
+
+          def opt(name, cap):
+              """A trial's lower cap from args; anything else (absent, not a number, higher) leaves the cap."""
+              try:
+                  return min(cap, float(args[args.index(f"--{name}") + 1]))
+              except (ValueError, IndexError):
+                  return cap
+
+          day_cap, total_cap = opt("day-cap", DAY_CAP), opt("total-cap", TOTAL_CAP)
+          segment_hours = opt("segment-hours", SEGMENT_HOURS)
+          planned = segment_hours * SEGMENT_JOBS
+          now = dt.datetime.now(dt.timezone.utc)
+          when = lambda t: dt.datetime.fromisoformat(t.replace("Z", "+00:00"))
+
+          def api(path, method="GET", body=None):
+              if "--api-fail" in args:
+                  raise RuntimeError("--api-fail (trial)")
+              url = path if path.startswith("https://") else f"https://api.github.com/{path}"
+              req = urllib.request.Request(url, method=method, data=None if body is None else json.dumps(body).encode())
+              req.add_header("Authorization", f"Bearer {os.environ['GH_TOKEN']}")
+              req.add_header("Accept", "application/vnd.github+json")
+              req.add_header("X-GitHub-Api-Version", "2022-11-28")
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  text = r.read().decode()
+                  nxt = re.search(r'<([^>]+)>; rel="next"', r.headers.get("Link", ""))
+                  return (json.loads(text) if text else None), (nxt.group(1) if nxt else None)
+
+          def every(path, key):
+              """All items of a paged list; an error if fewer came back than total_count says."""
+              items, url, total = [], path, None
+              while url:
+                  page, url = api(url)
+                  total = page["total_count"]
+                  items += page[key]
+              if len(items) < total:
+                  raise RuntimeError(f"{path}: {len(items)} of {total}")
+              return items
+
+          reasons, notes = [], []
+          today = now.astimezone(TPE).date().isoformat()
+          # The ledger: runs created before `checkpoint` are all done and summed by Taipei date in `closed`; those after it
+          # are listed each time (GitHub lists at most 1,000 runs by creation date), the done ones kept in `runs`. The
+          # checkpoint stays at least two days back, so a run re-run within two days is added up again.
+          ledger = {"start": LEDGER_START, "checkpoint": LEDGER_START, "closed": {}, "runs": {}}
+          try:
+              with open("prev/ledger.json") as f:
+                  old = json.load(f)
+              if old.get("start") == LEDGER_START and "checkpoint" in old:
+                  ledger = old
+              else:
+                  notes.append("上一份帳不是這一本，從頭算")
+          except (OSError, ValueError):
+              notes.append("沒有上一份帳，從頭算")
+
+          day_hours = total_hours = None
+          try:
+              listed = every(f"repos/{repo}/actions/workflows/ai-train.yml/runs?created=%3E%3D{ledger['checkpoint']}&per_page=100", "workflow_runs")
+              if len(listed) >= 1000:
+                  raise RuntimeError(f"從 {ledger['checkpoint']} 起有 {len(listed)} 個 run，GitHub 最多列 1,000 個，帳可能不完整")
+              sums = dict(ledger["closed"])
+              earliest_open = None
+              for r in listed:
+                  key = str(r["id"])
+                  known = ledger["runs"].get(key)
+                  # A run done and since re-run (a new attempt) is added up again: its jobs of every attempt.
+                  if known is None or not known["done"] or known.get("attempt") != r.get("run_attempt", 1):
+                      days = {}
+                      if r.get("display_title") == "AI train: dispatch":
+                          # The dispatcher: one job, as long as its run.
+                          s, e = r.get("run_started_at"), (r["updated_at"] if r["status"] == "completed" else None)
+                          spans = [(s, e)] if s else []
+                      else:
+                          spans = [(j.get("started_at"), j.get("completed_at")) for j in every(f"repos/{repo}/actions/runs/{r['id']}/jobs?filter=all&per_page=100", "jobs") if j["status"] != "queued"]
+                      for s, e in spans:
+                          if not s:
+                              continue
+                          h = max(0.0, ((when(e) if e else now) - when(s)).total_seconds() / 3600)
+                          d = when(s).astimezone(TPE).date().isoformat()
+                          days[d] = days.get(d, 0.0) + h
+                      known = {"done": r["status"] == "completed", "attempt": r.get("run_attempt", 1), "created": r["created_at"], "days": days}
+                      if known["done"]:
+                          ledger["runs"][key] = known
+                      elif earliest_open is None or r["created_at"] < earliest_open:
+                          earliest_open = r["created_at"]
+                  for d, h in known["days"].items():
+                      sums[d] = sums.get(d, 0.0) + h
+              total_hours = sum(sums.values())
+              day_hours = sums.get(today, 0.0)
+              # Move the checkpoint up: not past a run still going, nor nearer than two days.
+              cut = (now - dt.timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+              if earliest_open is not None and earliest_open < cut:
+                  cut = earliest_open
+              if cut > ledger["checkpoint"]:
+                  for key, known in list(ledger["runs"].items()):
+                      if known["created"] < cut:
+                          for d, h in known["days"].items():
+                              ledger["closed"][d] = ledger["closed"].get(d, 0.0) + h
+                          del ledger["runs"][key]
+                  ledger["checkpoint"] = cut
+          except Exception as e:
+              reasons.append(f"算不出時數（{type(e).__name__}: {e}）")
+              day_hours = total_hours = None
+
+          if os.environ.get("AI_TRAIN", "") != "on":
+              reasons.append(f"開關 AI_TRAIN 是「{os.environ.get('AI_TRAIN', '') or '沒設'}」，不是 on")
+          if day_hours is not None:
+              if day_hours + planned > day_cap:
+                  reasons.append(f"今天已用 {day_hours:.2f} 小時，加這一段 {planned:.2f} 會超過每天上限 {day_cap:g}")
+              if total_hours + planned > total_cap:
+                  reasons.append(f"總共已用 {total_hours:.2f} 小時，加這一段 {planned:.2f} 會超過總上限 {total_cap:g}")
+
+          busy = waiting_jobs = 0
+          try:
+              for status in ("in_progress", "queued"):
+                  for r in every(f"repos/{repo}/actions/runs?status={status}&per_page=100", "workflow_runs"):
+                      if r["id"] == run_id or r.get("display_title") == "AI train: dispatch":
+                          continue
+                      if r["name"] == "AI train":
+                          reasons.append(f"已經有一段訓練在{'跑' if status == 'in_progress' else '等'}（run {r['id']}）")
+                      jobs = every(f"repos/{repo}/actions/runs/{r['id']}/jobs?per_page=100", "jobs")
+                      busy += sum(1 for j in jobs if j["status"] == "in_progress")
+                      w = sum(1 for j in jobs if j["status"] in ("queued", "waiting", "pending"))
+                      if w and r["name"] != "AI train":
+                          waiting_jobs += w
+                          reasons.append(f"{r['name']} 有 {w} 個 job 在等（run {r['id']}）")
+              if RUNNERS - busy - SEGMENT_JOBS < RESERVE:
+                  reasons.append(f"在跑的 job 有 {busy} 個，再派 {SEGMENT_JOBS} 個會剩不到 {RESERVE} 個空位")
+          except Exception as e:
+              reasons.append(f"看不到別的工作（{type(e).__name__}: {e}）")
+
+          go = not reasons
+          started = ""
+          if go:
+              try:
+                  api(f"repos/{repo}/actions/workflows/ai-train.yml/dispatches", "POST",
+                      {"ref": ref, "inputs": {"mode": "chaintest", "hours": f"{segment_hours:g}", "islands": str(SEGMENT_JOBS)}})
+                  started = f"派了一段 chaintest：{segment_hours:g} 小時 × {SEGMENT_JOBS} 個 job（ref {ref}）"
+              except Exception as e:
+                  go, started = False, f"派的時候出錯（{type(e).__name__}: {e}）"
+
+          fmt = lambda h: "?" if h is None else f"{h:.2f}"
+          lines = [
+              "## 派工（D-147）", "",
+              f"- 時間：{now.astimezone(TPE):%Y-%m-%d %H:%M}（台北）",
+              f"- 今天（台北 {today}）已用：{fmt(day_hours)} 小時，上限 {day_cap:g}",
+              f"- 總共（從 {LEDGER_START} 起）已用：{fmt(total_hours)} 小時，上限 {total_cap:g}",
+              f"- 這一段要用：{planned:.2f} 小時；在跑的別的 job：{busy} 個",
+              f"- 開關 AI_TRAIN：{os.environ.get('AI_TRAIN', '') or '沒設'}",
+              f"- 決定：{'派' if go else '不派'}",
+          ]
+          lines += [f"- {started}"] if started else []
+          lines += [f"- 不派的原因：{x}" for x in reasons]
+          lines += [f"- 備註：{x}" for x in notes]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+              f.write("\n".join(lines) + "\n")
+          print("\n".join(lines))
+          if day_hours is not None:
+              os.makedirs("ledger", exist_ok=True)
+              with open("ledger/ledger.json", "w") as f:
+                  json.dump(ledger, f)
+          PY
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ai-train-ledger
+          path: ledger/
+          retention-days: 90
+          if-no-files-found: ignore
+
   # The settings: the inputs, or on a push the branch's sim/src/ai/learn/run.json (the same names).
   plan:
+    if: github.event_name != 'schedule' && inputs.mode != 'dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -95,10 +323,10 @@ jobs:
           fi
           get() { echo "$S" | jq -r --arg k "$1" --arg d "$2" '.[$k] // $d | if type == "string" then . else tojson end'; }
           mode=$(get mode dryrun)
-          case "$mode" in dryrun|record|es|eval|exam|examcheck) ;; *) echo "mode $mode" >&2; exit 1 ;; esac
+          case "$mode" in dryrun|record|es|eval|exam|examcheck|chaintest) ;; *) echo "mode $mode" >&2; exit 1 ;; esac
           islands=$(get islands 8)
           n=1
-          if [ "$mode" = "es" ] || [ "$mode" = "exam" ] || [ "$mode" = "examcheck" ]; then n=$(( islands < 1 ? 1 : islands > 8 ? 8 : islands )); fi
+          if [ "$mode" = "es" ] || [ "$mode" = "exam" ] || [ "$mode" = "examcheck" ] || [ "$mode" = "chaintest" ]; then n=$(( islands < 1 ? 1 : islands > 8 ? 8 : islands )); fi
           # eval: "nets" lists networks in the branch (paths under sim/, "none": hard itself), one job each, at most 8.
           nets=$(echo "$S" | jq -c '.nets // []')
           k=$(echo "$nets" | jq 'length')
@@ -123,7 +351,8 @@ jobs:
     needs: plan
     name: ${{ needs.plan.outputs.mode }} (${{ matrix.island }})
     runs-on: ubuntu-latest
-    timeout-minutes: 355
+    # D-147: a chain segment is ended within its hour whatever happens (chaintest; the real segments the same, PR B).
+    timeout-minutes: ${{ needs.plan.outputs.mode == 'chaintest' && 70 || 355 }}
     strategy:
       fail-fast: false
       max-parallel: 8
@@ -199,6 +428,21 @@ jobs:
             # D-147: run.json "args" adds exam.ts's options (--map, --pool, --rounds, --cap, --top, --seed-from, --qualify).
             exam) node src/ai/learn/exam.ts search --seed $((ISLAND + 1)) --hours "$HOURS" --parents-from "$F" --out "$O" "$@" ;;
             examcheck) node src/ai/learn/exam.ts check --from "$F" --games "$GAMES" --shard "$ISLAND" --shards "$(echo "$ISLANDS" | jq length)" --out "$O" "$@" ;;
+            # D-147 PR A: a segment of the chain for its trial: dryrun again and again until `hours` (at most 1), giving way
+            # as exam.ts does (D-123): a deployment of the site waiting, or another job waiting 10 minutes or more.
+            chaintest)
+              mkdir -p "$O"
+              t0=$(date +%s)
+              stop=$(( t0 + $(awk -v h="$HOURS" 'BEGIN { if (h > 1) h = 1; print int(h * 3600) }') ))
+              why="時間到"
+              k=0
+              while [ $(( $(date +%s) + 120 )) -lt "$stop" ]; do
+                q=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?status=queued&per_page=50" -q '[.workflow_runs[] | select(.name != "AI train" and .name != "AI scratch") | select((.name == "Pages" and .event == "push" and .head_branch == "main") or ((now - (.created_at | fromdate)) >= 600)) | "\(.name) run \(.id)"] | first // empty' || echo "API 出錯")
+                if [ -n "$q" ]; then why="讓位：$q 在等"; break; fi
+                node $T dryrun --out "$O/$k" > /dev/null
+                k=$((k + 1))
+              done
+              { echo "## chaintest（D-147 PR A 的試跑）"; echo; echo "- dryrun $k 次、$(( ($(date +%s) - t0) / 60 )) 分鐘；結束：$why"; } > "$O/summary.md" ;;
           esac
           cat "$O/summary.md" >> "$GITHUB_STEP_SUMMARY"
       - if: always()
@@ -206,12 +450,13 @@ jobs:
         with:
           name: train-${{ needs.plan.outputs.mode }}${{ (needs.plan.outputs.mode == 'es' || needs.plan.outputs.mode == 'exam' || needs.plan.outputs.mode == 'examcheck' || needs.plan.outputs.nets != '[]') && format('-{0}', matrix.island) || '' }}
           path: out/
-          retention-days: 14
+          # D-147 (ceo 2026-11-21): kept 90 days.
+          retention-days: 90
           if-no-files-found: ignore
 
   hours:
     needs: train
-    if: always()
+    if: always() && github.event_name != 'schedule' && inputs.mode != 'dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
