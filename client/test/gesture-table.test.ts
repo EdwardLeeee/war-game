@@ -35,6 +35,10 @@ function play(world: FakeWorld, sel: Selection) {
     pinchStart: () => {},
     pinch: () => {},
     pinchEnd: () => {},
+    click: () => {},
+    order: () => {},
+    drag: () => {},
+    dragEnd: () => {},
   };
   const g = new GestureRecognizer(host);
   let t = 1000;
@@ -137,6 +141,10 @@ test("單指拖曳 → 移動畫面（有慣性）", () => {
     pinchStart: () => {},
     pinch: () => {},
     pinchEnd: () => {},
+    click: () => {},
+    order: () => {},
+    drag: () => {},
+    dragEnd: () => {},
   });
   g.down(1, 500, 200, 0);
   for (let t = 16; t <= 160; t += 16) g.move(1, 500 - t, 200, t);
@@ -166,6 +174,10 @@ test("雙指捏合 → 縮放", () => {
       cam.zoomAt(cx, cy, cam.scale * factor);
     },
     pinchEnd: () => {},
+    click: () => {},
+    order: () => {},
+    drag: () => {},
+    dragEnd: () => {},
   });
   const before = cam.scale;
   g.down(1, 400, 200, 0);

@@ -192,6 +192,38 @@ export function tapIntents(world: IntentWorld, sel: Selection, mode: Mode, wx: n
   return moveIntents(world, u, x, y);
 }
 
+/**
+ * The mouse's left click (R26 06 B, the user 2026-11-18): it selects and never orders. One of ours, that one (a double
+ * click: those of its kind on screen, as a double tap); a building of ours, it; anything else, looked at (an enemy, a
+ * town, a tree); nothing there clears the selection. Choosing a place (a mode, a building placed) is the tap's.
+ */
+export function selectIntents(world: IntentWorld, wx: number, wy: number, count: 1 | 2, r: number): Intent[] {
+  const pick = world.pick(wx, wy, r);
+  if (pick === null) return [{ kind: "clear" }];
+  if (pick.owner === world.me && pick.kind === "unit") {
+    if (count === 2) {
+      const same = world.ownUnitsOnScreen(pick.type);
+      return [{ kind: "select", units: same.includes(pick.id) ? same : [...same, pick.id].sort((a, b) => a - b) }];
+    }
+    return [{ kind: "select", units: [pick.id] }];
+  }
+  if (pick.owner === world.me && pick.kind === "building") return [{ kind: "selectBuilding", id: pick.id }];
+  return [{ kind: "inspect", pick }];
+}
+
+/**
+ * The mouse's right click (R26 06 B): the order a tap gives the units selected (the ground 移動, an enemy 攻擊, a tree
+ * 採集, farmers on a building of ours with work there that work). It never changes what is selected (ceo 2026-11-20):
+ * on one of ours, or a building of ours with no work for them, they walk there. Nothing selected (or a building): none.
+ * Our own town is 移動 for now (進駐 by a right click is the next PR's, ceo 2026-11-20).
+ */
+export function commandIntents(world: IntentWorld, sel: Selection, wx: number, wy: number, r: number, core = r): Intent[] {
+  if (sel.units.length === 0) return [];
+  const out = tapIntents(world, sel, "normal", wx, wy, 1, r, core);
+  if (out.some((i) => i.kind === "select" || i.kind === "selectBuilding" || i.kind === "inspect" || i.kind === "clear")) return moveIntents(world, sel.units, toCell(wx), toCell(wy));
+  return out;
+}
+
 /** Long press: own unit -> skill wheel; empty ground (or a town's open ground) -> box; else nothing. */
 export function longPressKind(world: IntentWorld, wx: number, wy: number, r: number): "box" | "wheel" | "none" {
   const pick = world.pick(wx, wy, r);

@@ -11,8 +11,12 @@
 //   The times are the events' own: a page busy past LONG_PRESS_MS (a long frame) may start a box or
 //   the wheel before it reads a lift that came sooner; that lift then undoes it and taps. So does a
 //   long press that did nothing (ignored: a building, an enemy under the finger).
-// The mouse's right button (R26, the user 2026-11-18: 框起來選兵可以用右鍵): dragged past TAP_SLOP_PX it is a box at
-//   once, no hold first; let go, it selects as the long press's does. A right click without a drag does nothing.
+// The mouse (R26 06 B, the user 2026-11-18; a finger as above, whatever the device):
+//   - left button: dragged past TAP_SLOP_PX it is a box at once, no hold first (it selects as the long press's does);
+//     let go without that, a click (host.click, count 2 for a double click as for a tap): it selects, it orders nothing;
+//   - right button: let go without a drag past TAP_SLOP_PX, an order (host.order); dragged, nothing;
+//   - middle button (the wheel held): moves the view 1 to 1 (host.drag), and flings as a finger does.
+//   The button pressed first is the gesture's; another pressed meanwhile is not taken (pointer.ts).
 // Two fingers: pinch zoom with two-finger pan, from any state; a box in progress is cancelled.
 // After a pinch the remaining finger does nothing until every finger is up.
 
@@ -28,6 +32,14 @@ export type BoxPhase = "start" | "move" | "end" | "cancel";
 
 export interface GestureHost {
   tap(x: number, y: number, count: 1 | 2): void;
+  /** The mouse's left button clicked (no drag): select, or pick the place being chosen. */
+  click(x: number, y: number, count: 1 | 2): void;
+  /** The mouse's right button clicked (no drag): an order for what is selected. */
+  order(x: number, y: number): void;
+  /** The mouse's middle button dragged by (dx, dy): the view moves, whatever else is going on. */
+  drag(dx: number, dy: number): void;
+  /** The middle button let go; velocity in px per ms as panEnd's. */
+  dragEnd(vx: number, vy: number): void;
   /** The finger has been still for LONG_PRESS_MS at (x, y): what should this press become? */
   longPress(x: number, y: number): LongPressResult;
   /** Show or hide the hold cue at (x, y) while a press may still become a long press. */
@@ -47,7 +59,7 @@ export interface GestureHost {
   pinchEnd(): void;
 }
 
-export type GestureState = "idle" | "press" | "held" | "pan" | "box" | "wheel" | "pinch" | "drain" | "right";
+export type GestureState = "idle" | "press" | "held" | "pan" | "box" | "wheel" | "pinch" | "drain" | "left" | "right" | "middle";
 
 interface Finger {
   x: number;
@@ -67,8 +79,10 @@ export class GestureRecognizer {
   private noTap = false;
   /** The long press did nothing (ignored): an early lift taps. */
   private heldIgnored = false;
-  /** The box is the right button's (no long press to undo: an early lift is no tap). */
-  private rightBox = false;
+  /** The box is the mouse's (no long press to undo: an early lift is no tap). */
+  private mouseBox = false;
+  /** The right button was dragged past TAP_SLOP_PX: no order when it is let go. */
+  private rightDragged = false;
   private samples: { x: number; y: number; t: number }[] = [];
   private lastTap: { x: number; y: number; t: number } | null = null;
   private pinchDist = 1;
@@ -100,12 +114,15 @@ export class GestureRecognizer {
     // A third finger, or a second one while the wheel is open, is ignored.
   }
 
-  /** The mouse's right button down (pointer.ts): a box once it is dragged, else nothing. */
-  rightDown(id: number, x: number, y: number, t: number): void {
+  /** A mouse button down (pointer.ts; 0 left, 1 middle, 2 right): not while another gesture goes on. */
+  mouseDown(id: number, button: number, x: number, y: number, t: number): void {
     if (this.fingers.size > 0 || (this.state !== "idle" && this.state !== "drain")) return;
+    if (button !== 0 && button !== 1 && button !== 2) return;
     this.fingers.set(id, { x, y, startX: x, startY: y, startT: t });
-    this.state = "right";
+    this.state = button === 0 ? "left" : button === 1 ? "middle" : "right";
     this.primary = id;
+    this.rightDragged = false;
+    this.samples = [{ x, y, t }];
   }
 
   /** The pointer's capture lost (the window left, a browser's gesture): a box ends as it is, anything else stops. */
@@ -123,12 +140,20 @@ export class GestureRecognizer {
     f.x = x;
     f.y = y;
     switch (this.state) {
-      case "right":
+      case "left":
         if (id === this.primary && Math.hypot(x - f.startX, y - f.startY) > TAP_SLOP_PX) {
           this.state = "box";
-          this.rightBox = true;
+          this.mouseBox = true;
           this.host.box(f.startX, f.startY, x, y, "start");
         }
+        return;
+      case "right":
+        if (id === this.primary && Math.hypot(x - f.startX, y - f.startY) > TAP_SLOP_PX) this.rightDragged = true;
+        return;
+      case "middle":
+        if (id !== this.primary) return;
+        this.host.drag(dx, dy);
+        this.sample(x, y, t);
         return;
       case "press":
         if (id !== this.primary) return;
@@ -200,7 +225,7 @@ export class GestureRecognizer {
     // taps; so does a long press that did nothing (ignored). Not one the host acted on itself (none:
     // the minimap's move, 閒置's): a tap on top would do a second thing.
     const early = !cancelled && t - f.startT < LONG_PRESS_MS && Math.hypot(x - f.startX, y - f.startY) <= TAP_SLOP_PX;
-    if (early && !this.rightBox && (this.state === "box" || this.state === "wheel" || (this.state === "held" && this.heldIgnored))) {
+    if (early && !this.mouseBox && (this.state === "box" || this.state === "wheel" || (this.state === "held" && this.heldIgnored))) {
       if (this.state === "box") this.host.box(f.startX, f.startY, x, y, "cancel");
       if (this.state === "wheel") this.host.closeWheel?.();
       this.state = "press";
@@ -218,6 +243,17 @@ export class GestureRecognizer {
       case "box":
         this.host.box(f.startX, f.startY, x, y, cancelled ? "cancel" : "end");
         break;
+      case "left":
+        if (!cancelled) this.click(f.startX, f.startY, t);
+        break;
+      case "right":
+        if (!cancelled && !this.rightDragged) this.host.order(f.startX, f.startY);
+        break;
+      case "middle": {
+        const v = cancelled ? { vx: 0, vy: 0 } : this.velocity(t);
+        this.host.dragEnd(v.vx, v.vy);
+        break;
+      }
       case "pinch":
         this.host.pinchEnd();
         this.state = "drain";
@@ -228,19 +264,28 @@ export class GestureRecognizer {
     if (this.state !== "drain" || this.fingers.size === 0) this.state = this.fingers.size === 0 ? "idle" : "drain";
     if (this.fingers.size === 0) {
       this.primary = -1;
-      this.rightBox = false;
+      this.mouseBox = false;
     }
   }
 
   private tap(x: number, y: number, t: number): void {
+    this.host.tap(x, y, this.count(x, y, t));
+  }
+
+  /** The left button's click: a double click as a double tap is. */
+  private click(x: number, y: number, t: number): void {
+    this.host.click(x, y, this.count(x, y, t));
+  }
+
+  /** 2 when it follows a tap or click within DOUBLE_TAP_MS and DOUBLE_TAP_SLOP_PX (the first was reported at once). */
+  private count(x: number, y: number, t: number): 1 | 2 {
     const last = this.lastTap;
     if (last !== null && t - last.t <= DOUBLE_TAP_MS && Math.hypot(x - last.x, y - last.y) <= DOUBLE_TAP_SLOP_PX) {
       this.lastTap = null;
-      this.host.tap(x, y, 2);
-    } else {
-      this.lastTap = { x, y, t };
-      this.host.tap(x, y, 1);
+      return 2;
     }
+    this.lastTap = { x, y, t };
+    return 1;
   }
 
   /** Leave whatever the first finger was doing, because a second finger arrived. */

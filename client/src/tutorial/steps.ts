@@ -70,7 +70,8 @@ export interface Step {
   name: string;
   first: string;
   doneTitle: string;
-  doneBody: string;
+  /** A function where a mouse says it otherwise (R26 06 B). */
+  doneBody: string | (() => string);
   /** 跳過這步: what the game needs for the steps after it (sim PROTOCOL 3.12). */
   skip?(c: StepCtx): void;
 }
@@ -105,14 +106,14 @@ export const STEP_LIST: readonly Step[] = [
   { n: 2, name: "採集", first: "2a", doneTitle: "做得好！", doneBody: "村民會一直砍樹、搬回來。之後主城練出的新村民，會照主城的「<b>經濟分配</b>」自己去做事。" },
   { n: 3, name: "蓋兵營", first: "3a", doneTitle: "做得好！", doneBody: "兵營蓋好了。民居不用自己蓋：人口快滿時，主城會自動蓋。", skip: (c) => c.send("houses") },
   { n: 4, name: "練兵", first: "4a", doneTitle: "做得好！", doneBody: "5 名槍兵練好了，站在兵營前面。", skip: (c) => c.send("spears") },
-  { n: 5, name: "選兵和移動", first: "5a", doneTitle: "做得好！", doneBody: "長按拉框選兵，點地面就走過去。" },
+  { n: 5, name: "選兵和移動", first: "5a", doneTitle: "做得好！", doneBody: () => (usesMouse() ? "左鍵拉框選兵，右鍵點地面就走過去。" : "長按拉框選兵，點地面就走過去。") },
   { n: 6, name: "編軍團", first: "6a", doneTitle: "編好了！", doneBody: "之後按 <b>1</b> 就選到這個軍團。兵營也會<b>自動補兵</b>：軍團少了兵，就自己練、自己走過來。" },
   {
     n: 7,
     name: "守家",
     first: "7a",
     doneTitle: "守住了！",
-    doneBody: "敵人來打主城時：按<b>全軍撤退</b>回家，再點敵人反擊。",
+    doneBody: () => (usesMouse() ? "敵人來打主城時：按<b>全軍撤退</b>回家，再用右鍵點敵人反擊。" : "敵人來打主城時：按<b>全軍撤退</b>回家，再點敵人反擊。"),
     // The squad gone too (core's near_home_clear): it would hit the main city for good. Sent after near_home, so the
     // simulation takes them in that order even when the squad is not in a snapshot yet (none alive: NotAvailable).
     skip: (c) => c.send("near_home_clear"),
@@ -127,10 +128,15 @@ export const PHASES: readonly Phase[] = [
     id: "1",
     step: 1,
     title: "看地圖",
-    body: (c) => (c.flags.panned && c.flags.pinched ? "點<b>小地圖</b>上任何地方，畫面就跳過去。" : "用一根手指<b>拖動</b>畫面、兩根手指<b>縮放</b>，再按左下的「地圖」、點小地圖<b>跳過去</b>。"),
+    // With a mouse (R26 06 B): the view moved by the wheel held, the arrow keys or the window's edge, any of them; the
+    // wheel zooms. 「地圖」 first until the minimap is open from the start on a computer (R26 04, the next PRs).
+    body: (c) => {
+      if (c.flags.panned && c.flags.pinched) return "點<b>小地圖</b>上任何地方，畫面就跳過去。";
+      return usesMouse() ? "按住滾輪<b>拖動</b>畫面（或用方向鍵），轉滾輪<b>縮放</b>，再按左下的「地圖」、點小地圖<b>跳過去</b>。" : "用一根手指<b>拖動</b>畫面、兩根手指<b>縮放</b>，再按左下的「地圖」、點小地圖<b>跳過去</b>。";
+    },
     list: (c) => [
-      ["拖動畫面", c.flags.panned],
-      ["兩指縮放", c.flags.pinched],
+      [usesMouse() ? "移動畫面" : "拖動畫面", c.flags.panned],
+      [usesMouse() ? "滾輪縮放" : "兩指縮放", c.flags.pinched],
       ["點小地圖", c.flags.minimap],
     ],
     target: (c) => {
@@ -176,7 +182,7 @@ export const PHASES: readonly Phase[] = [
     noBuilding: true,
     step: 2,
     title: "採集",
-    body: () => "再點一棵<b>樹</b>：村民就去砍，把木頭搬回主城。",
+    body: () => (usesMouse() ? "再用<b>右鍵</b>點一棵<b>樹</b>：村民就去砍，把木頭搬回主城。" : "再點一棵<b>樹</b>：村民就去砍，把木頭搬回主城。"),
     focus: true,
     target: (c) => {
       const f = c.w.selectedFarmers()[0];
@@ -293,8 +299,8 @@ export const PHASES: readonly Phase[] = [
     id: "5a",
     step: 5,
     title: "選兵和移動",
-    // With a mouse, its right button (R26, ceo 2026-11-18); a left press held and dragged does it too.
-    body: () => (usesMouse() ? "按住滑鼠<b>右鍵</b>拖出框，把兵框起來。" : "在空地上<b>長按</b>一下，拖出框把兵框起來。"),
+    // With a mouse, its left button dragged (R26 06 B).
+    body: () => (usesMouse() ? "按住滑鼠<b>左鍵</b>拖出框，把兵框起來。" : "在空地上<b>長按</b>一下，拖出框把兵框起來。"),
     // From nothing selected: the barracks' panel (step 4) would cover them.
     enter: (c) => c.game.apply([{ kind: "clear" }]),
     target: (c) => ({ units: soldiersToBox(c) }),
@@ -310,7 +316,7 @@ export const PHASES: readonly Phase[] = [
     noBuilding: true,
     step: 5,
     title: "選兵和移動",
-    body: () => "點<b>發亮的地方</b>：兵就走過去。",
+    body: () => (usesMouse() ? "用<b>右鍵</b>點<b>發亮的地方</b>：兵就走過去。" : "點<b>發亮的地方</b>：兵就走過去。"),
     focus: true,
     target: (c) => {
       const r = c.w.rally();
@@ -376,7 +382,7 @@ export const PHASES: readonly Phase[] = [
     noBuilding: true,
     step: 7,
     title: "守家",
-    body: () => "軍團回來了。點<b>敵人</b>：軍團就去打，打光就過關。",
+    body: () => (usesMouse() ? "軍團回來了。用<b>右鍵</b>點<b>敵人</b>：軍團就去打，打光就過關。" : "軍團回來了。點<b>敵人</b>：軍團就去打，打光就過關。"),
     target: (c) => {
       const first = armyFirst(c);
       if (first !== null) return first;
@@ -525,7 +531,8 @@ export const PHASES: readonly Phase[] = [
       const m = b === null ? null : c.w.middle(b);
       const s = m === null ? null : c.w.spot(m.x, m.y, 1);
       const inSight = s !== null && s.cx >= 0 && s.cx <= innerWidth && s.cy >= 0 && s.cy <= innerHeight;
-      return inSight ? "攻城砲打建築最快。選著攻城砲和軍團，點對手的<b>主城</b>。" : "對手的主城在<b>標籤指的方向</b>：選著攻城砲和軍團，一起帶過去。";
+      if (!inSight) return "對手的主城在<b>標籤指的方向</b>：選著攻城砲和軍團，一起帶過去。";
+      return usesMouse() ? "攻城砲打建築最快。選著攻城砲和軍團，用<b>右鍵</b>點對手的<b>主城</b>。" : "攻城砲打建築最快。選著攻城砲和軍團，點對手的<b>主城</b>。";
     },
     target: (c) => {
       const first = armyFirst(c, true);

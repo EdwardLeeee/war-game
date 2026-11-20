@@ -16,6 +16,11 @@ export function pressable(el: HTMLElement, h: PressHandlers): () => void {
   let pointerUsed = false;
   const rec = new GestureRecognizer({
     tap: (x, y, count) => h.tap?.(count, x, y),
+    // A button takes every pointer as a finger (rec.down): the mouse's own gestures never come here.
+    click: () => {},
+    order: () => {},
+    drag: () => {},
+    dragEnd: () => {},
     longPress: (x, y) => {
       h.longPress?.(x, y);
       return "none";
