@@ -105,6 +105,9 @@ for (const size of [
   { width: 932, height: 336 },
 ]) {
   test.describe(`${size.width}×${size.height}`, () => {
+    // 1366 × 768 in WebKit only (ceo 2026-11-20): Chromium on CI draws with the CPU (no graphics card), and these 7
+    // tests at that size were 5 of the Client CI's longest shard's minutes; 1920 × 950 and 932 × 336 run in both.
+    test.skip(({ browserName }) => browserName === "chromium" && size.width === 1366, "1366×768 只在 WebKit 跑");
     test("兵種：點選兵那一條的「只選槍兵」，那一格不動，點十下都點在它上面", async ({ page }) => {
       const check = watchErrors(page);
       await start(page, size);
