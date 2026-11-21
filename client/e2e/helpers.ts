@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page, type TestInfo } from "@playwright/test";
+import { expect, type Locator, type Page, test, type TestInfo } from "@playwright/test";
 import { tap, tapOn } from "./touch.ts";
 
 /** iPhone 14 Pro Max landscape insets in pt: Dynamic Island side, rounded corner side, home indicator. */
@@ -412,6 +412,16 @@ export async function resetAll(page: Page): Promise<void> {
  * not under a panel (the camera moved a little when one covers the middle). Waits for the selection; then the game as
  * it was (繼續 pressed if it was running).
  */
+/** A note about a tap tapOwnBuilding made again: in the test's annotations (the report) and the log (CI's). */
+function retryNote(text: string): void {
+  console.warn(text);
+  try {
+    test.info().annotations.push({ type: "tapOwnBuilding retry", description: text });
+  } catch {
+    // Outside a test (a probe): the log alone.
+  }
+}
+
 export async function tapOwnBuilding(page: Page, which: number | { x: number; y: number }, scale?: number): Promise<number> {
   // Few round trips to the page (each is long on CI's slowest machines: #548's run 44838086316 ran out of time).
   const quick = { intervals: [50, 100, 250] };
@@ -443,7 +453,13 @@ export async function tapOwnBuilding(page: Page, which: number | { x: number; y:
           const at = g.cellToScreen(x, y);
           const hit = g.pickIdAt(at.x, at.y);
           const top = document.elementFromPoint(at.x, at.y);
-          if (hit?.kind === "building" && hit.id === b.id && top?.tagName === "CANVAS") return { id: b.id, at, seen };
+          // And 2 px round it the same (ceo 2026-11-21): not a point on the edge of a unit's circle, where a tap a pixel
+          // off picks the unit (WebKit's mouse lands about 1 px off a point with a fraction: run 44852056616).
+          const firm = [[2, 0], [-2, 0], [0, 2], [0, -2]].every(([ox, oy]) => {
+            const h = g.pickIdAt(at.x + ox, at.y + oy);
+            return h?.kind === "building" && h.id === b.id;
+          });
+          if (hit?.kind === "building" && hit.id === b.id && firm && top?.tagName === "CANVAS") return { id: b.id, at, seen };
           if (seen.length < 8) seen.push(`${x},${y}: ${hit === null ? "nothing" : `${hit.kind} ${hit.id}`} under ${top === null ? "none" : `${top.tagName.toLowerCase()}.${top.className}`}`);
         }
       }
@@ -451,21 +467,55 @@ export async function tapOwnBuilding(page: Page, which: number | { x: number; y:
     },
     [which, scale ?? null] as const,
   );
-  // Tapped, and the building selected; else (a page behind its snapshots still moves ours after the look even paused:
-  // WebKit on CI, run 44852056616, a villager came under the point) the selection as it was, and once more.
+  // Tapped, and the building selected; else the selection as it was, and once more. Run 44852056616's miss: WebKit, the
+  // phone's settings, a mouse click (maxTouchPoints 0 there) at y 183.999… landed at 183.0, from 12.2 px to 11.2 px off a
+  // villager walking through the barracks: inside his 12 px core (#534), him. Now a finger there, and points firm 2 px
+  // round; a retry still leaves a note (the test's annotations and the log), to see any left (ceo 2026-11-21): the
+  // picker asked again at the same point, the camera not moved, still saying the building (the tap and the hook going
+  // different ways), or the unit at the same tick (the point on the edge of its circle, the tap's coordinates rounded).
   const before = await page.evaluate(() => window.__proto?.game?.selection().units ?? []);
-  const touch = await page.evaluate(() => navigator.maxTouchPoints > 0);
+  // A finger on a touch screen (the phone's settings), a mouse else: by `pointer: coarse` (navigator.maxTouchPoints is 0
+  // in Playwright's WebKit even with touch, and a mouse there lands about 1 px off a point with a fraction).
+  const touch = await page.evaluate(() => matchMedia("(pointer: coarse)").matches);
   let found = await look();
   for (let attempt = 1; ; attempt++) {
     // None: what each point had (in the test's message).
     if (found.at === null) throw new Error(`no point of building ${JSON.stringify(which)} the tap would take: ${found.seen.join("; ")}`);
-    if (touch) await tap(page, found.at);
-    else await page.mouse.click(found.at.x, found.at.y);
+    const at = found.at;
+    const tickAtTap = await page.evaluate(() => window.__proto?.game?.header().tick ?? -1);
+    if (touch) await tap(page, at);
+    else await page.mouse.click(at.x, at.y);
     const id = found.id;
     try {
       await expect.poll(() => page.evaluate(() => window.__proto?.game?.selection().building ?? null), { ...quick, timeout: attempt < 4 ? 3_000 : 5_000 }).toBe(id);
+      if (attempt > 1) retryNote(`tapOwnBuilding: building ${id} selected on try ${attempt}`);
       break;
     } catch (e) {
+      const why = await page.evaluate(
+        ([x, y, pickPt, corePt]) => {
+          const g = window.__proto?.game;
+          const sel = g?.selection() ?? null;
+          const scale = g?.camera().scale ?? 1;
+          const unitId = sel?.units[0];
+          const u = unitId === undefined ? undefined : (g?.units() ?? []).find((v) => v.id === unitId);
+          return {
+            tick: g?.header().tick ?? -1,
+            selected: sel,
+            again: g?.pickIdAt(x, y) ?? null,
+            rounded: g?.pickIdAt(Math.round(x), Math.round(y)) ?? null,
+            unit: u === undefined ? null : { id: u.id, type: u.type, sx: Math.round(u.sx * 10) / 10, sy: Math.round(u.sy * 10) / 10, px: Math.round(Math.hypot(u.sx - x, u.sy - y) * 10) / 10 },
+            radii: { pick: Math.round(pickPt * 10) / 10, core: Math.round(corePt * 10) / 10, scale: Math.round(scale * 100) / 100 },
+          };
+        },
+        [at.x, at.y, 22, 12] as const,
+      );
+      const said = (h: { kind: string; id: number } | null) => (h === null ? "nothing" : `${h.kind} ${h.id}`);
+      retryNote(
+        `tapOwnBuilding: try ${attempt} on building ${id} at ${at.x.toFixed(2)},${at.y.toFixed(2)} (tick ${tickAtTap} → ${why.tick}) selected ${JSON.stringify(why.selected)}; ` +
+          `picker there again: ${said(why.again)}; rounded: ${said(why.rounded)}; ` +
+          `unit: ${why.unit === null ? "none" : `${why.unit.id} (type ${why.unit.type}) at ${why.unit.sx},${why.unit.sy}, ${why.unit.px} px away`} ` +
+          `(pick ${why.radii.pick} px, core ${why.radii.core} px on the screen; camera ${why.radii.scale})`,
+      );
       if (attempt >= 4) throw e;
       await page.evaluate((u) => window.__proto?.game?.select(u), before);
       found = await look();
