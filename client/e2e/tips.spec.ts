@@ -26,9 +26,14 @@ async function start(page: Page, flags = ""): Promise<void> {
 
 /** The pointer onto the middle of `b`. */
 async function hover(page: Page, b: Locator, steps = 2): Promise<{ x: number; y: number; right: number; top: number; bottom: number }> {
-  // Drawn (the command area may be built again between two looks: the next look finds the new one).
-  await expect.poll(async () => (await b.boundingBox()) !== null).toBe(true);
-  const r = await b.boundingBox();
+  // Drawn: one look, again until it finds it (the command area may be built again between two looks, as after Esc in
+  // CI's WebKit, run 44850002352: a second look found it gone).
+  const got: { box: { x: number; y: number; width: number; height: number } | null } = { box: null };
+  await expect(async () => {
+    got.box = await b.boundingBox();
+    expect(got.box, "drawn").not.toBeNull();
+  }).toPass({ timeout: 10_000 });
+  const r = got.box;
   if (r === null) throw new Error("not drawn");
   await page.mouse.move(r.x + r.width / 2, r.y + r.height / 2, { steps });
   return { x: r.x, y: r.y, right: r.x + r.width, top: r.y, bottom: r.y + r.height };
