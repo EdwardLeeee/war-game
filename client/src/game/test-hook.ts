@@ -209,6 +209,8 @@ export interface GameHook {
   mapSize(): number;
   /** What a tap at this screen point would hit (unit, building, node, town), or null for open ground. */
   pickAt(sx: number, sy: number): string | null;
+  /** 游標 (R26 05): the battlefield's cursor now ("sword", "gate", "hammer", "axe"; null: the arrow). */
+  cursor(): string | null;
   /** The same, with what was picked: a building's id and type (the gate under its picture's top, D-096). */
   pickIdAt(sx: number, sy: number): { kind: string; id: number; type: number } | null;
   /**
@@ -448,6 +450,7 @@ export function gameHook(game: Game): GameHook {
     },
     mapSize: () => game.view?.map.size ?? 0,
     init: () => (game.initSent === null ? null : { ...game.initSent }),
+    cursor: () => game.cursorForTest,
     pickAt: (sx, sy) => {
       const cam = game.camera;
       const view = game.view;
