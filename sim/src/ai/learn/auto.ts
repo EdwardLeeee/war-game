@@ -103,6 +103,8 @@ export interface Candidate {
 export interface Pause {
   /** P-<run id of the segment that paused>: what AI_TRAIN_RESUME is set to (the dispatcher's pauses are named alike). */
   id: string;
+  /** Which check paused it: what resuming resets (resume). */
+  kind: "max" | "rounds" | "aa" | "base" | "canary";
   reason: string;
   numbers: string[];
   at: string;
@@ -132,6 +134,8 @@ export interface State {
   current: { id: string; hash: string; round: number; stage: "exam" | "final"; looks: number } | null;
   results: Record<string, Res>;
   tested: number;
+  /** `tested` when a "max" pause was last resumed: AUTO.candidatesMax counts from there. */
+  testedAtResume: number;
   lastRound: number;
   promotedInRound: boolean;
   roundsWithout: number;
@@ -163,6 +167,7 @@ export function init(examiners: Examiner[], candidates: Candidate[], baseline: H
     current: null,
     results: {},
     tested: 0,
+    testedAtResume: 0,
     lastRound: -1,
     promotedInRound: false,
     roundsWithout: 0,
@@ -328,8 +333,8 @@ export function finalCheck(s: State, c: string): { numbers: Record<string, numbe
 }
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 
-function pause(s: State, id: string, reason: string, numbers: string[], at: string) {
-  s.paused = { id, reason, numbers, at };
+function pause(s: State, id: string, kind: Pause["kind"], reason: string, numbers: string[], at: string) {
+  s.paused = { id, kind, reason, numbers, at };
   s.log.push({ at, what: `暫停 ${id}：${reason}` });
 }
 
@@ -344,6 +349,34 @@ function finish(s: State, verdict: "promote" | "reject", why: string, at: string
     s.promotedInRound = true;
   }
   s.current = null;
+  prune(s);
+}
+
+/**
+ * Drops the results no longer needed, so the state stays small (6,000 examiner games of every candidate tested would
+ * not): only the games played by the champion are kept (its examiner and normal games are the next candidates'
+ * comparison; its A/A and base games until measured). What was decided is kept in `decided`, `aa` and `base`.
+ */
+export function prune(s: State): void {
+  const keep = new Set([s.champion, s.current?.hash]);
+  for (const k of Object.keys(s.results)) if (!keep.has(k.split("|")[1])) delete s.results[k];
+}
+
+/**
+ * Lifts the pause named `id` (AI_TRAIN_RESUME: the user said go on, the ceo told war-game-ai), resetting what made it,
+ * so it does not pause again at once: the candidates' count, the rounds without a promotion, the canary (its new hashes
+ * are kept: the training goes on with the code as it is now). A/A and base pauses are measured once a champion. Returns
+ * whether it lifted one.
+ */
+export function resume(s: State, id: string, at: string): boolean {
+  if (s.paused === null || s.paused.id !== id) return false;
+  const p = s.paused;
+  if (p.kind === "max") s.testedAtResume = s.tested;
+  if (p.kind === "rounds") s.roundsWithout = 0;
+  if (p.kind === "canary") s.canary = null;
+  s.paused = null;
+  s.log.push({ at, what: `恢復 ${id}（${p.reason}）` });
+  return true;
 }
 
 /**
@@ -369,7 +402,7 @@ export function step(s: State, pauseId: string, at: string): string[] {
       s.aa[ch] = side;
       did.push(`自己打自己（${ch}）：+${side.plus}/-${side.minus}、平手 ${side.draws}，z ${side.z.toFixed(2)}`);
       if (Math.abs(side.z) > AUTO.aaZ) {
-        pause(s, pauseId, `自己打自己的對照偏了（z ${side.z.toFixed(2)}，超過 ${AUTO.aaZ}）：量法可能有問題`, [`+${side.plus}`, `-${side.minus}`, `平手 ${side.draws}`], at);
+        pause(s, pauseId, "aa", `自己打自己的對照偏了（z ${side.z.toFixed(2)}，超過 ${AUTO.aaZ}）：量法可能有問題`, [`+${side.plus}`, `-${side.minus}`, `平手 ${side.draws}`], at);
         continue;
       }
     }
@@ -383,14 +416,14 @@ export function step(s: State, pauseId: string, at: string): string[] {
       s.base[ch] = { score, se, games: bl.length };
       did.push(`新的最強版 ${ch} 對基準：${pct(score)}（±${pct(se)}），歷來最好 ${pct(best)}`);
       if (score < best - AUTO.baseDrop * se) {
-        pause(s, pauseId, `新的最強版對基準掉了：${pct(score)}，比歷來最好的 ${pct(best)} 低 ${AUTO.baseDrop} 個標準差以上`, [`${pct(score)} ±${pct(se)}`, `最好 ${pct(best)}`], at);
+        pause(s, pauseId, "base", `新的最強版對基準掉了：${pct(score)}，比歷來最好的 ${pct(best)} 低 ${AUTO.baseDrop} 個標準差以上`, [`${pct(score)} ±${pct(se)}`, `最好 ${pct(best)}`], at);
         continue;
       }
     }
     // The next candidate.
     if (s.current === null) {
-      if (s.tested >= AUTO.candidatesMax) {
-        pause(s, pauseId, `已經考了 ${s.tested} 個候選（一次訓練最多 ${AUTO.candidatesMax} 個）`, [], at);
+      if (s.tested - s.testedAtResume >= AUTO.candidatesMax) {
+        pause(s, pauseId, "max", `已經考了 ${s.tested - s.testedAtResume} 個候選（一次訓練最多 ${AUTO.candidatesMax} 個）`, [], at);
         continue;
       }
       if (s.queue.length === 0) {
@@ -410,7 +443,7 @@ export function step(s: State, pauseId: string, at: string): string[] {
         s.lastRound = c.round;
         if (s.roundsWithout >= AUTO.roundsWithout) {
           s.queue.unshift(c);
-          pause(s, pauseId, `連續 ${s.roundsWithout} 輪都沒有升級`, [], at);
+          pause(s, pauseId, "rounds", `連續 ${s.roundsWithout} 輪都沒有升級`, [], at);
           continue;
         }
       }
@@ -462,7 +495,7 @@ export function checkCanary(s: State, hashes: string[], tree: string, commit: st
     return `記下固定的三局：${hashes.join(" ")}`;
   }
   if (hashes.some((h, i) => h !== s.canary!.hashes[i])) {
-    pause(s, pauseId, "固定的三局雜湊變了：規則或程式在訓練中途變了", [`原本 ${s.canary.hashes.join(" ")}`, `這次 ${hashes.join(" ")}`, `sim ${tree.slice(0, 12)}，commit ${commit.slice(0, 8)}`], at);
+    pause(s, pauseId, "canary", "固定的三局雜湊變了：規則或程式在訓練中途變了", [`原本 ${s.canary.hashes.join(" ")}`, `這次 ${hashes.join(" ")}`, `sim ${tree.slice(0, 12)}，commit ${commit.slice(0, 8)}`], at);
     return "固定的三局雜湊變了，暫停";
   }
   if (tree !== s.canary.tree) {

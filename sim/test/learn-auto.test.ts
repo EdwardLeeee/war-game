@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { AUTO, checkCanary, type Examiner, FINAL, type HP, init, type Item, MAX_LOOKS, needed, planHash, type Res, SEEDS, type State, step } from "../src/ai/learn/auto.ts";
+import { AUTO, checkCanary, type Examiner, FINAL, type HP, init, type Item, MAX_LOOKS, needed, type Pause, planHash, type Res, resume, SEEDS, type State, step } from "../src/ai/learn/auto.ts";
 import { rng } from "../src/ai/learn/exam-space.ts";
 import { SPRT } from "../src/ai/learn/sprt.ts";
 
@@ -19,6 +19,8 @@ interface Fake {
   reached?: number;
   think?: number;
 }
+/** The pause, read through a function so the type checker does not keep an earlier narrowing. */
+const pausedOf = (s: State): Pause | null => s.paused;
 const hashOf = (key: string) => {
   let h = 2166136261;
   for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619);
@@ -150,7 +152,7 @@ test("auto: needed lists the canary always, nothing twice, nothing once paused",
   // The champion's A/A and the candidate's first AUTO.lookAhead looks.
   assert.equal(items.filter((x) => x.key.startsWith("aa|")).length, SEEDS.aaCount * 2);
   assert.equal(items.filter((x) => x.key.startsWith("vs|")).length, AUTO.lookAhead * SPRT.vsChunk);
-  s.paused = { id: "P-1", reason: "", numbers: [], at: "" };
+  s.paused = { id: "P-1", kind: "max", reason: "", numbers: [], at: "" };
   assert.deepEqual(needed(s), []);
 });
 
@@ -159,8 +161,8 @@ test("auto: the A/A control pauses when it leans", () => {
   step(s, "P-1", "t");
   for (const x of needed(s)) if (x.key.startsWith("aa|")) s.results[x.key] = { w: x.key.endsWith("|0") ? 1 : Number(x.key.split("|")[3]) % 3 === 0 ? 0 : 1, h: x.key };
   step(s, "P-7", "t");
-  assert.equal(s.paused?.id, "P-7");
-  assert.match(s.paused!.reason, /自己打自己/);
+  assert.equal(pausedOf(s)?.id, "P-7");
+  assert.match(pausedOf(s)!.reason, /自己打自己/);
 });
 
 test("auto: the canary's hashes changing pauses; only the code changing is noted", () => {
@@ -170,7 +172,24 @@ test("auto: the canary's hashes changing pauses; only the code changing is noted
   assert.equal(s.paused, null);
   assert.match(s.log.at(-1)!.what, /tree1|程式改了/);
   checkCanary(s, ["a", "x", "c"], "tree3", "c3", "P-3", "t");
-  assert.equal(s.paused?.id, "P-3");
+  assert.equal(pausedOf(s)?.id, "P-3");
+  // Resumed (the user said go on): the new hashes are kept from then on.
+  assert.equal(resume(s, "P-9", "t"), false);
+  assert.equal(resume(s, "P-3", "t"), true);
+  assert.equal(s.canary, null);
+  checkCanary(s, ["a", "x", "c"], "tree3", "c3", "P-4", "t");
+  assert.equal(s.paused, null);
+});
+
+test("auto: resuming a pause resets what made it, so it does not pause again at once", () => {
+  const t = init(EXAMINERS, [{ id: "x", plan: { farmers: 99 }, round: 0 }]);
+  t.tested = AUTO.candidatesMax;
+  step(t, "P-1", "t");
+  assert.equal(pausedOf(t)?.kind, "max");
+  assert.ok(resume(t, "P-1", "t"));
+  step(t, "P-2", "t");
+  assert.equal(t.paused, null);
+  assert.equal(t.current?.id, "x");
 });
 
 test("auto: rounds with no promotion, and too many candidates, pause", () => {
