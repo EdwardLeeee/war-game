@@ -133,7 +133,8 @@ export const PHASES: readonly Phase[] = [
     // 04, docked at the bottom left), not said (ceo 2026-11-21); a phone's words as they were.
     body: (c) => {
       if (c.flags.panned && c.flags.pinched) return "點<b>小地圖</b>上任何地方，畫面就跳過去。";
-      const then = c.el(".mm-docked .minimap") !== null ? "再點小地圖<b>跳過去</b>" : "再按左下的「地圖」、點小地圖<b>跳過去</b>";
+      // R26 06's table (ceo 2026-11-21: 「左下的」 was missing).
+      const then = c.el(".mm-docked .minimap") !== null ? "再點左下的小地圖<b>跳過去</b>" : "再按左下的「地圖」、點小地圖<b>跳過去</b>";
       return usesMouse() ? `按住滾輪<b>拖動</b>畫面（或用方向鍵），轉滾輪<b>縮放</b>，${then}。` : `用一根手指<b>拖動</b>畫面、兩根手指<b>縮放</b>，${then}。`;
     },
     list: (c) => [
