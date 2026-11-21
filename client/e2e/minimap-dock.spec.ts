@@ -157,7 +157,7 @@ test.describe("滑鼠 1366×768", () => {
   test.use({ viewport: { width: 1366, height: 768 }, isMobile: false, hasTouch: false, deviceScaleFactor: 1, reducedMotion: "reduce" });
   test.describe.configure({ timeout: 120_000 });
 
-  test("地圖收起、再按打開，最擠的選兵那一條跟著讓開、回來，✕ 都在條內；視窗矮到 600 以下、窄到寬÷倍數不到 824 就收起，回來再打開；窄的時候按地圖照手機的開法", async ({ page }, info) => {
+  test("地圖收起、再按打開，最擠的選兵那一條跟著讓開、回來，✕ 都在條內", async ({ page }) => {
     const check = watchErrors(page);
     await start(page, CROWDED);
     await docked(page);
@@ -173,45 +173,56 @@ test.describe("滑鼠 1366×768", () => {
     await docked(page);
     expect(near((await at(page, "#hud .sel-bar")).left, 252)).toBe(true);
     await crowdOk(page);
-    // The window under 600: put away, all back; 600 again: open. Chromium only: Playwright's WebKit, with Chromium at
-    // work beside it, ran no frame for 5 s and more after the window changed size, and the resize event (handed over
-    // with a frame) came 5 s late or not before the test gave up (17 frames in the whole test, Chromium's 126).
-    if (info.project.name === "chromium") {
-      await page.setViewportSize({ width: 1366, height: 560 });
-      await putAway(page);
-      await page.setViewportSize({ width: 1366, height: 768 });
-      await docked(page);
-      // 1024 × 768 (846 at 1.21): docked, the bar 343, the kinds folded into 「+N 種」. Put away and docked again with the
-      // window as it was: fitted again each time (it was only when the window changed: ✕ pushed out).
-      await page.setViewportSize({ width: 1024, height: 768 });
-      await docked(page);
-      await crowdOk(page);
-      await page.locator("#hud .map-btn").click();
-      await putAway(page);
-      await crowdOk(page);
-      await page.locator("#hud .map-btn").click();
-      await docked(page);
-      await crowdOk(page);
-      // Half a 1920 screen (960 × 950 at 1.5: 640): put away; 地圖 opens it as on a phone, the bar where it was.
-      await page.setViewportSize({ width: 960, height: 950 });
-      await putAway(page);
-      await crowdOk(page);
-      await page.locator("#hud .map-btn").click();
-      await expect.poll(async () => await left(page)).toMatchObject({ minimap: true, docked: false });
-      await expect(page.locator("#hud .minimap")).toBeVisible();
-      expect(near((await at(page, "#hud .sel-bar")).left, 72)).toBe(true);
-      expect(near((await at(page, "#hud .map-btn")).left, 4)).toBe(true);
-      await crowdOk(page);
-      // Wide again (1236 at 1.5 is 824): docked, open as it was.
-      await page.setViewportSize({ width: 1240, height: 950 });
-      await docked(page);
-      await crowdOk(page);
-    }
+    check();
+  });
+
+  test("視窗大小：矮到 600 以下、窄到寬÷倍數不到 824 就收起，回來再打開；1024 寬時收起、打開都重算「+N 種」；窄的時候按地圖照手機的開法", async ({ page }, info) => {
+    // Chromium only: Playwright's WebKit, with Chromium at work beside it, ran no frame for 5 s and more after the window
+    // changed size, and the resize event (handed over with a frame) came 5 s late or not before the test gave up (17
+    // frames in the whole test, Chromium's 126).
+    test.skip(info.project.name !== "chromium", "the window's size: Chromium");
+    // Six sizes, each the battlefield drawn again: on CI's slowest (EPYC 7763) about 67 s, 75 s at worst (× 2.54 and
+    // × 2.86 of here); twice that.
+    test.setTimeout(150_000);
+    const check = watchErrors(page);
+    await start(page, CROWDED);
+    await docked(page);
+    await selectAll(page);
+    // The window under 600: put away, all back; 600 again: open.
+    await page.setViewportSize({ width: 1366, height: 560 });
+    await putAway(page);
+    await page.setViewportSize({ width: 1366, height: 768 });
+    await docked(page);
+    // 1024 × 768 (846 at 1.21): docked, the bar 343, the kinds folded into 「+N 種」. Put away and docked again with the
+    // window as it was: fitted again each time (it was only when the window changed: ✕ pushed out).
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await docked(page);
+    await crowdOk(page);
+    await page.locator("#hud .map-btn").click();
+    await putAway(page);
+    await crowdOk(page);
+    await page.locator("#hud .map-btn").click();
+    await docked(page);
+    await crowdOk(page);
+    // Half a 1920 screen (960 × 950 at 1.5: 640): put away; 地圖 opens it as on a phone, the bar where it was.
+    await page.setViewportSize({ width: 960, height: 950 });
+    await putAway(page);
+    await crowdOk(page);
+    await page.locator("#hud .map-btn").click();
+    await expect.poll(async () => await left(page)).toMatchObject({ minimap: true, docked: false });
+    await expect(page.locator("#hud .minimap")).toBeVisible();
+    expect(near((await at(page, "#hud .sel-bar")).left, 72)).toBe(true);
+    expect(near((await at(page, "#hud .map-btn")).left, 4)).toBe(true);
+    await crowdOk(page);
+    // Wide again (1236 at 1.5 is 824): docked, open as it was.
+    await page.setViewportSize({ width: 1240, height: 950 });
+    await docked(page);
+    await crowdOk(page);
     check();
   });
 
   test("地圖收起過：視窗縮放後不自己打開，回開局畫面再繼續這局也收著；重來（新的一局）又打開", async ({ page }, info) => {
-    // Two games' starts: on CI's slowest (EPYC 7763) about 58 s, 76 s at worst (× 2.85 and × 3.74 of here); twice that.
+    // Two games' starts: on CI's slowest (EPYC 7763) about 56 s, 63 s at worst (× 2.54 and × 2.86 of here); 180 s.
     test.setTimeout(180_000);
     const check = watchErrors(page);
     await start(page);
