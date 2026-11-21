@@ -249,9 +249,9 @@ export class StatsPage {
     p.scrollTop = 0;
     const moments = m.moments.map((x) => x.tick);
     const war = m.events.length > 0;
-    const legend = (host: HTMLElement) => {
+    const legend = (host: HTMLElement, marks = war) => {
       const lg = el("div", host, "st-legend");
-      lg.innerHTML = `<span class="st-lg">${keyLine("me")}我方</span><span class="st-lg">${keyLine("foe")}敵方</span>${war ? `<span class="st-wkey">${warKey()}</span>` : ""}`;
+      lg.innerHTML = `<span class="st-lg">${keyLine("me")}我方</span><span class="st-lg">${keyLine("foe")}敵方</span>${marks ? `<span class="st-wkey">${warKey()}</span>` : ""}`;
     };
     const momentKey = () => {
       if (m.moments.length === 0) return;
@@ -318,7 +318,8 @@ export class StatsPage {
           const ov = el("div", p, "st-ovarmy");
           const head = el("div", ov, "st-ovhead");
           el("h3", head, "", "兵力");
-          legend(head);
+          // 我方 and 敵方 only, as the board (the marks' key is 兵力's page's).
+          legend(head, false);
           const host = chartHost(ov);
           this.armyChart(ov, host, boxOf(host, 160), moments);
         }
