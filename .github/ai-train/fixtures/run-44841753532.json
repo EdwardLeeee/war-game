@@ -1,0 +1,1 @@
+{"conclusion":"cancelled","created_at":"2026-11-21T00:08:09Z","display_title":"AI train: chaintest","event":"workflow_dispatch","head_branch":"ai/dispatch-chain","id":44841753532,"path":".github/workflows/ai-train.yml","run_attempt":1,"status":"completed"}
