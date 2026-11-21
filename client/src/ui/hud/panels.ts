@@ -750,14 +750,16 @@ export class SelectionInfo {
 
   /**
    * The kinds that fit along the bar (R24-02 ⑥): from the last, those that do not give way to 「+N 種」.
-   * Measured, never by device, when the screen or the title changes.
+   * Measured, never by device, when the screen, the title or the bar's own width changes (R26 04: the minimap docked
+   * or put away moves its left, the window the same; 建造's five columns its right), or what is in it no longer fits
+   * (a count a digit longer).
    */
   private fitBar(): void {
     const row = this.barRow;
     const extra = this.extraCell;
     if (row === null || extra === null) return;
-    const size = `${innerWidth}x${innerHeight}`;
-    if (this.barFit === size) return;
+    const size = `${innerWidth}x${innerHeight}:${row.clientWidth}`;
+    if (this.barFit === size && row.scrollWidth <= row.clientWidth + 1) return;
     this.barFit = size;
     const chips = [...row.querySelectorAll<HTMLElement>(".bar-chip")];
     for (const c of chips) c.hidden = false;

@@ -1,9 +1,10 @@
 // 小地圖常開 (R26 04, design/r26/spec.md 04; ceo 2026-11-21): with a mouse on a large window (600 tall or more) the
 // minimap is open from the start at the bottom left, 176 × 176 before the zoom, 地圖 right of it (186), 閒置 over it
 // (188), the bar and the panels right of it (252); 全體回城 8 over 閒置 (240). 地圖 puts it away and all go back where
-// they were; that is for this game only (重來 opens it again). The window made small (under 600): put away, all back;
-// large again: open, unless 地圖 put it away. 新手教學's 第 1 步 does not say 「地圖」 while it is open. A phone: as it was
-// (r6-left.spec, behind 地圖).
+// they were; that is for this game only (重來 opens it again). The window made small (under 600) or narrow (its width ÷
+// the zoom under 824, ceo 2026-11-21): put away, all back; again large and wide: open, unless 地圖 put it away; opened
+// by 地圖 there, as on a phone (nothing moved). The most crowded bar (all six kinds, 進駐 among the commands) clear of
+// the commands, ✕ in it. 新手教學's 第 1 步 does not say 「地圖」 while it is open. A phone: as it was (r6-left.spec).
 //
 // 減少動態效果 on (r6.css: no sliding or growing): where things are does not wait on the page's frames, which in
 // Playwright's WebKit came about one a second with Chromium at work beside it.
@@ -14,21 +15,53 @@ type Left = { minimap: boolean; auto: boolean; docked: boolean; recall: string; 
 const left = (page: Page): Promise<Left> => page.evaluate(() => window.__proto?.game?.left() ?? { minimap: false, auto: false, docked: false, recall: "?", places: -1 });
 const zoom = (page: Page): Promise<number> => page.evaluate(() => Number(getComputedStyle(document.documentElement).getPropertyValue("--ui-zoom")) || 1);
 
-async function start(page: Page): Promise<void> {
-  await page.goto("./?test=1&mock=1&tps=20");
+/** The fake world with every kind of ours (the gallery's cavalry, a siege engine) and 進駐 (outposts, towers). */
+const CROWDED = "&r7=1&outpost=1&hide=1&siege=1&gallery=1";
+
+async function start(page: Page, flags = ""): Promise<void> {
+  await page.goto(`./?test=1&mock=1&tps=20${flags}`);
   await page.getByRole("button", { name: "開始", exact: true }).click();
   await page.waitForFunction(() => window.__proto?.ready === true && window.__proto.screen === "battle");
   await page.waitForFunction(() => (window.__proto?.game?.header().tick ?? 0) > 5);
   await page.evaluate(() => window.__proto?.game?.pause());
 }
 
-async function selectArmy(page: Page): Promise<void> {
-  await page.evaluate(() => {
+/** All six kinds of ours selected (villagers, spearmen, ranged, mages, cavalry, siege engines). */
+async function selectAll(page: Page): Promise<void> {
+  const kinds = await page.evaluate(() => {
     const g = window.__proto?.game;
     const me = g?.me();
-    g?.select((g?.units() ?? []).filter((u) => u.owner === me && [1, 2, 3].includes(u.type)).map((u) => u.id));
+    const ids = (g?.units() ?? []).filter((u) => u.owner === me && [0, 1, 2, 3, 5, 6].includes(u.type));
+    g?.select(ids.map((u) => u.id));
+    return new Set(ids.map((u) => u.type)).size;
   });
+  expect(kinds).toBe(6);
   await expect(page.locator("#hud .sel-bar")).toBeVisible();
+}
+
+/**
+ * The most crowded bar (ceo 2026-11-21): what is in it fits (the kinds that do not, 「+N 種」), ✕ in it; clear of the
+ * commands (進駐 among them), in the window.
+ */
+async function crowdOk(page: Page): Promise<void> {
+  const look = () =>
+    page.evaluate(() => {
+      const bar = document.querySelector("#hud .sel-bar") as HTMLElement;
+      const row = bar.querySelector(".bar-row") as HTMLElement;
+      const b = bar.getBoundingClientRect();
+      const x = bar.querySelector(".bar-x")?.getBoundingClientRect();
+      const cmds = [...document.querySelectorAll<HTMLElement>("#hud .cmds button")].filter((e) => e.offsetParent !== null);
+      const over = cmds.map((e) => e.getBoundingClientRect()).some((r) => Math.min(r.right, b.right) > Math.max(r.left, b.left) && Math.min(r.bottom, b.bottom) > Math.max(r.top, b.top));
+      return {
+        fits: row.scrollWidth <= row.clientWidth + 1,
+        x: x !== undefined && x.width > 0 && x.left >= b.left - 0.5 && x.right <= b.right + 0.5,
+        over,
+        inWindow: b.left >= 0 && b.top >= 0 && b.right <= innerWidth && b.bottom <= innerHeight,
+        enter: cmds.some((e) => /^進駐/.test(e.textContent ?? "")),
+      };
+    });
+  // Fitted again within an update (10 a second).
+  await expect.poll(look).toEqual({ fits: true, x: true, over: false, inWindow: true, enter: true });
 }
 
 /** Where a thing is, before the zoom: its left and its bottom off the window's foot, and its size. */
@@ -70,7 +103,7 @@ test.describe("滑鼠 1920×950", () => {
   test("開局就打開，在左下角 176×176；地圖在右邊、閒置在上面、選兵那一條和選取資訊在右邊（252），全體回城在閒置上面；都不互蓋、不出視窗", async ({ page }, info) => {
     test.skip(info.project.name !== "chromium", "layout: Chromium (ceo 2026-11-21)");
     const check = watchErrors(page);
-    await start(page);
+    await start(page, CROWDED);
     await docked(page);
     expect(await zoom(page)).toBe(1.5);
     // The minimap drawn as large as it shows (R26-01: its size × the pixel ratio × the zoom), not the old one stretched.
@@ -79,10 +112,11 @@ test.describe("滑鼠 1920×950", () => {
     await expect(page.locator("#hud .idle-btn")).toBeVisible();
     const idle = await at(page, "#hud .idle-btn");
     expect(near(idle.left, 4) && near(idle.bottom, 188), JSON.stringify(idle)).toBe(true);
-    // The selection's bar right of it, 640 wide (R26-01).
-    await selectArmy(page);
+    // The selection's bar right of it, 640 wide (R26-01): the most crowded, all six kinds.
+    await selectAll(page);
     const bar = await at(page, "#hud .sel-bar");
     expect(near(bar.left, 252) && near(bar.bottom, 4) && near(bar.w, 640), JSON.stringify(bar)).toBe(true);
+    await crowdOk(page);
     // 全體回城 when it jumps out (the enemy at a farmer by the main city, as r6-left.spec): 8 over 閒置.
     const farmer = await page.evaluate(() => {
       const g = window.__proto?.game;
@@ -123,19 +157,22 @@ test.describe("滑鼠 1366×768", () => {
   test.use({ viewport: { width: 1366, height: 768 }, isMobile: false, hasTouch: false, deviceScaleFactor: 1, reducedMotion: "reduce" });
   test.describe.configure({ timeout: 120_000 });
 
-  test("地圖收起、再按打開，選兵那一條跟著讓開、回來；視窗矮到 600 以下收起、回來再打開", async ({ page }, info) => {
+  test("地圖收起、再按打開，最擠的選兵那一條跟著讓開、回來，✕ 都在條內；視窗矮到 600 以下、窄到寬÷倍數不到 824 就收起，回來再打開；窄的時候按地圖照手機的開法", async ({ page }, info) => {
     const check = watchErrors(page);
-    await start(page);
+    await start(page, CROWDED);
     await docked(page);
-    await selectArmy(page);
+    await selectAll(page);
     expect(near((await at(page, "#hud .sel-bar")).left, 252)).toBe(true);
+    await crowdOk(page);
     // 地圖: put away, all back (the bar at 72); again: open.
     await page.locator("#hud .map-btn").click();
     await putAway(page);
     expect(near((await at(page, "#hud .sel-bar")).left, 72)).toBe(true);
+    await crowdOk(page);
     await page.locator("#hud .map-btn").click();
     await docked(page);
     expect(near((await at(page, "#hud .sel-bar")).left, 252)).toBe(true);
+    await crowdOk(page);
     // The window under 600: put away, all back; 600 again: open. Chromium only: Playwright's WebKit, with Chromium at
     // work beside it, ran no frame for 5 s and more after the window changed size, and the resize event (handed over
     // with a frame) came 5 s late or not before the test gave up (17 frames in the whole test, Chromium's 126).
@@ -144,6 +181,31 @@ test.describe("滑鼠 1366×768", () => {
       await putAway(page);
       await page.setViewportSize({ width: 1366, height: 768 });
       await docked(page);
+      // 1024 × 768 (846 at 1.21): docked, the bar 343, the kinds folded into 「+N 種」. Put away and docked again with the
+      // window as it was: fitted again each time (it was only when the window changed: ✕ pushed out).
+      await page.setViewportSize({ width: 1024, height: 768 });
+      await docked(page);
+      await crowdOk(page);
+      await page.locator("#hud .map-btn").click();
+      await putAway(page);
+      await crowdOk(page);
+      await page.locator("#hud .map-btn").click();
+      await docked(page);
+      await crowdOk(page);
+      // Half a 1920 screen (960 × 950 at 1.5: 640): put away; 地圖 opens it as on a phone, the bar where it was.
+      await page.setViewportSize({ width: 960, height: 950 });
+      await putAway(page);
+      await crowdOk(page);
+      await page.locator("#hud .map-btn").click();
+      await expect.poll(async () => await left(page)).toMatchObject({ minimap: true, docked: false });
+      await expect(page.locator("#hud .minimap")).toBeVisible();
+      expect(near((await at(page, "#hud .sel-bar")).left, 72)).toBe(true);
+      expect(near((await at(page, "#hud .map-btn")).left, 4)).toBe(true);
+      await crowdOk(page);
+      // Wide again (1236 at 1.5 is 824): docked, open as it was.
+      await page.setViewportSize({ width: 1240, height: 950 });
+      await docked(page);
+      await crowdOk(page);
     }
     check();
   });
@@ -159,6 +221,10 @@ test.describe("滑鼠 1366×768", () => {
     // The window small and large again (Chromium only, as above): it stays away.
     if (info.project.name === "chromium") {
       await page.setViewportSize({ width: 1366, height: 560 });
+      await page.setViewportSize({ width: 1366, height: 768 });
+      await page.waitForTimeout(300);
+      expect(await left(page)).toMatchObject({ minimap: false, docked: false });
+      await page.setViewportSize({ width: 960, height: 950 });
       await page.setViewportSize({ width: 1366, height: 768 });
       await page.waitForTimeout(300);
       expect(await left(page)).toMatchObject({ minimap: false, docked: false });

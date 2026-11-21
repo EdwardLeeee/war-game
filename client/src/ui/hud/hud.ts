@@ -38,7 +38,7 @@ import { FIXED_TO_PX } from "../../view/view.ts";
 import { applyTheme, loadTheme, saveTheme, THEME_LABEL, THEMES } from "../../theme.ts";
 import { formalUi } from "../formal.ts";
 import { dress, icon } from "../icons.ts";
-import { applyUiScale, largeWindow, loadUiSize, saveUiSize, UI_SIZE_LABEL, UI_SIZES, uiZoom } from "../ui-scale.ts";
+import { applyUiScale, largeWindow, loadUiSize, onUiZoom, saveUiSize, UI_SIZE_LABEL, UI_SIZES, uiZoom } from "../ui-scale.ts";
 import { ORDER_TONE } from "../overlays.ts";
 import { adjustRatio, type Ratio } from "./economy-ratio.ts";
 import { loadTownHintOff, saveTownHintOff } from "../../hint-pref.ts";
@@ -65,6 +65,13 @@ const ALERT_MERGE_CELLS = 8;
 const MAX_ARROWS = 3;
 /** Half an alert arrow's side (style.css .alert-arrow, 52), and a little room round it. */
 const ARROW_HALF = 28;
+/**
+ * 小地圖常開 (R26 04, ceo 2026-11-21): docked only while the window's width ÷ the zoom is at least this, so that the bar
+ * keeps 280 beside it (已選, 「+N 種」, ？ and ✕): 252 its left docked, 292 its right with 建造's five columns. Half a
+ * 1920 screen at 1.5 (640) left it 137, ✕ pushed out.
+ */
+const DOCK_MIN_WIDTH = 252 + 280 + 292;
+
 /** 開局提示: the minimap keeps flashing the town this long after the hint is closed (ms). */
 const TOWN_FLASH_AFTER_MS = 10_000;
 /** 不再提示 in 正式介面 without crystal (the user 2026-11-08): where to turn it back on. */
@@ -149,10 +156,11 @@ export class Hud {
   private minimapOpen = false;
   private minimapAuto = false;
   /**
-   * 小地圖常開 (R26 04): with a mouse on a large window it is open from the start, at the bottom left with 地圖 right of
-   * it (docked); 地圖 puts it away for this game only (a new Hud each game: a new game, or the last one continued, opens
-   * it again; ceo 2026-11-21). The window made small, put away and all where it was; large again, open, unless 地圖 put
-   * it away.
+   * 小地圖常開 (R26 04): with a mouse on a large window wide enough (DOCK_MIN_WIDTH) it is open from the start, at the
+   * bottom left with 地圖 right of it and the rest out of its way (docked); 地圖 puts it away for this game only (a new
+   * Hud each game: a new game, or the last one continued, opens it again; ceo 2026-11-21). The window made small or
+   * narrow, put away and all where it was; large again, open, unless 地圖 put it away. Opened by 地圖 where it does not
+   * dock, as on a phone (over 地圖, nothing moved: ceo 2026-11-21).
    */
   private readonly mouseQuery = typeof matchMedia === "function" ? matchMedia(MOUSE_QUERY) : null;
   private docked = false;
@@ -364,13 +372,16 @@ export class Hud {
     if (this.formal) {
       this.minimap.canvas.classList.add("closed");
       this.dockMinimap();
-      // Again as the window changes size or the pointer changes (not on the page's frames: those may stop a while).
+      // Again as the window changes size, the pointer changes or 介面大小 the zoom (not on the page's frames: those may
+      // stop a while).
       const dock = () => this.dockMinimap();
       addEventListener("resize", dock);
       this.mouseQuery?.addEventListener("change", dock);
+      const unZoom = onUiZoom(dock);
       this.cleanups.push(() => {
         removeEventListener("resize", dock);
         this.mouseQuery?.removeEventListener("change", dock);
+        unZoom();
       });
     }
     this.info = new SelectionInfo(root, host);
@@ -628,7 +639,7 @@ export class Hud {
 
   /** 小地圖常開 (R26 04): docked or not as the window and the pointer are now (nothing if unchanged). */
   private dockMinimap(): void {
-    const dock = this.mouseQuery?.matches === true && largeWindow();
+    const dock = this.mouseQuery?.matches === true && largeWindow() && innerWidth / uiZoom() >= DOCK_MIN_WIDTH;
     if (dock === this.docked) return;
     this.docked = dock;
     if (dock && !this.minimapShut && !this.minimapOpen) this.setMinimap(true);
