@@ -45,7 +45,7 @@ UNITS[UnitType.Ranged] = {
 };
 UNITS[UnitType.Mage] = {
   type: UnitType.Mage, hp: 30, shield: 60, attack: 4, range: 5 * CELL, speed: speed(90), sight: 7,
-  cooldown: 20, cost: cost(0, 0, 90, 50), trainTicks: 35 * S, population: 1,
+  cooldown: 20, cost: cost(0, 0, 140), trainTicks: 35 * S, population: 1,
 };
 UNITS[UnitType.Militia] = {
   type: UnitType.Militia, hp: 40, shield: 0, attack: 4, range: CELL, speed: speed(100), sight: 5,
@@ -105,7 +105,7 @@ BUILDINGS[BuildingType.Range] = building({
   type: BuildingType.Range, hp: 500, size: 3, cost: cost(0, 120), buildTicks: 35 * S, trains: [UnitType.Ranged],
 });
 BUILDINGS[BuildingType.MageHall] = building({
-  type: BuildingType.MageHall, hp: 500, size: 3, cost: cost(0, 150, 100), buildTicks: 45 * S, trains: [UnitType.Mage],
+  type: BuildingType.MageHall, hp: 500, size: 3, cost: cost(0, 150, 200), buildTicks: 45 * S, trains: [UnitType.Mage],
 });
 // The big city's tower; with KEEP on (D-100) every town's keep, 3 x 3, its hp by its town's size
 // (KEEP.hp, World.maxHp; this row then the big city's).
@@ -206,7 +206,7 @@ export function rules(map?: { towerSize?: number; tutorial?: unknown } & Partial
       ...(WALL_SHIFT.on && WALLS.on ? { wallShift: true } : {}),
       ...(WALL_SHIFT.on && WALLS.on ? { wallHold: true } : {}),
       ...(OUTPOST.on && OUTPOST_HIDE.on ? { outpostHide: true } : {}),
-      ...(NO_CRYSTAL.on ? { noCrystal: true } : {}),
+      noCrystal: true,
       ...(MAIN_CITY_TOUGH.on ? { mainCityTough: true } : {}),
     },
     arrows: {
@@ -342,12 +342,12 @@ export const ARROW_TOWER = { damage: 5, range: 7 * CELL, cooldown: 2 * S };
 export const TOWN_ONCE = { on: true };
 /**
  * Governing pays `boost` instead of TownRule.perMinute: about 3 minutes of it match one
- * plunder (small 230 a minute against 675, large 515 against 1530; the user 2026-10-07, after
- * 4 minutes: "應該拉高每分鐘的收益就好").
+ * plunder (small 230 a minute against 675, large 515 against 1530, with crystal; without it, D-135, 200 against 600
+ * and 440 against 1350; the user 2026-10-07, after 4 minutes: "應該拉高每分鐘的收益就好").
  */
 export const GOVERN_INCOME = {
   on: true,
-  boost: [cost(100, 0, 100, 30), cost(220, 0, 220, 75)] as Cost[],
+  boost: [cost(100, 0, 100), cost(220, 0, 220)] as Cost[],
 };
 /**
  * A plundered town, governed again, pays `startPermille` of its income at first, climbing
@@ -623,12 +623,12 @@ export const CANNON = {
   },
   calibrateTicks: Math.trunc(1.5 * S),
   cooldownTicks: 8 * S,
-  crystal: 5,
+  /** Crystal a shot costs: none since D-135, kept for the screen's text (client CANNON_TEXT). */
+  crystal: 0,
   /** Autocast when this many enemies stand within the radius of some point in range. */
   autocastMinTargets: 3,
 };
 export const SHIELD_REGEN = { perSecond: 6, afterTicks: 5 * S };
-export const MAGE_BOUNTY = 15;
 
 // --- towns (from PR-4) -------------------------------------------------------------------
 
@@ -651,13 +651,13 @@ export interface TownRule {
 /** Plunder takes: GDD appendix A x 1.5 (ceo balance ruling 2026-09-30, see sim/README.md). */
 export const TOWNS: TownRule[] = [];
 TOWNS[TownSize.Small] = {
-  militia: 6, tower: false, radius: 5, plunderTicks: 15 * S, plunder: cost(300, 0, 300, 75), ruinsTicks: 240 * S,
-  governCost: cost(0, 80, 80), repairTicks: 45 * S, perMinute: cost(40, 0, 40, 12), populationCap: 5,
+  militia: 6, tower: false, radius: 5, plunderTicks: 15 * S, plunder: cost(300, 0, 300), ruinsTicks: 240 * S,
+  governCost: cost(0, 80, 80), repairTicks: 45 * S, perMinute: cost(40, 0, 40), populationCap: 5,
   garrisonNeeded: 1, revoltTicks: 60 * S,
 };
 TOWNS[TownSize.Large] = {
-  militia: 12, tower: true, radius: 7, plunderTicks: 25 * S, plunder: cost(675, 0, 675, 180), ruinsTicks: 240 * S,
-  governCost: cost(0, 150, 150), repairTicks: 60 * S, perMinute: cost(90, 0, 90, 30), populationCap: 10,
+  militia: 12, tower: true, radius: 7, plunderTicks: 25 * S, plunder: cost(675, 0, 675), ruinsTicks: 240 * S,
+  governCost: cost(0, 150, 150), repairTicks: 60 * S, perMinute: cost(90, 0, 90), populationCap: 10,
   garrisonNeeded: 3, revoltTicks: 60 * S,
 };
 
@@ -732,10 +732,9 @@ export const GATHER_PER_MINUTE: number[] = [];
 GATHER_PER_MINUTE[Resource.Food] = 24; // farm; berries 30 (see BERRIES_PER_MINUTE)
 GATHER_PER_MINUTE[Resource.Wood] = 30;
 GATHER_PER_MINUTE[Resource.Gold] = 24;
-GATHER_PER_MINUTE[Resource.Crystal] = 12;
 export const BERRIES_PER_MINUTE = 30;
 export const CARRY = 10;
-export const NODE_AMOUNT = { tree: 100, goldCell: 400, bush: 100, crystalCell: 150 };
+export const NODE_AMOUNT = { tree: 100, goldCell: 400, bush: 100 };
 /**
  * D-101 (the user 2026-10-22/23: 「其實現在打很容易拖到後期都沒有樹跟金礦可以採」; ceo 2026-10-24/25): more gold
  * and wood. While on: each gold cell `goldCell` (the same cells), and `forests` more forests by each
@@ -775,22 +774,14 @@ export const FARMLAND_REACH = 6;
 export const ECO_DEFAULT = { food: 40, wood: 35, gold: 25 };
 
 /**
- * The main city's crystal (early balance, D-051, D-057): every `every` ticks each standing main
- * city gives its owner `amount` crystal, so a side without towns still gets mages (one mage, 50,
- * by about game minute 13), while one plundered small town (75) stays worth 20 minutes of it.
- * `every` 0 switches it off.
- */
-export const MAIN_CRYSTAL = { every: 16 * S, amount: 1 };
-
-/**
  * Automatic training (round 6, D-054): a barracks, range or mage hall with it on queues its
  * unit whenever its queue is empty, paid only from what is above the player's reserve. The
- * default reserve keeps a mage hall's wood and gold (150 / 100) and 15 crystal for three
- * cannon shots (5 each); the player changes it with `reserve`. A player's buildings start with
+ * default reserve keeps a mage hall's wood and gold (150 / 100; no crystal since D-135); the player changes it with
+ * `reserve`. A player's buildings start with
  * it on when the game says so (GameConfig.autoTrain: a person's yes, an AI's no).
  */
 export const AUTO_TRAIN = {
-  reserve: { food: 0, wood: 150, gold: 100, crystal: 15 },
+  reserve: { food: 0, wood: 150, gold: 100, crystal: 0 },
   /** Largest reserve per resource a `reserve` command may set. */
   reserveMax: 10000,
   buildings: [BuildingType.Barracks, BuildingType.Range, BuildingType.MageHall, BuildingType.Stable] as number[],
@@ -827,45 +818,19 @@ export const START_REVEAL = 16;
 /** Gathering accumulates per-minute rates each tick; one unit is gathered per this many. */
 export const GATHER_UNIT = 60 * S;
 
-/**
+/*
  * No crystal (D-135; the user 2026-11-08: 「魔晶感覺很雞肋都用不到 好像可以拿掉」, chose 「拿掉魔晶（推薦）」): food, wood
- * and gold only. A mage costs `mageGold` gold and nothing else; the cannon costs nothing (its cooldown only); main cities
- * give no crystal (MAIN_CRYSTAL), a mage's killer gets none (mageBounty), the auto-train reserve and the scenarios start
- * with none; towns pay none (with `townGold`, their crystal as as much gold instead: plunder, per minute, governing's
- * boost); the maps have no crystal vein. Resource.Crystal stays in the tables, always 0 (protocol: features.noCrystal).
- * The mage hall costs `hallGold` gold (was 100): with crystal a first mage came at minute 11-14 (the user's 9.8-13);
+ * and gold only. A mage costs 140 gold and nothing else; the cannon costs nothing (its cooldown only); main cities give
+ * no crystal, a mage's killer gets none, the auto-train reserve and the scenarios start with none; towns pay none
+ * (plunder, per minute, governing's boost); the maps have no crystal vein. Resource.Crystal stays in the protocol's
+ * tables, always 0 (features.noCrystal; the slot's removal, D-135's second layer, not done).
+ * The mage hall costs 200 gold (was 100): with crystal a first mage came at minute 11-14 (the user's 9.8-13);
  * without it, a hall built from the starting stock gave one at 5.2 (src/scripted-games.ts --mage-rush, 20 seeds), the
  * mage's gold barely moving it (180: 6.0, 220: 7.0); the hall at 200 gold, 10.3 on both maps (ceo: not before 7).
- * ceo 2026-11-08 chose these (V1 of sim/README.md's D-135): towns' crystal dropped, not paid as gold (townGold: governing
- * got too strong); the cannon's cooldown as it was.
- * Off: as before. The tables read it (getters).
+ * ceo 2026-11-08 chose these (V1 of sim/README.md's D-135): towns' crystal dropped, not paid as gold (governing got too
+ * strong); the cannon's cooldown as it was. The switch NO_CRYSTAL and the rules with crystal went in D-135's first
+ * layer (ceo 2026-11-08; every game as before, its final hash too).
  */
-export const NO_CRYSTAL = { on: true, mageGold: 140, hallGold: 200, townGold: false };
-/** What a mage's killer gets (MAGE_BOUNTY; none with NO_CRYSTAL on). */
-export function mageBounty(): number {
-  return NO_CRYSTAL.on ? 0 : MAGE_BOUNTY;
-}
-/** A town's crystal taken out of `c` (NO_CRYSTAL), as gold with `townGold`. */
-function noTownCrystal(c: Cost): Cost {
-  return cost(c.food, c.wood, c.gold + (NO_CRYSTAL.townGold ? c.crystal : 0), 0);
-}
-{
-  const mage = UNITS[UnitType.Mage].cost;
-  switched(UNITS[UnitType.Mage], "cost", NO_CRYSTAL, () => cost(mage.food, mage.wood, NO_CRYSTAL.mageGold, 0));
-  const hall = BUILDINGS[BuildingType.MageHall].cost;
-  switched(BUILDINGS[BuildingType.MageHall], "cost", NO_CRYSTAL, () => cost(hall.food, hall.wood, NO_CRYSTAL.hallGold, hall.crystal));
-  switched(CANNON, "crystal", NO_CRYSTAL, () => 0);
-  switched(AUTO_TRAIN.reserve, "crystal", NO_CRYSTAL, () => 0);
-  for (const size of [TownSize.Small, TownSize.Large]) {
-    const t = TOWNS[size];
-    const plunder = t.plunder;
-    const perMinute = t.perMinute;
-    switched(t, "plunder", NO_CRYSTAL, () => noTownCrystal(plunder));
-    switched(t, "perMinute", NO_CRYSTAL, () => noTownCrystal(perMinute));
-  }
-  const boost = GOVERN_INCOME.boost;
-  switched(GOVERN_INCOME, "boost", NO_CRYSTAL, () => boost.map(noTownCrystal));
-}
 
 /**
  * A main city that holds a while (D-141; the user 2026-11-10: 「其實偷襲也是一種玩法指示要平衡好」, chose 「偷得掉，但要

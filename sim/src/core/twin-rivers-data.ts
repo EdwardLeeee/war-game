@@ -3,12 +3,13 @@
 // random-map.ts at e0f2297, seed 2106939660, the game's rules then (KEEP, RICH). Generated; not edited by hand. One row
 // per y, one character per cell; player 0 starts top left, player 1 bottom left, each the other's mirror image.
 //   .  open   R  rock   K  cliff   ~  water   f  ford   |  bridge, north-south   =  bridge, east-west   #  castle wall
-//   T  tree   G  gold   B  berries   V  crystal vein (on open ground, holding what TWIN_RIVERS.amounts says)
+//   T  tree   G  gold   B  berries (each holding what TWIN_RIVERS.amounts says); the game's crystal vein, 4 cells at
+//   x 91-94, y 64, made open ground by hand in D-135's first layer (no crystal; it was open in play since D-135)
 //   w  a tree on water (the generator put them there then; kept, the map being that game's)
 
 export const TWIN_RIVERS = {
   size: 129,
-  amounts: {"T":100,"B":100,"G":600,"V":150},
+  amounts: {"T":100,"B":100,"G":600},
   spawns: [[18,16],[18,113]],
   /** [size, x, y, radius] by id. */
   towns: [[1,68,64,9],[0,43,31,7],[0,43,97,7],[0,76,23,7],[0,76,105,7],[0,99,47,7],[0,99,81,7]],
@@ -84,7 +85,7 @@ export const TWIN_RIVERS = {
     "...RRR.....KKK.............................................#.................#...............RRR.................................",
     "..............KKK..........................................#.................#.................R.................................",
     ".................KKK.............................................................................................................",
-    "...........................................................................................VVVV..................................",
+    ".................................................................................................................................",
     ".................KKK.............................................................................................................",
     "..............KKK..........................................#.................#.................R.................................",
     "...RRR.....KKK.............................................#.................#...............RRR.................................",

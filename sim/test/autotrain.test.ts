@@ -5,11 +5,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Game } from "../src/core/game.ts";
-import { AUTO_TRAIN, MAGE_CAP, NO_CRYSTAL, UNITS } from "../src/core/rules.ts";
+import { AUTO_TRAIN, MAGE_CAP, UNITS } from "../src/core/rules.ts";
 import { BuildingField, BuildingFlag, BuildingType, BUILDING_STRIDE, HeaderField, Resource, UnitType } from "../src/protocol.ts";
 import { Runner } from "../src/runner.ts";
 import { buildView } from "../src/view/view.ts";
-import { cmd, emptyGame, run, switchedOff } from "./helpers.ts";
+import { cmd, emptyGame, run } from "./helpers.ts";
 
 const SPEAR = UNITS[UnitType.Spearman];
 
@@ -140,15 +140,16 @@ test("an AI's buildings start with it off: a game without autoTrain, and only th
   assert.equal(new Runner({ seed: 1, scenario: "standard", ai: [true, true] }).header([true, true]).autoTrain, undefined);
 });
 
-test("mage hall: the mage cap holds, and 15 crystal stay for the cannon", switchedOff(NO_CRYSTAL, () => {
+// D-135: no crystal; a mage is paid from the gold above the reserve (with crystal, 15 crystal stayed for the cannon).
+test("mage hall: the mage cap holds, and the reserve's gold stays", () => {
   const g = scene([true, false]);
   const s = trainer(g, 0, BuildingType.MageHall);
   const mage = UNITS[UnitType.Mage].cost;
   const r = AUTO_TRAIN.reserve;
-  setRes(g, 0, 0, r.wood, r.gold + mage.gold, r.crystal + mage.crystal - 1);
+  setRes(g, 0, 0, r.wood, r.gold + mage.gold - 1, 0);
   run(g, 5);
-  assert.equal(g.w.buildings.col.queueLength[s], 0, "short of the crystal reserve");
-  g.w.res[Resource.Crystal] += 1;
+  assert.equal(g.w.buildings.col.queueLength[s], 0, "short of the gold reserve");
+  g.w.res[Resource.Gold] += 1;
   run(g, 1);
   assert.equal(g.w.buildings.col.queueLength[s], 1);
   // At the cap: no more.
@@ -158,7 +159,7 @@ test("mage hall: the mage cap holds, and 15 crystal stay for the cannon", switch
   setRes(g2, 0, 0, 5000, 5000, 5000);
   run(g2, 5);
   assert.equal(g2.w.buildings.col.queueLength[s2], 0);
-}));
+});
 
 test("a log with autoTrain replays to the same hashes", () => {
   const r = new Runner({ seed: 2, scenario: "e2e", ai: [false, true], maxTicks: 0, autoTrain: [true, false] });

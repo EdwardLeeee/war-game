@@ -1,6 +1,6 @@
 // The prototype's 1 v 1 map: 96 x 96, mirror-symmetric across the main diagonal (x <-> y),
 // generated from a fixed seed. Player 0 starts bottom-left, player 1 top-right; the small
-// town, the big city, the crystal vein and the two corner towns (top-left and bottom-right,
+// town, the big city, the crystal vein's place (open ground since D-135) and the two corner towns (top-left and bottom-right,
 // round 6, D-054) sit on the axis, so both starts are equally far from each (GDD section
 // 17). No river in the prototype: rock and forest make the chokes.
 //
@@ -14,7 +14,7 @@ import { type MapMode, NodeKind, Terrain, TownSize, walkableTerrain } from "../p
 import { type CastleMap, castleOf } from "./castle.ts";
 import { Rng } from "./fixed.ts";
 import { FIXED_TERRAIN } from "./fixed-terrain.ts";
-import { KEEP, NO_CRYSTAL, NODE_AMOUNT, RICH, TOWNS } from "./rules.ts";
+import { KEEP, NODE_AMOUNT, RICH, TOWNS } from "./rules.ts";
 import { forestCells, homeForests } from "./forests.ts";
 import { dir16 } from "./fixed.ts";
 
@@ -75,7 +75,7 @@ const CORNERS = [
   { x: 14, y: 14 },
   { x: 81, y: 81 },
 ];
-/** Top-left of the 2 x 2 crystal vein, on the axis. */
+/** Top-left of the 2 x 2 crystal vein's place, on the axis (no vein since D-135; its ground kept clear). */
 const VEIN = { x: 66, y: 66 };
 
 /** A cell's Terrain value on the map turned a quarter or mirrored across a diagonal: bridges change way. */
@@ -174,10 +174,7 @@ export function generateMap(seed: number = MAP_SEED): GameMap {
       kind[y * n + x] = kind[x * n + y];
     }
   }
-  // Crystal vein on the axis (symmetric by itself); none with NO_CRYSTAL on (D-135), its ground left open.
-  if (!NO_CRYSTAL.on) for (const [x, y] of [[VEIN.x, VEIN.y], [VEIN.x + 1, VEIN.y], [VEIN.x, VEIN.y + 1], [VEIN.x + 1, VEIN.y + 1]]) {
-    kind[y * n + x] = NodeKind.CrystalVein;
-  }
+  // The crystal vein's place on the axis: open ground since D-135, kept clear as before (VEIN), so the map is as it was.
 
   const towns: TownSpec[] = [
     { id: 0, size: TownSize.Small, cellX: SMALL.x, cellY: SMALL.y, radius: TOWNS[TownSize.Small].radius },
@@ -226,7 +223,7 @@ export function generateMap(seed: number = MAP_SEED): GameMap {
           if (wall[y * n + x] === 1) return false;
           const block = x >= c && x <= c + 1 && y >= c && y <= c + 1;
           if (block && (rock[y * n + x] === 1 || kind[y * n + x] !== -1 || ground[y * n + x] !== 0)) return false;
-          // The vein's place, with it or without (NO_CRYSTAL): the mines where they were with the vein.
+          // The vein's place (open since D-135): the mines where they were with the vein.
           if (block && x >= VEIN.x && x <= VEIN.x + 1 && y >= VEIN.y && y <= VEIN.y + 1) return false;
           if (block && boxes.some((b) => x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1)) return false;
         }
@@ -286,9 +283,7 @@ export function generateMap(seed: number = MAP_SEED): GameMap {
         ? NODE_AMOUNT.tree
         : k === NodeKind.GoldMine
           ? NODE_AMOUNT.goldCell
-          : k === NodeKind.Berries
-            ? NODE_AMOUNT.bush
-            : NODE_AMOUNT.crystalCell;
+          : NODE_AMOUNT.bush;
     nodes.push({ kind: k as NodeKind, cellX: i % n, cellY: Math.trunc(i / n), amount });
   }
   // D-101 (RICH.farTree): the trees far from both main cities.

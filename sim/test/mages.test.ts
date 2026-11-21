@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { KEEP } from "../src/core/keep.ts";
 import type { Game } from "../src/core/game.ts";
-import { AVENGE, CANNON, DODGE, MAGE_BOUNTY, NO_CRYSTAL, SHIELD_REGEN, SHORT_CANNON, UNITS } from "../src/core/rules.ts";
+import { AVENGE, CANNON, DODGE, SHIELD_REGEN, SHORT_CANNON, UNITS } from "../src/core/rules.ts";
 import {
   Action,
   BuildingType,
@@ -33,7 +33,6 @@ function arena() {
   g.w.ecoOn[0] = 0;
   g.w.ecoOn[1] = 0;
   const a = openArea(g, 20);
-  g.w.res[Resource.Crystal] = 20;
   return { g, a };
 }
 
@@ -68,12 +67,11 @@ test("cast: calibrates 1.5 s with a warning both sides see, then hits enemies in
   const x0 = u.x[slotOf(g, mage)];
   run(g, CANNON.calibrateTicks - 2);
   assert.equal(u.x[slotOf(g, mage)], x0, "stands still while calibrating");
-  assert.equal(g.w.res[Resource.Crystal], 20, "crystal is spent when it fires");
   run(g, 2);
   for (const f of foes) assert.equal(u.hp[slotOf(g, f)], UNITS[UnitType.Spearman].hp - CANNON.damage, "hit");
   assert.equal(u.hp[slotOf(g, far)], UNITS[UnitType.Spearman].hp, "outside the radius");
   assert.equal(u.hp[slotOf(g, friend)], UNITS[UnitType.Spearman].hp, "never own units");
-  assert.equal(g.w.res[Resource.Crystal], 20 - CANNON.crystal);
+  assert.equal(g.w.res[Resource.Crystal], 0, "it costs nothing (D-135)");
   assert.equal(u.castCooldown[slotOf(g, mage)], CANNON.cooldownTicks - 1);
   assert.equal(u.order[slotOf(g, mage)], Order.None);
   assert.equal(buildView(g, 0).warnings.length, 0);
@@ -101,7 +99,8 @@ test("a spearman at full health stands two crystal cannon shots (round 3, D-026)
   assert.equal(slotOf(g, foe), -1, "the third shot kills it");
 })));
 
-test("cast rejects: not a mage, out of range, no crystal; another order cancels without spending", switchedOff(NO_CRYSTAL, () => {
+// D-135: no crystal (with it, a cast short of 5 crystal was refused with NoCrystal).
+test("cast rejects: not a mage, out of range; another order cancels it before it fires", () => {
   const { g, a } = arena();
   const mage = put(g, 0, UnitType.Mage, a.x + 2, a.y + 10);
   const spear = put(g, 0, UnitType.Spearman, a.x + 2, a.y + 12);
@@ -115,12 +114,9 @@ test("cast rejects: not a mage, out of range, no crystal; another order cancels 
   cmd(g, 0, { c: "stop", u: [mage] });
   assert.deepEqual(step(g), []);
   run(g, 40);
-  assert.equal(g.w.res[Resource.Crystal], 20, "cancelled: nothing spent");
+  assert.equal(g.w.cannonShots[0], 0, "cancelled: no shot");
   assert.equal(g.w.units.col.castProgress[slotOf(g, mage)], 0);
-  g.w.res[Resource.Crystal] = 4;
-  cmd(g, 0, { c: "cast", u: mage, fx: centre(a.x + 5), fy: centre(a.y + 10) });
-  assert.deepEqual(step(g), [Reject.NoCrystal]);
-}));
+});
 
 test("autocast fires at a cluster of 3 enemies, not at 2", () => {
   for (const count of [2, 3]) {
@@ -172,7 +168,8 @@ test("shield: takes hits first, hp only after it breaks; regenerates out of comb
   assert.ok(u.shield[slotOf(g, mage)] - s0 >= 11 && u.shield[slotOf(g, mage)] - s0 <= 13, `regen ${u.shield[slotOf(g, mage)] - s0}`);
 });
 
-test("a mage's death pays the killer 15 crystal (nothing when the militia kill it)", switchedOff(NO_CRYSTAL, () => {
+// D-135: no bounty (with crystal, the killer got 15 crystal; nothing when the militia killed it).
+test("a mage's death: the event names the killer (a player or the militia), its crystal 0", () => {
   for (const killerOwner of [1, 2]) {
     const { g, a } = arena();
     const mage = put(g, 0, UnitType.Mage, a.x + 2, a.y + 10);
@@ -188,12 +185,12 @@ test("a mage's death pays the killer 15 crystal (nothing when the militia kill i
     }
     assert.ok(ev !== null);
     assert.equal(ev!.killer, killerOwner);
-    assert.equal(ev!.crystal, killerOwner === 1 ? MAGE_BOUNTY : 0);
-    assert.equal(g.w.res[4 + Resource.Crystal] - crystal1, killerOwner === 1 ? MAGE_BOUNTY : 0);
+    assert.equal(ev!.crystal, 0);
+    assert.equal(g.w.res[4 + Resource.Crystal] - crystal1, 0);
     assert.equal(g.w.lost[UnitType.Mage], 1);
     void killer;
   }
-}));
+});
 
 test("a trained mage starts with a full shield; the mage cap counts the queue", () => {
   const g = emptyGame();

@@ -10,7 +10,7 @@ import { GoldWatch, type GoldRecord } from "./gold-watch.ts";
 import { SiegeWatch, type SiegeRecord } from "./siege-watch.ts";
 import { createScriptedPlayer, type Plan, TUNE } from "./ai/scripted-player.ts";
 import { type AiStyle, createAi, type HardPlan } from "./ai/ai.ts";
-import { NO_CRYSTAL, rules } from "./core/rules.ts";
+import { rules } from "./core/rules.ts";
 import { UNIT_KINDS } from "./core/world.ts";
 import type { RandomMap } from "./core/random-map.ts";
 import { nearestWalkable } from "./core/paths.ts";
@@ -567,7 +567,7 @@ export function playScripted(o: ScriptedOptions): GameRecord {
     if (town < 0 && w.townOwner[myTown.id] === 0) town = w.tick;
     for (let p = 0; p < 2; p++) for (let k = 0; k < taken[p].length; k++) if (taken[p][k] < 0 && w.townOwner[k] === p) taken[p][k] = w.tick;
     if (myMage < 0 && count(0, UnitType.Mage) > 0) myMage = w.tick;
-    if (crystalForMage < 0 && (NO_CRYSTAL.on ? w.res[Resource.Gold] >= rules().units[UnitType.Mage].cost.gold : w.res[Resource.Crystal] >= rules().units[UnitType.Mage].cost.crystal)) crystalForMage = w.tick;
+    if (crystalForMage < 0 && w.res[Resource.Gold] >= rules().units[UnitType.Mage].cost.gold) crystalForMage = w.tick;
     if (hallDone < 0) {
       for (let s = 0; s < w.buildings.count; s++) if (b.owner[s] === 0 && b.type[s] === BuildingType.MageHall && b.progress[s] >= 1000) hallDone = w.tick;
     }

@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { drawPlan, mutate, rng as examRng, SEARCHED } from "../src/ai/learn/exam-space.ts";
 import { PLAN_SPACE, validatePlan } from "../src/plan-space.ts";
 import { Game } from "../src/core/game.ts";
-import { CAVALRY, DODGE, GARRISON, NO_CRYSTAL, POPULATION_200, rules, TOWN_ONCE } from "../src/core/rules.ts";
+import { CAVALRY, DODGE, GARRISON, POPULATION_200, rules, TOWN_ONCE } from "../src/core/rules.ts";
 import * as RULES from "../src/core/rules.ts";
 import { UNIT_KINDS } from "../src/core/world.ts";
 import { startCast } from "../src/core/units.ts";
@@ -630,24 +630,6 @@ test("hard: soldiers trained while the army is away wait at home and follow six 
     fresh.push(put(g, 0, UnitType.Spearman, s0.cellX + 3, s0.cellY - 4));
     assert.ok(toBase().some((c) => fresh.every((id) => c.u.includes(id))), "the sixth: all six go");
   }));
-
-// D-135: with crystal (NO_CRYSTAL off), as before.
-test("hard: the mage hall comes first once there is the crystal for a mage", switchedOff(NO_CRYSTAL, () => {
-  const plan = (crystal: number) => {
-    const g = emptyGame();
-    const w = g.w;
-    const s0 = w.map.spawns[0];
-    for (let k = 0; k < 12; k++) {
-      const id = put(g, 0, UnitType.Farmer, s0.cellX - 4 + k, s0.cellY + 4);
-      w.units.col.order[slotOf(g, id)] = Order.Gather;
-    }
-    w.res.set([500, 500, 500, crystal], 0);
-    g.fog.update(w);
-    return (hardAi(g).think(buildView(g, 0)).find((c) => c.c === "build") as { type: number } | undefined)?.type;
-  };
-  assert.equal(plan(50), BuildingType.MageHall);
-  assert.notEqual(plan(0), BuildingType.MageHall);
-}));
 
 test("hard: it trains spearmen rather than ranged units against an enemy with mages", () => {
   const first = (enemyMages: number) => {
@@ -3855,30 +3837,6 @@ test("D-086 A6 (plan.goldCavalry): wood short and gold piled up, hard trains cav
   assert.equal(cavalry(0), false, "off: none");
 });
 
-// D-135: with crystal (NO_CRYSTAL off), as before.
-test("D-086 A6 (plan.crystalStop): its mages at the cap with crystal for 4 more, hard takes its farmers off the crystal vein; off, they stay", switchedOff(NO_CRYSTAL, () => {
-  const released = (crystalStop: boolean) => {
-    const g = behindGame(0);
-    const w = g.w;
-    const s0 = w.map.spawns[0];
-    // A soldier of its own by a crystal vein, so it knows of one.
-    const vein = w.nodeKind.findIndex((k) => k === NodeKind.CrystalVein);
-    put(g, 0, UnitType.Spearman, w.nodeX[vein] - 2, w.nodeY[vein] - 2);
-    g.fog.update(w);
-    const ai = hardAi(g, { dodge: false, crystalStop });
-    const crew = ai.think(buildView(g, 0)).find((c) => c.c === "gather" && c.u.length === HARD.vein);
-    assert.ok(crew !== undefined && crew.c === "gather", "a crew to the vein");
-    for (let k = 0; k < rules().mageCap; k++) put(g, 0, UnitType.Mage, s0.cellX + 4 + k, s0.cellY + 3);
-    w.res.set([200, 200, 200, 4 * rules().units[UnitType.Mage].cost.crystal], 0);
-    w.tick += 10;
-    g.fog.update(w);
-    const out = ai.think(buildView(g, 0));
-    return out.some((c) => c.c === "release" && crew.u.every((id) => c.u.includes(id)));
-  };
-  assert.equal(released(true), true, "on: off the vein");
-  assert.equal(released(false), false, "off: they stay");
-}));
-
 test("D-086 A5 (plan.holdTowns): enemy soldiers by a town it governs and the army at home 1.3 x them, hard goes to hold it; off, it stays", () => {
   const goes = (holdTowns: boolean) => {
     const g = emptyGame();
@@ -3928,7 +3886,6 @@ test("D-099: an enemy siege engine in sight counts in the enemy's strength (it s
 // --- D-135: no crystal -----------------------------------------------------------------------------------------
 
 test("D-135 (no crystal): hard's mage hall comes first from minute mageHallFirst (not at once); normal's after the range from minute 10", () => {
-  assert.equal(NO_CRYSTAL.on, true);
   const plan = (minute: number, range: boolean, difficulty: "hard" | "normal" = "hard") => {
     const g = emptyGame();
     const w = g.w;

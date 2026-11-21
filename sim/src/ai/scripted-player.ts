@@ -63,15 +63,15 @@ export interface Plan {
   guards: number;
   /** The soldiers it leaves in a town guard it (`guard`), rather than stand there. */
   townGuard: boolean;
-  /** Builds the mage hall as soon as it has the crystal for a mage, before anything else. */
+  /** Builds the mage hall first, when the crystal for a mage used to come in (CRYSTAL_FOR_MAGE_TICKS), before anything else. */
   hallFirst: boolean;
-  /** Crystal kept per living mage (for shots) before it trains another. */
+  /** Crystal kept per living mage (for shots) before it trained another: no effect since D-135 (no crystal). */
   mageReserve: number;
   /** After beating off an attack (6 or more enemy soldiers seen at home), marches on the enemy base with this many. */
   counterAt: number;
   /** Marches on the enemy base with this many whether attacked or not (0: never). */
   pushAt: number;
-  /** Farmers sent to the crystal vein by hand once there is a mage hall (0: none); needs the vein explored. */
+  /** Farmers sent to the crystal vein by hand once there was a mage hall: no effect since D-135 (no vein). */
   vein: number;
   /** Loose formation: 0 nobody, 1 ranged and mages, 2 every soldier. */
   loose: number;
@@ -146,7 +146,7 @@ export interface Plan {
   userEco: boolean;
   /**
    * The mage hall first, as soon as it can pay for it, and mages whenever it can (D-135: how early a mage may come
-   * without crystal); with crystal, the hall still waits for a mage's crystal (hallFirst).
+   * without crystal).
    */
   mageRush: boolean;
   /** The plan's town is the big town, not the small town nearest home (D-072: the user's one trip, plundered). */
@@ -501,9 +501,9 @@ const RUINS_TICKS = 240 * 20 + 100;
 const STEAL_OUT = 12;
 const STEAL_FAR = 25;
 /**
- * No crystal (D-135, rules.features.noCrystal): its mage hall goes up when the crystal for a mage used to come in, so the
- * plan's first mage comes as before: on its first plunder (a small town paid 75), else by the main city's crystal alone
- * (1 every 16 s: a mage's 50 at 13:20; the hall's 40 at 10:40).
+ * No crystal (D-135): its mage hall goes up when the crystal for a mage used to come in, so the plan's first mage comes
+ * as before: on its first plunder (a small town paid 75), else by the main city's crystal alone (1 every 16 s: a mage's
+ * 50 at 13:20; the hall's 40 at 10:40). The plays with crystal went in D-135's first layer.
  */
 const CRYSTAL_FOR_MAGE_TICKS = 50 * 16 * 20;
 
@@ -623,7 +623,6 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
   const known: { id: number; size: TownSize; cellX: number; cellY: number }[] = [...know.map.towns];
   const townOf = (id: number) => known.find((t) => t.id === id)!;
   const rules = know.rules;
-  const noCrystal = rules.features?.noCrystal === true;
   const real = (u: number, v: number) => fromCanon(know.frame, u, v);
   const frame = (x: number, y: number) => toCanon(know.frame, x, y);
   const mid = n >> 1;
@@ -713,7 +712,6 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
   let turtleQuiet = -100000;
   const garrison = new Map<number, number[]>();
   const lastState = new Map<number, number>();
-  let veinCrew: number[] = [];
   let trips = 0;
   let marches = 0;
   let waves = 0;
@@ -1062,7 +1060,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         const granary = done(BuildingType.Granary)[0];
         const base = { x: home.cellX, y: home.cellY };
         const add = (type: BuildingType, at: { x: number; y: number } | null, here = false) => plans.push({ type, at, here });
-        const crystalForMage = noCrystal ? plan.mageRush || plunders > 0 || tick >= CRYSTAL_FOR_MAGE_TICKS : res.crystal >= mageCost.crystal;
+        const crystalForMage = plan.mageRush || plunders > 0 || tick >= CRYSTAL_FOR_MAGE_TICKS;
         if (!plan.noMage && plan.hallFirst && !has(BuildingType.MageHall) && crystalForMage) add(BuildingType.MageHall, base);
         if (cap < ceiling && cap - pop - queued <= houseRoom) add(BuildingType.House, base);
         if (!has(BuildingType.LumberCamp) && farmers.length >= 6) add(BuildingType.LumberCamp, nearestNode(NodeKind.Tree));
@@ -1075,7 +1073,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
         if (plan.steal !== "" && rules.features?.cavalry === true && !has(BuildingType.Stable) && has(BuildingType.Range) && stableReady) add(BuildingType.Stable, rally);
         if (!has(BuildingType.Barracks) && farmers.length >= (plan.userEco ? 9 : 10)) add(BuildingType.Barracks, rally);
         if (!plan.noRange && !has(BuildingType.Range) && farmers.length >= (plan.userEco ? 10 : 12)) add(BuildingType.Range, rally);
-        const hallTime = plan.userEco ? plunders > 0 : (noCrystal ? plunders > 0 : res.crystal >= 40) || tick > 10 * 1200;
+        const hallTime = plan.userEco ? plunders > 0 : plunders > 0 || tick > 10 * 1200;
         if (!plan.noMage && !has(BuildingType.MageHall) && has(BuildingType.Range) && hallTime) add(BuildingType.MageHall, base);
         // D-086 A: towers by home and a stable, as the user had them in the long wins.
         if (plan.homeTowers > 0 && has(BuildingType.Range) && count(BuildingType.ArrowTower) < plan.homeTowers) add(BuildingType.ArrowTower, towerAt);
@@ -1158,8 +1156,7 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       if (plan.steal !== "" && cavalry.length + stableQueue < plan.raid) trainAt(BuildingType.Stable, UnitType.Cavalry);
       if (raidFirst) trainAt(BuildingType.Stable, UnitType.Cavalry);
       const hallQueue = done(BuildingType.MageHall).reduce((a, b) => a + b.queue, 0);
-      // Crystal kept for the cannon (mageReserve) only while there is crystal; without it, gold alone (trainAt).
-      if (mages + hallQueue < rules.mageCap && (noCrystal || res.crystal >= mageCost.crystal + plan.mageReserve * mages)) trainAt(BuildingType.MageHall, UnitType.Mage);
+      if (mages + hallQueue < rules.mageCap) trainAt(BuildingType.MageHall, UnitType.Mage);
       // plan.mageRush: what its first mage costs is kept from the other soldiers until it is queued.
       if (plan.mageRush && mages + hallQueue === 0 && has(BuildingType.MageHall)) {
         reserve.food += mageCost.food;
@@ -1187,15 +1184,6 @@ export function createScriptedPlayer(player: number, know: PlayerKnowledge, plan
       } else {
         trainAt(BuildingType.Range, UnitType.Ranged);
         trainAt(BuildingType.Barracks, UnitType.Spearman);
-      }
-      veinCrew = veinCrew.filter((id) => farmers.some((f) => f.id === id && f.order === Order.Gather));
-      const vein = nearestNode(NodeKind.CrystalVein);
-      if (vein !== null && has(BuildingType.MageHall) && veinCrew.length < plan.vein) {
-        const pick = gatherers.filter((id) => !veinCrew.includes(id)).slice(-(plan.vein - veinCrew.length));
-        if (pick.length > 0) {
-          out.push({ c: "gather", u: pick, node: vein.id });
-          veinCrew.push(...pick);
-        }
       }
       const quiet = soldiers.filter((u) => u.type === UnitType.Mage && (u.flags & UnitFlag.Autocast) === 0).map((u) => u.id);
       if (quiet.length > 0) out.push({ c: "autocast", u: quiet, on: true });

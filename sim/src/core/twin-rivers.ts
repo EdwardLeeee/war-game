@@ -6,13 +6,12 @@
 import type { Frame } from "../frame.ts";
 import { NodeKind, Terrain, type TownSize } from "../protocol.ts";
 import { KEEP } from "./keep.ts";
-import { NO_CRYSTAL } from "./rules.ts";
 import type { NodeSpec, TownSpec } from "./map.ts";
 import type { RandomMap } from "./random-map.ts";
 import { TWIN_RIVERS } from "./twin-rivers-data.ts";
 
 const TERRAIN: Record<string, number> = { R: Terrain.Blocked, "#": Terrain.Wall, "~": Terrain.Water, K: Terrain.Cliff, f: Terrain.Ford, "|": Terrain.BridgeNS, "=": Terrain.BridgeEW };
-const NODE: Record<string, NodeKind> = { T: NodeKind.Tree, G: NodeKind.GoldMine, B: NodeKind.Berries, V: NodeKind.CrystalVein };
+const NODE: Record<string, NodeKind> = { T: NodeKind.Tree, G: NodeKind.GoldMine, B: NodeKind.Berries };
 
 export function twinRiversMap(seed: number): RandomMap {
   if (!KEEP.on) throw new Error("twin-rivers needs KEEP's castles");
@@ -23,12 +22,10 @@ export function twinRiversMap(seed: number): RandomMap {
   d.rows.forEach((row, y) => {
     for (let x = 0; x < n; x++) {
       const c = row[x];
-      // No vein with NO_CRYSTAL on (D-135): open ground there.
-      const vein = c === "V" && NO_CRYSTAL.on;
-      const kind = c === "w" ? NodeKind.Tree : vein ? undefined : NODE[c];
+      const kind = c === "w" ? NodeKind.Tree : NODE[c];
       if (kind !== undefined) nodes.push({ kind, cellX: x, cellY: y, amount: d.amounts[c === "w" ? "T" : (c as keyof typeof d.amounts)] });
       if (c === "w") terrain[y * n + x] = Terrain.Water;
-      else if (kind === undefined && c !== "." && !vein) terrain[y * n + x] = TERRAIN[c];
+      else if (kind === undefined && c !== ".") terrain[y * n + x] = TERRAIN[c];
     }
   });
   const swap = (seed & 1) === 1 ? 1 : 0;

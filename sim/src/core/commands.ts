@@ -12,7 +12,6 @@ import {
   CELL_SHIFT,
   crossingTerrain,
   GameOverReason,
-  NodeKind,
   Order,
   PlaceBit,
   Reject,
@@ -120,8 +119,7 @@ function ownFarmers(ctx: CommandContext, p: number, ids: number[]): number[] | R
 /**
  * The farmers a build without farmers sends: player p's nearest to the footprint (ties: lower
  * id), autoBuilders(size) of them, leaving out farmers the player placed (stay), those building
- * or repairing, those hiding or on their way to hide (recall), and those on the crystal vein
- * (by hand only: taking them would quietly empty it). PROTOCOL.md 3.1.
+ * or repairing, and those hiding or on their way to hide (recall). PROTOCOL.md 3.1.
  */
 function pickBuilders(w: World, p: number, type: BuildingType, x: number, y: number): number[] {
   const u = w.units.col;
@@ -131,7 +129,6 @@ function pickBuilders(w: World, p: number, type: BuildingType, x: number, y: num
     if (u.owner[s] !== p || u.type[s] !== UnitType.Farmer || u.stay[s] === 1 || u.action[s] === Action.Garrisoned) continue;
     const o = u.order[s];
     if (o === Order.Build || o === Order.Repair || o === Order.Recall) continue;
-    if (o === Order.Gather && u.onFarm[s] === 0 && u.orderTarget[s] >= 0 && w.nodeKind[u.orderTarget[s]] === NodeKind.CrystalVein) continue;
     free.push({ s, d: rectDist2(u.x[s], u.y[s], x, y, size) });
   }
   free.sort((a, b) => a.d - b.d || u.id[a.s] - u.id[b.s]);
@@ -471,7 +468,6 @@ export function applyCommand(ctx: CommandContext, cmd: Command): number {
       }
       if (castDist2(w, s, cmd.fx, cmd.fy) > CANNON.range * CANNON.range) return Reject.OutOfRange;
       if (u.castCooldown[s] > 0) return Reject.Cooldown;
-      if (w.res[p * 4 + Resource.Crystal] < CANNON.crystal) return Reject.NoCrystal;
       startCast(w, s, cmd.fx, cmd.fy, false);
       return 0;
     }
