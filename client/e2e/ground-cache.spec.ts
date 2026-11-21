@@ -53,7 +53,8 @@ for (const [name, q, r9] of [
   ["R9 的地面和水（art.lock.json）", "art=x2", true],
 ] as const) {
   test(`地面快取（${name}）：同一格關和開比一比，看不出差別；鏡頭不動只畫一次快取，動了以後重畫一次，畫面照樣對`, async ({ page }) => {
-    test.setTimeout(180_000);
+    // EPYC 7763 (#537): 126 s of 180 in main's run 44836538099 (chromium 1/4); twice that (the audit, ceo 2026-11-21).
+    test.setTimeout(260_000);
     await page.goto(`./?test=1&watch=1&ai=0&ground=real&${q}`);
     await page.getByRole("button", { name: "開始" }).tap();
     await page.waitForFunction(() => window.__proto?.ready === true, null, { timeout: 90_000 });

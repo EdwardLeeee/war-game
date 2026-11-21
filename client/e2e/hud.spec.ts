@@ -362,6 +362,8 @@ test("已選部隊時長按小地圖 → 部隊移動到那裡（D-094：和點�
 });
 
 test("移動：和攻擊一樣先選位置——點地面或小地圖走到那裡，點自己的主城或「回主城」回家；選位置時取消、移動中再按，都停下改成堅守（D-059、D-054、D-094）", async ({ page }, info) => {
+  // EPYC 7763 (#537): 38.5 s of 60 (run 44794149870); twice that (the audit, ceo 2026-11-21).
+  test.setTimeout(80_000);
   const ids = await selectSpearmen(page);
   const move = page.locator(".cmds").getByRole("button", { name: /^(取消)?移動/ });
   const prompt = page.getByText("點地面或小地圖：走過去，路上不還手；點主城回家");
@@ -1209,6 +1211,8 @@ test("留守的兵離開選取：只選了他時選取變空，選取資訊收�
 });
 
 test("留守：搶也預設留最少駐軍數（小鎮 1 名，D-084）；所有的兵都留守時，全軍會說明", async ({ page }) => {
+  // EPYC 7763 (#537): 36.5 s of 60 (run 44794149870); twice that (the audit, ceo 2026-11-21).
+  test.setTimeout(75_000);
   const army = await ownIds(page, [1, 2, 3]);
   await place(page, army, [{ x: 30, y: 66 }, { x: 31, y: 66 }, { x: 29, y: 66 }, { x: 30, y: 67 }]);
   await page.evaluate(() => window.__proto?.game?.inject({ k: "town_captured", town: 0, by: 0 }));
@@ -1347,8 +1351,9 @@ test("編隊自動補兵：缺人時新訓練的兵補進來，按鈕顯示現�
 });
 
 test("軍團畫面：點編隊按鈕就選取並打開；設定每種兵要幾名，沒編隊的兵馬上被拉進來，編隊沒人時站在原地（D-080）；前往中、堅守的兵不拉（D-050、D-054）", async ({ page }, info) => {
-  // Long on Chromium's software renderer: 36 s on main (run 37520318345), past 60 s on a busy runner (run 37535738590).
-  test.setTimeout(120_000);
+  // Long on Chromium's software renderer: 36 s on main (run 37520318345), past 60 s on a busy runner (run 37535738590);
+  // 78 s of 120 on an EPYC 7763 (#548's run 44838086316): twice that (the audit, ceo 2026-11-21).
+  test.setTimeout(160_000);
   await select(page, []);
   await tapOn(page, GROUP_1);
   const panel = page.locator(".sel-info");
