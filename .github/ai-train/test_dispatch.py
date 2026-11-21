@@ -391,6 +391,13 @@ class Run(unittest.TestCase):
         f.add(8000060, t(80), jobs=seg_jobs(79, 60))
         f.ledger_from(8000060, good, t(30))
         self.assertIn("沒有可以用的上一份帳", go(f, env())[1])
+        # The same, but its dispatch job was skipped (a skipped job has a start time too): not used.
+        f = Fake()
+        jobs = seg_jobs(79, 60)
+        jobs[-1].update(conclusion="skipped")
+        f.add(8000060, t(80), jobs=jobs)
+        f.ledger_from(8000060, good, t(18))
+        self.assertIn("沒有可以用的上一份帳", go(f, env())[1])
         # A segment started by hand, or a re-run one: not used.
         for kw in ({"actor": "someone"}, {"trig": "someone"}, {"attempt": 2}):
             f = Fake()

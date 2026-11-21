@@ -285,7 +285,8 @@ def run(env, api, now, sleep=time.sleep):
             by_tail = False
             if not by_dispatcher and is_segment(r) and r.get("triggering_actor", {}).get("login") == BOT and r.get("run_attempt") == 1:
                 jobs = api.get(f"repos/{repo}/actions/runs/{r['id']}/attempts/1/jobs?per_page=100")["jobs"]
-                d = [j for j in jobs if j.get("name") == "dispatch" and j.get("started_at")]
+                # The dispatch job ran (a skipped one has a start time too: the moment the training ended).
+                d = [j for j in jobs if j.get("name") == "dispatch" and j.get("conclusion") == "success" and j.get("started_at")]
                 by_tail = bool(d) and when(a["created_at"]) >= when(d[0]["started_at"])
             if not (by_dispatcher or by_tail):
                 continue
