@@ -38,7 +38,7 @@ import { FIXED_TO_PX } from "../../view/view.ts";
 import { applyTheme, loadTheme, saveTheme, THEME_LABEL, THEMES } from "../../theme.ts";
 import { formalUi } from "../formal.ts";
 import { dress, icon } from "../icons.ts";
-import { applyUiScale, largeWindow, loadUiSize, saveUiSize, UI_SIZE_LABEL, UI_SIZES, uiZoom } from "../ui-scale.ts";
+import { applyUiScale, largeWindow, loadUiSize, onUiZoom, saveUiSize, UI_SIZE_LABEL, UI_SIZES, uiZoom } from "../ui-scale.ts";
 import { ORDER_TONE } from "../overlays.ts";
 import { adjustRatio, type Ratio } from "./economy-ratio.ts";
 import { loadTownHintOff, saveTownHintOff } from "../../hint-pref.ts";
@@ -49,7 +49,7 @@ import { Minimap } from "./minimap.ts";
 import { armyText, buildingName, clock, GAME_OVER_REASON, UNIT_NAME } from "./names.ts";
 import { CommandArea, PLUNDERED_TEXT, ResourceBar, SelectionInfo } from "./panels.ts";
 import type { HotKey } from "../../input/hotkeys.ts";
-import { hasMouse, keyOn, paintBadges, pressByKey, reachable } from "./keys.ts";
+import { hasMouse, keyOn, MOUSE_QUERY, paintBadges, pressByKey, reachable } from "./keys.ts";
 import { Tips } from "./tips.ts";
 import { statsModel } from "../stats/model.ts";
 import { StatsPage } from "../stats/page.ts";
@@ -65,6 +65,13 @@ const ALERT_MERGE_CELLS = 8;
 const MAX_ARROWS = 3;
 /** Half an alert arrow's side (style.css .alert-arrow, 52), and a little room round it. */
 const ARROW_HALF = 28;
+/**
+ * 小地圖常開 (R26 04, ceo 2026-11-21): docked only while the window's width ÷ the zoom is at least this, so that the bar
+ * keeps 280 beside it (已選, 「+N 種」, ？ and ✕): 252 its left docked, 292 its right with 建造's five columns. Half a
+ * 1920 screen at 1.5 (640) left it 137, ✕ pushed out.
+ */
+const DOCK_MIN_WIDTH = 252 + 280 + 292;
+
 /** 開局提示: the minimap keeps flashing the town this long after the hint is closed (ms). */
 const TOWN_FLASH_AFTER_MS = 10_000;
 /** 不再提示 in 正式介面 without crystal (the user 2026-11-08): where to turn it back on. */
@@ -148,6 +155,16 @@ export class Hud {
   /** 正式介面: the minimap shows (behind 地圖), and whether it opened on its own. */
   private minimapOpen = false;
   private minimapAuto = false;
+  /**
+   * 小地圖常開 (R26 04): with a mouse on a large window wide enough (DOCK_MIN_WIDTH) it is open from the start, at the
+   * bottom left with 地圖 right of it and the rest out of its way (docked); 地圖 puts it away for this game only (a new
+   * Hud each game: a new game, or the last one continued, opens it again; ceo 2026-11-21). The window made small or
+   * narrow, put away and all where it was; large again, open, unless 地圖 put it away. Opened by 地圖 where it does not
+   * dock, as on a phone (over 地圖, nothing moved: ceo 2026-11-21).
+   */
+  private readonly mouseQuery = typeof matchMedia === "function" ? matchMedia(MOUSE_QUERY) : null;
+  private docked = false;
+  private minimapShut = false;
   /** 家裡被攻擊 (R6-13): 全體回城 shows until then (performance.now ms). */
   private homeHitUntil = 0;
   /** What 全體回城 shows now: "home" (家裡被攻擊), "work" (回去工作), or "" (put away). */
@@ -352,7 +369,21 @@ export class Hud {
       alerts: () => this.alerts.map((a) => ({ cx: Math.floor(a.wx / TILE_PX), cy: Math.floor(a.wy / TILE_PX) })),
       highlight: () => (this.flash !== null && performance.now() < this.flash.until ? this.flash : null),
     });
-    if (this.formal) this.minimap.canvas.classList.add("closed");
+    if (this.formal) {
+      this.minimap.canvas.classList.add("closed");
+      this.dockMinimap();
+      // Again as the window changes size, the pointer changes or 介面大小 the zoom (not on the page's frames: those may
+      // stop a while).
+      const dock = () => this.dockMinimap();
+      addEventListener("resize", dock);
+      this.mouseQuery?.addEventListener("change", dock);
+      const unZoom = onUiZoom(dock);
+      this.cleanups.push(() => {
+        removeEventListener("resize", dock);
+        this.mouseQuery?.removeEventListener("change", dock);
+        unZoom();
+      });
+    }
     this.info = new SelectionInfo(root, host);
     this.cmds = new CommandArea(root, host);
     this.arrowLayer = el("div", root, "alert-arrows");
@@ -584,26 +615,50 @@ export class Hud {
     this.groupCollapsed = true;
   }
 
-  /** 新手教學 (R25): step 1 opened it to teach it; put away after, as the player had it. */
+  /**
+   * 新手教學 (R25): step 1 opened it to teach it; put away after, as the player had it. Open from the start (docked,
+   * R26 04), it stays, unless 地圖 put it away.
+   */
   closeMinimap(): void {
-    this.setMinimap(false);
-    this.minimapAuto = false;
+    this.setMinimap(this.docked && !this.minimapShut);
   }
 
   private toggleMinimap(): void {
     this.setMinimap(!this.minimapOpen);
-    this.minimapAuto = false;
+    if (this.docked) this.minimapShut = !this.minimapOpen;
   }
 
-  private setMinimap(open: boolean): void {
+  /**
+   * Open or put away; `auto`: on its own (攻擊, 移動 picking a spot; 開局提示). Docked at the bottom left, the rest
+   * out of its way, only when it is open as 常開 (R26 04): open on its own (地圖 having put it away), it opens over
+   * 地圖 as on a phone and nothing moves (ceo 2026-11-21: the bar, 閒置 and 地圖 jumped aside and back at each pick).
+   */
+  private setMinimap(open: boolean, auto = false): void {
     this.minimapOpen = open;
+    this.minimapAuto = open && auto;
     this.minimap.canvas.classList.toggle("closed", !open);
     this.mapBtn?.classList.toggle("active", open);
+    this.root.classList.toggle("mm-docked", this.docked && open && !this.minimapAuto);
   }
 
-  /** 正式介面's left (tests): the minimap open (and on its own), what 全體回城 shows, how many places 地圖 counts. */
-  get leftForTest(): { minimap: boolean; auto: boolean; recall: string; places: number } {
-    return { minimap: this.minimapOpen, auto: this.minimapAuto, recall: this.recallLook, places: this.minimapOpen ? 0 : this.alerts.length };
+  /** 小地圖常開 (R26 04): docked or not as the window and the pointer are now (nothing if unchanged). */
+  private dockMinimap(): void {
+    const dock = this.mouseQuery?.matches === true && largeWindow() && innerWidth / uiZoom() >= DOCK_MIN_WIDTH;
+    if (dock === this.docked) return;
+    this.docked = dock;
+    // Docked (open as 常開, also over one open on its own), unless 地圖 put it away; not docked: put away, unless it
+    // is open on its own (it closes as its pick ends).
+    if (dock && !this.minimapShut) this.setMinimap(true);
+    else if (!dock && this.minimapOpen && !this.minimapAuto) this.setMinimap(false);
+    else this.setMinimap(this.minimapOpen, this.minimapAuto);
+  }
+
+  /**
+   * 正式介面's left (tests): the minimap open (and on its own; docked: R26 04, at the bottom left), what 全體回城 shows,
+   * how many places 地圖 counts.
+   */
+  get leftForTest(): { minimap: boolean; auto: boolean; docked: boolean; recall: string; places: number } {
+    return { minimap: this.minimapOpen, auto: this.minimapAuto, docked: this.root.classList.contains("mm-docked"), recall: this.recallLook, places: this.minimapOpen ? 0 : this.alerts.length };
   }
 
   /** 正式介面, every frame: the minimap opening and closing on its own, 地圖's alarm, 全體回城 (R6-13, R6-22). */
@@ -612,13 +667,8 @@ export class Hud {
     // (INV-43); closed again after, if it opened on its own.
     const mode = this.game.mode;
     const want = mode === "advance" || mode === "retreat" || (this.flash !== null && now < this.flash.until);
-    if (want && !this.minimapOpen) {
-      this.setMinimap(true);
-      this.minimapAuto = true;
-    } else if (!want && this.minimapAuto) {
-      this.setMinimap(false);
-      this.minimapAuto = false;
-    }
+    if (want && !this.minimapOpen) this.setMinimap(true, true);
+    else if (!want && this.minimapAuto) this.setMinimap(this.docked && !this.minimapShut);
     // 地圖 while the minimap is put away and something is hit: red, flashing, how many places (R6-22;
     // 減少動態效果: red, not flashing). Open, the minimap's red rings flash instead.
     const places = this.minimapOpen ? 0 : this.alerts.length;

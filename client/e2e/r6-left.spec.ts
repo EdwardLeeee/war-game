@@ -14,7 +14,7 @@ const FOE = 1;
 const NEUTRAL = 2;
 const FIXED = 1024;
 
-const left = (page: Page) => page.evaluate(() => window.__proto?.game?.left() ?? { minimap: false, auto: false, recall: "?", places: -1 });
+const left = (page: Page) => page.evaluate(() => window.__proto?.game?.left() ?? { minimap: false, auto: false, docked: false, recall: "?", places: -1 });
 const mode = (page: Page) => page.evaluate(() => window.__proto?.game?.mode() ?? "");
 const lastSent = (page: Page) => page.evaluate(() => window.__proto?.game?.sent().at(-1) as Record<string, unknown> | undefined);
 const own = (page: Page, type: number) =>
