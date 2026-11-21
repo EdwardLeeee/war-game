@@ -1,4 +1,4 @@
-// 滑鼠操作 06 B (R26, design/r26/spec.md; the user 2026-11-18, ceo 2026-11-20), a computer's window (1920 × 950, a
+// 滑鼠操作 06 B (R26, design/r26/spec.md; the user 2026-11-18, ceo 2026-11-20), a computer's window (1366 × 768, a
 // mouse, no touch) on the fake world: the left button dragged is a box at once (no hold first), a left click selects
 // and never orders (on open ground it clears); a right click is the order a tap gives the units selected and keeps
 // them selected, dragged it does nothing, with nothing selected nothing; the middle button drags the view; the arrow
@@ -8,10 +8,11 @@
 import { expect, type Page, test } from "@playwright/test";
 import { watchErrors } from "./helpers.ts";
 
-const W = 1920;
-const H = 950;
+const W = 1366;
+const H = 768;
 test.use({ viewport: { width: W, height: H }, isMobile: false, hasTouch: false, deviceScaleFactor: 1 });
-// Chromium on CI draws 1920 × 950 with the CPU (stable-buttons.spec's tests there take up to 2.5 minutes).
+// 1366 × 768, R26's smaller window (ui-scale.spec has 1920 × 950's): Chromium on CI draws with the CPU, a third less
+// to draw than 1920 × 950 (its right-click test 96 s of 120 there on an EPYC 7763, #548's run 44838086316).
 test.describe.configure({ timeout: 120_000 });
 
 const selection = (page: Page) => page.evaluate(() => window.__proto?.game?.selection().units ?? []);

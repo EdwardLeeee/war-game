@@ -1,4 +1,4 @@
-// 快捷鍵 (R26 02 B, design/r26/spec.md section 02; the user 2026-11-18, ceo 2026-11-20), a computer's window (1920 × 950,
+// 快捷鍵 (R26 02 B, design/r26/spec.md section 02; the user 2026-11-18, ceo 2026-11-20), a computer's window (1366 × 768,
 // a mouse, no touch) on the fake world: each key's badge on its button (none on the phone); Q W E R the soldiers' row
 // and A S D F 更多's, pressed shut too; Esc a step at a time (the prompt's 取消 while picking: they stop and hold; 更多
 // shut; the selection cleared; 選單; 選單 shut); the right button while picking is the place, while placing a
@@ -6,12 +6,12 @@
 // group, 2 that group; with a dialog up only Esc.
 
 import { expect, type Page, test } from "@playwright/test";
-import { expectSaid, watchErrors, watchToasts } from "./helpers.ts";
+import { expectSaid, tapOwnBuilding, watchErrors, watchToasts } from "./helpers.ts";
 
-const W = 1920;
-const H = 950;
+const W = 1366;
+const H = 768;
 test.use({ viewport: { width: W, height: H }, isMobile: false, hasTouch: false, deviceScaleFactor: 1 });
-// Chromium on CI draws 1920 × 950 with the CPU (as mouse.spec).
+// 1366 × 768, R26's smaller window (as mouse.spec): Chromium on CI draws with the CPU, a third less to draw than 1920 × 950.
 test.describe.configure({ timeout: 120_000 });
 
 type Order = { c: string; u?: number[]; stance?: number; x?: number; y?: number };
@@ -68,7 +68,39 @@ async function ground(page: Page): Promise<{ x: number; y: number }> {
   throw new Error("no open ground");
 }
 
-test("角標：指令那一排 Q W E R（沒有進駐時更多照樣是 R），更多打開時 A S D F；全軍 F2、選單 Esc、全軍撤退 Bksp、暫停 Space；編隊沒有角標", async ({ page }) => {
+/**
+ * Badges drawn over their own button's words or icon (none should be: ceo 2026-11-20): each one's button and key. Each
+ * line of words by its own boxes (a range's rects, not its span's), the icon by its shapes.
+ */
+const covering = (page: Page) =>
+  page.evaluate(() => {
+    const out: string[] = [];
+    for (const hk of document.querySelectorAll<HTMLElement>(".hk")) {
+      const b = hk.parentElement;
+      const r = hk.getBoundingClientRect();
+      if (b === null || r.width === 0) continue;
+      const over = (g: DOMRect) => g.width > 0 && g.left < r.right && r.left < g.right && g.top < r.bottom && r.top < g.bottom;
+      let hit = false;
+      const walker = document.createTreeWalker(b, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n !== null && !hit; n = walker.nextNode()) {
+        if (hk.contains(n) || (n.textContent ?? "").trim() === "") continue;
+        const range = document.createRange();
+        range.selectNodeContents(n);
+        hit = [...range.getClientRects()].some(over);
+      }
+      // An icon by what it draws (its shapes), not its 24 × 24 box with the room round them.
+      if (!hit) hit = [...b.querySelectorAll("svg.ic")].some((ic) => !hk.contains(ic) && [...ic.querySelectorAll("path, line, polyline, polygon, rect, circle, ellipse")].some((sh) => over(sh.getBoundingClientRect())));
+      if (hit) out.push(`${(b.querySelector(".label, .lb")?.textContent ?? "").trim()} [${hk.textContent ?? ""}]`);
+    }
+    return out;
+  });
+
+// The layout at the user's own size (1920 × 1080, a Chromium browser; ceo 2026-11-21: what is about layout keeps a test
+// at 1920 × 950 in Chromium, what is about what a key does runs at 1366 × 768).
+test.describe("1920×950", () => {
+  test.use({ viewport: { width: 1920, height: 950 } });
+
+test("角標：指令那一排 Q W E R（沒有進駐時更多照樣是 R），更多打開時 A S D F；全軍 F2、選單 Esc、全軍撤退 Bksp、暫停 Space；編隊沒有角標；指令、更多、建造選單、兵營和主城的面板上沒有一顆角標蓋到字或圖示", async ({ page }) => {
   const check = watchErrors(page);
   await start(page);
   await army(page);
@@ -91,7 +123,30 @@ test("角標：指令那一排 Q W E R（沒有進駐時更多照樣是 R），�
   expect(await badge(page, ".cmds-more", /^停止/)).toBe("F");
   // A badge is not in the buttons' names.
   await expect(page.locator(".cmds").getByRole("button", { name: "攻擊", exact: false }).first()).not.toHaveAccessibleName(/Q/);
+  // None over words or an icon: the soldiers' row with 更多 open, 建造's page, the barracks' and the main city's panels.
+  expect(await covering(page), "the soldiers' row, 更多").toEqual([]);
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => window.__proto?.game?.select([]));
+  // The command area built for nothing selected before Q (else Q is still 攻擊's).
+  await expect(page.locator(".cmds").getByRole("button", { name: /^建造/ })).toBeVisible();
+  await page.keyboard.press("q");
+  await expect(page.locator(".cmds.build-page")).toBeVisible();
+  await expect.poll(() => page.locator(".cmds.build-page .hk").count()).toBeGreaterThan(5);
+  expect(await covering(page), "建造's page").toEqual([]);
+  await page.keyboard.press("Escape");
+  for (const [type, name] of [
+    [6, "兵營"],
+    [0, "主城"],
+  ] as const) {
+    const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
+    const b = (await page.evaluate(() => window.__proto?.game?.buildings() ?? [])).find((v) => v.type === type && v.owner === me);
+    if (b === undefined) throw new Error(`no ${name}`);
+    await tapOwnBuilding(page, b.id, 1);
+    await expect(page.locator(".cmds .hk").first()).toBeVisible();
+    expect(await covering(page), name).toEqual([]);
+  }
   check();
+});
 });
 
 test("按鍵：Q 攻擊選目標、Esc 等於取消（停下堅守）；W 移動後用右鍵點地面＝走過去；更多沒開時按 S＝堅守；Esc 一次一步：更多、取消選取、選單、關選單", async ({ page }) => {

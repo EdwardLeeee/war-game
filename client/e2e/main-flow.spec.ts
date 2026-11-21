@@ -55,7 +55,8 @@ async function resume(page: Page): Promise<void> {
 }
 
 test("主要流程：開局（選難度）→ 選村民 → 蓋房子（重設）→ 訓練 → 框選 → 改姿態 → 移動 → 暫停時按攻擊下指令 → 攻下城鎮後治理並留守 → 全軍離開不叛離 → 不選村民蓋民居、自動訓練的新兵補進編隊 → 暫停自動訓練 → 軍團畫面 → 散開隊形 → 全軍撤退", async ({ page }, info) => {
-  test.setTimeout(300_000);
+  // EPYC 7763 (CI's slowest, #537): 228 s of 300 in #548's run 44838086316 (chromium 2/4); twice that (the audit, ceo 2026-11-21).
+  test.setTimeout(480_000);
   const check = watchErrors(page);
 
   // 1. 開局

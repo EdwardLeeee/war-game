@@ -281,6 +281,8 @@ test("＋遠程／＋法師（D-080）：選自己的主城就能叫兵躲進來
 });
 
 test("躲著的兵（D-083，使用者 2026-10-26 推翻 D083-1-A）：躲進去還算編隊的、目標不變、不補人，按鈕寫躲N、不選他們，軍團畫面寫躲著；只選躲著的兵時說明怎麼叫出來；全軍、全軍撤退不含他們；全部出來以後走回編隊，全軍又算到他們", async ({ page }, info) => {
+  // EPYC 7763 (#537): 36.6 s of 60 (run 44772107441); twice that (the audit, ceo 2026-11-21).
+  test.setTimeout(75_000);
   await start(page);
   const spear = await ownIds(page, [1]);
   const ranged = await ownIds(page, [2]);
@@ -353,6 +355,8 @@ test("躲著的兵（D-083，使用者 2026-10-26 推翻 D083-1-A）：躲進去
 });
 
 test("召回（使用者 2026-11-04，D-119）：兩個編隊躲在同一座主城，編隊 1 的軍團畫面按召回，只有它的兵出來、走回編隊，編隊 2 的照舊躲著；編隊 2 全部躲著也按得到召回", async ({ page }, info) => {
+  // EPYC 7763 (#537): 37.3 s of 60 (run 44762845583); twice that (the audit, ceo 2026-11-21).
+  test.setTimeout(75_000);
   await start(page);
   const spear = await ownIds(page, [1]);
   const ranged = await ownIds(page, [2]);
@@ -415,6 +419,8 @@ test("別人的建築裡有人：敵方箭樓右上角有記號，點它寫「�
 });
 
 test("馬廄和騎兵：建造選單有馬廄；選馬廄 → 訓練騎兵，騎兵出來加入編隊，軍團畫面的騎兵列算到，全軍也算到（D-061）", async ({ page }, info) => {
+  // EPYC 7763 (#537): 42.9 s of 60 (run 44402748504); twice that (the audit, ceo 2026-11-21).
+  test.setTimeout(90_000);
   await start(page);
   const spear = await ownIds(page, [1]);
   const soldiers = (await ownIds(page, [1, 2, 3])).length;

@@ -424,8 +424,8 @@ export async function tapOwnBuilding(page: Page, which: number | { x: number; y:
   // In one look in the page: the building; the camera on it (with a panel over the middle of the screen, 軍團畫面 on a
   // phone, moved until it shows clear of it); each half cell of it from its middle out, the first the picker takes as it
   // where nothing of the interface is over it.
-  const found = await page.evaluate(
-    ([w, s]) => {
+  const look = () =>
+    page.evaluate(([w, s]) => {
       const g = window.__proto?.game;
       if (g === undefined) return { id: -1, at: null, seen: ["no game"] };
       const me = g.me();
@@ -451,12 +451,26 @@ export async function tapOwnBuilding(page: Page, which: number | { x: number; y:
     },
     [which, scale ?? null] as const,
   );
-  // None: what each point had (in the test's message).
-  if (found.at === null) throw new Error(`no point of building ${JSON.stringify(which)} the tap would take: ${found.seen.join("; ")}`);
+  // Tapped, and the building selected; else (a page behind its snapshots still moves ours after the look even paused:
+  // WebKit on CI, run 44852056616, a villager came under the point) the selection as it was, and once more.
+  const before = await page.evaluate(() => window.__proto?.game?.selection().units ?? []);
   const touch = await page.evaluate(() => navigator.maxTouchPoints > 0);
-  if (touch) await tap(page, found.at);
-  else await page.mouse.click(found.at.x, found.at.y);
-  await expect.poll(() => page.evaluate(() => window.__proto?.game?.selection().building ?? null), quick).toBe(found.id);
+  let found = await look();
+  for (let attempt = 1; ; attempt++) {
+    // None: what each point had (in the test's message).
+    if (found.at === null) throw new Error(`no point of building ${JSON.stringify(which)} the tap would take: ${found.seen.join("; ")}`);
+    if (touch) await tap(page, found.at);
+    else await page.mouse.click(found.at.x, found.at.y);
+    const id = found.id;
+    try {
+      await expect.poll(() => page.evaluate(() => window.__proto?.game?.selection().building ?? null), { ...quick, timeout: attempt < 4 ? 3_000 : 5_000 }).toBe(id);
+      break;
+    } catch (e) {
+      if (attempt >= 4) throw e;
+      await page.evaluate((u) => window.__proto?.game?.select(u), before);
+      found = await look();
+    }
+  }
   if (!was) {
     const go = page.getByRole("button", { name: "繼續", exact: true });
     await (touch ? go.tap() : go.click());

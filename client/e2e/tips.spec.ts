@@ -1,4 +1,4 @@
-// 滑鼠說明 (R26 03 A, design/r26/spec.md section 03; ceo 2026-11-20), a computer's window (1920 × 950, a mouse, no touch)
+// 滑鼠說明 (R26 03 A, design/r26/spec.md section 03; ceo 2026-11-20), a computer's window (a mouse, no touch: where it goes at 1920 × 950, what it says at 1366 × 768)
 // on the fake world: the pointer still on a button 0.4 s, a tip over it (6 above, its right edge on the button's, in the
 // window) with the name, the key, the price and the line (？'s for an order; ceo's for a building and a soldier); to the
 // next button at once; gone when pressed and on Esc. On the phone never.
@@ -26,15 +26,22 @@ async function start(page: Page, flags = ""): Promise<void> {
 
 /** The pointer onto the middle of `b`. */
 async function hover(page: Page, b: Locator, steps = 2): Promise<{ x: number; y: number; right: number; top: number; bottom: number }> {
-  // Drawn (the command area may be built again between two looks: the next look finds the new one).
-  await expect.poll(async () => (await b.boundingBox()) !== null).toBe(true);
-  const r = await b.boundingBox();
+  // Drawn: one look, again until it finds it (the command area may be built again between two looks, as after Esc in
+  // CI's WebKit, run 44850002352: a second look found it gone).
+  const got: { box: { x: number; y: number; width: number; height: number } | null } = { box: null };
+  await expect(async () => {
+    got.box = await b.boundingBox();
+    expect(got.box, "drawn").not.toBeNull();
+  }).toPass({ timeout: 10_000 });
+  const r = got.box;
   if (r === null) throw new Error("not drawn");
   await page.mouse.move(r.x + r.width / 2, r.y + r.height / 2, { steps });
   return { x: r.x, y: r.y, right: r.x + r.width, top: r.y, bottom: r.y + r.height };
 }
 
-test.describe("滑鼠", () => {
+// Where a tip goes, at the user's own size (1920 × 1080, a Chromium browser; ceo 2026-11-21: what is about layout keeps a
+// test at 1920 × 950 in Chromium).
+test.describe("滑鼠 1920×950", () => {
   test.use({ viewport: { width: W, height: H }, isMobile: false, hasTouch: false, deviceScaleFactor: 1 });
   // Chromium on CI draws 1920 × 950 with the CPU (as mouse.spec).
   test.describe.configure({ timeout: 120_000 });
@@ -104,6 +111,14 @@ test.describe("滑鼠", () => {
     await expect(tip(page)).toBeHidden();
     check();
   });
+
+});
+
+// What the tips say, at 1366 × 768 (ceo 2026-11-21: what is not about layout runs at the smaller window, a third less for
+// Chromium to draw on CI; its 1920 × 950 build and train test took 53 s of 120 on a Xeon 8370C, run 44845805329).
+test.describe("滑鼠 1366×768", () => {
+  test.use({ viewport: { width: 1366, height: 768 }, isMobile: false, hasTouch: false, deviceScaleFactor: 1 });
+  test.describe.configure({ timeout: 120_000 });
 
   test("建造、訓練：價錢和那一句；變灰的寫要先蓋什麼", async ({ page }) => {
     const check = watchErrors(page);
