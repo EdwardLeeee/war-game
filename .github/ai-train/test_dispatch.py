@@ -19,7 +19,10 @@ import dispatch as D  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO, REPO_ID = "o/war-game", 7
-NOW = dt.datetime(2026, 11, 23, 4, 0, tzinfo=dt.timezone.utc)  # past CHAIN_START
+REAL_CHAIN_START = D.CHAIN_START
+# The tests run as if the chain had started (CHAIN_START is far off until PR B sets the real date).
+D.CHAIN_START = "2026-11-22T00:00:00Z"
+NOW = dt.datetime(2026, 11, 23, 4, 0, tzinfo=dt.timezone.utc)  # past that
 
 
 def fixture(name):
@@ -212,6 +215,19 @@ class Run(unittest.TestCase):
             self.assertIn(f"新的 run {f.next_id}", text)
             self.assertIsNone(ledger["unseen"])
             self.assertAlmostEqual(ledger["closed"]["2026-11-23"], D.DISPATCH_HOURS)
+
+    def test_the_real_start_is_far_off(self):
+        # Until PR B sets the real date nothing is dispatched without a trial's --chain-start, the switch on or not.
+        self.assertGreaterEqual(REAL_CHAIN_START, "2099-01-01T00:00:00Z")
+        saved = D.CHAIN_START
+        try:
+            D.CHAIN_START = REAL_CHAIN_START
+            ok, text, _ = go(Fake(), env())
+            self.assertFalse(ok)
+            self.assertIn("還沒到鏈的起點", text)
+            self.assertTrue(go(Fake(), env(ARGS="--chain-start 2026-11-23T00:00:00Z"))[0])
+        finally:
+            D.CHAIN_START = saved
 
     def test_off_before_start_or_rerun(self):
         f = Fake()

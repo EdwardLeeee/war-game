@@ -53,10 +53,11 @@ SEGMENT_MODE = "chaintest"  # the mode a segment runs (PR B: the exams)
 DAY_CAP, TOTAL_CAP = 200.0, 5000.0
 # The ledger counts AI train runs created from this time on (trial segments too; not the examiner search before it).
 LEDGER_START = "2026-11-21T00:00:00Z"
-# Segments are judged from this time on, and nothing is dispatched before it (without a trial's --chain-start): after
-# PR A's trial (its cancelled segment, run 44841753532, 00:08Z) and after A2's trial (its segments made to fail, yield
-# and run short), so neither pauses the training.
-CHAIN_START = "2026-11-22T00:00:00Z"
+# Segments are judged from this time on, and nothing is dispatched before it (without a trial's --chain-start, which can
+# only move it earlier). Far off on purpose (ceo 2026-11-21): the segments are still chaintest, which trains nothing, so
+# the real date comes with PR B (the exams), after A2's trial (its segments made to fail, yield and run short) and PR A's
+# (its cancelled segment, run 44841753532), so neither pauses the training.
+CHAIN_START = "2099-01-01T00:00:00Z"
 SEGMENT_HOURS, SEGMENT_JOBS = 1.0, 1
 MAX_SEGMENTS_PER_DAY = 48  # what the 30-minute schedule allowed
 MIN_SEGMENT_MINUTES = 10
