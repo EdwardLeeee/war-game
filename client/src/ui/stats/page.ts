@@ -220,6 +220,28 @@ export class StatsPage {
     box.style.top = `${Math.round(host.offsetTop + 6)}px`;
   }
 
+  /** 兵力's chart (士兵數) in `host` at `box`, its 戰事 card in `cd`: 兵力's page, and 總覽's on a large window (R26 07). */
+  private armyChart(cd: HTMLElement, host: HTMLElement, box: { w: number; h: number }, moments: number[]): void {
+    const m = this.m;
+    const a = m.army;
+    host.innerHTML = lineChart({
+      ...box,
+      events: m.events,
+      picked: this.picked,
+      ticks: m.ticks,
+      axisMinutes: m.axisMinutes,
+      moments,
+      unit: " 名",
+      peak: true,
+      series: [
+        { who: "me", name: "我方", pts: a.me },
+        { who: "foe", name: "敵方", pts: a.foe },
+      ],
+      label: `士兵數：我方最多 ${a.peak.me[1]} 名（${clock(a.peak.me[0])}）、敵方最多 ${a.peak.foe[1]} 名（${clock(a.peak.foe[0])}）；最後我方 ${a.me.at(-1)?.[1] ?? 0} 名、敵方 ${a.foe.at(-1)?.[1] ?? 0} 名`,
+    });
+    this.warCard(cd, host, box.w, LINE_SPAN);
+  }
+
   private drawPage(): void {
     const m = this.m;
     const p = this.page;
@@ -290,6 +312,16 @@ export class StatsPage {
           el("td", tr, "", r.me);
           el("td", tr, "", r.foe);
         }
+        // A large window (R26 07, design/r26/spec.md 07): under them, 兵力's chart in the room left, drawn at that size;
+        // its 戰事 marks open their card as on 兵力's page. A phone: as it was (兵力 is its own page).
+        if (document.documentElement.classList.contains("ui-large")) {
+          const ov = el("div", p, "st-ovarmy");
+          const head = el("div", ov, "st-ovhead");
+          el("h3", head, "", "兵力");
+          legend(head);
+          const host = chartHost(ov);
+          this.armyChart(ov, host, boxOf(host, 160), moments);
+        }
         return;
       }
       case "資源": {
@@ -333,24 +365,7 @@ export class StatsPage {
         legend(cd);
         const host = chartHost(cd);
         momentKey();
-        const a = m.army;
-        const box = boxOf(host);
-        host.innerHTML = lineChart({
-            ...box,
-            events: m.events,
-            picked: this.picked,
-            ticks: m.ticks,
-            axisMinutes: m.axisMinutes,
-            moments,
-            unit: " 名",
-            peak: true,
-            series: [
-              { who: "me", name: "我方", pts: a.me },
-              { who: "foe", name: "敵方", pts: a.foe },
-            ],
-            label: `士兵數：我方最多 ${a.peak.me[1]} 名（${clock(a.peak.me[0])}）、敵方最多 ${a.peak.foe[1]} 名（${clock(a.peak.foe[0])}）；最後我方 ${a.me.at(-1)?.[1] ?? 0} 名、敵方 ${a.foe.at(-1)?.[1] ?? 0} 名`,
-          });
-        this.warCard(cd, host, box.w, LINE_SPAN);
+        this.armyChart(cd, host, boxOf(host), moments);
         return;
       }
       case "戰鬥": {

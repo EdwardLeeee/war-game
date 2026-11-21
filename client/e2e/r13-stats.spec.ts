@@ -78,7 +78,8 @@ const fits = (page: Page) =>
     const page = card.querySelector<HTMLElement>(".st-page");
     const wide = document.documentElement.scrollWidth > innerWidth + 1 || (page !== null && page.scrollWidth > page.clientWidth + 1);
     const charts = [...card.querySelectorAll<SVGElement>(".st-chart > svg")].map((s) => {
-      const host = (s.closest(".st-cardin") as HTMLElement).getBoundingClientRect();
+      // A page's card, or 總覽's 兵力 on a large window (R26 07).
+      const host = (s.closest(".st-cardin, .st-ovarmy") as HTMLElement).getBoundingClientRect();
       const r = s.getBoundingClientRect();
       const key = card.querySelector(".st-mkey")?.getBoundingClientRect();
       return { inCard: r.bottom <= host.bottom + 1 && r.right <= host.right + 1, keyUnder: key === undefined || key.top >= host.bottom - 1 };
@@ -88,7 +89,9 @@ const fits = (page: Page) =>
     // Nothing over anything: each tab, the header, the page; the words of the header and its two buttons.
     const meet = (a: DOMRect, b: DOMRect) => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 0.5 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 0.5;
     // (The tabs' places in the layout: a tab just tapped is pressed down a little for 120 ms, R6-25-01.)
-    const boxes: [string, DOMRect][] = [...card.querySelectorAll<HTMLElement>(".st-tab")].map((t, i) => [`tab ${i}`, new DOMRect(c.left + card.clientLeft + t.offsetLeft, c.top + card.clientTop + t.offsetTop, t.offsetWidth, t.offsetHeight)]);
+    // offset* are the interface's own lengths, the card's box the screen's: × the zoom (R26-01; 1 on a phone).
+    const z = Number.parseFloat(cs.getPropertyValue("--ui-zoom")) || 1;
+    const boxes: [string, DOMRect][] = [...card.querySelectorAll<HTMLElement>(".st-tab")].map((t, i) => [`tab ${i}`, new DOMRect(c.left + (card.clientLeft + t.offsetLeft) * z, c.top + (card.clientTop + t.offsetTop) * z, t.offsetWidth * z, t.offsetHeight * z)]);
     for (const k of [".st-head", ".st-page"]) {
       const e = card.querySelector(k);
       if (e !== null) boxes.push([k, e.getBoundingClientRect()]);
@@ -181,6 +184,8 @@ test("局後統計（正式介面 A，814×380，勝）：上方寫勝負、原�
   // 採集: 金 alone (D-135, R15-05: the fake world plays without crystal).
   await expect(dialog.locator(".st-nums tr").filter({ hasText: /^採集 金/ })).toHaveCount(1);
   await expect(dialog.locator(".st-nums")).not.toContainText("魔晶");
+  // A phone (not a large window, R26 07): no 兵力 on 總覽, it is its own page.
+  await expect(dialog.locator(".st-ovarmy")).toHaveCount(0);
   await everyTab(page, "814×380", "top");
   // 資源: 糧 first, 糧、木、金 only (R15-05), 金 at a tap.
   await page.getByRole("tab", { name: "資源" }).tap();
@@ -357,4 +362,81 @@ test("真的模擬：投降後是局後統計，用這局的時間軸（我方�
   await expect(dialog.locator(".st-head")).toContainText("我方投降");
   await expect(dialog.locator(".st-head")).toContainText(/對手：電腦・(簡單|普通|困難)・(掠奪型|治理型|均衡型)　地圖：固定地圖/);
   await everyTab(page, "真的模擬", "top");
+});
+
+// A large window (R26 07, design/r26/spec.md 07; the board R26-07-局後統計-desktop): the card 1240 wide before the zoom, in
+// the middle; 總覽 has 兵力's chart under 關鍵時刻 and 雙方數字, in the room left, drawn at that size, its 戰事 marks as on
+// 兵力's page. Layout: Chromium at the user's size (ceo 2026-11-21), a mouse.
+test.describe("大視窗", () => {
+  test.use({ viewport: { width: 1920, height: 950 }, isMobile: false, hasTouch: false, deviceScaleFactor: 1 });
+
+  test("局後統計 1920×950：卡片寬 1240（放大前）、置中；總覽下面有兵力圖，用剩下的高度照那個大小畫；點戰事記號和兵力頁一樣；最小的字 18 px；1366×768 也放得下", async ({ page }, info) => {
+    test.skip(info.project.name !== "chromium", "layout: Chromium (ceo 2026-11-21)");
+    test.setTimeout(120_000);
+    await page.goto("./?test=1&mock=1&tps=20&ui=r6");
+    await page.getByRole("button", { name: "開始" }).click();
+    await page.waitForFunction(() => window.__proto?.ready === true);
+    const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
+    await page.evaluate(([w, tl]) => window.__proto?.game?.endGame(w as number, 0, tl as never), [me, FIX.timeline] as const);
+    const dialog = page.getByRole("dialog", { name: "勝利" });
+    await expect(dialog.locator(".stats-card.panel")).toBeVisible();
+    const zoom = await page.evaluate(() => Number(getComputedStyle(document.documentElement).getPropertyValue("--ui-zoom")) || 1);
+    expect(zoom).toBe(1.5);
+    // 1240 wide before the zoom, in the middle; everything as on the phone's checks (inside, nothing cut or crossed).
+    const card = await dialog.locator(".stats-card").boundingBox();
+    expect(Math.abs((card?.width ?? 0) / zoom - 1240), `the card ${JSON.stringify(card)}`).toBeLessThanOrEqual(1);
+    const f = await fits(page);
+    expect(f).toMatchObject({ missing: false, inside: true, centred: true, small: [], cut: [], wide: false, tabsIn: true, crossed: [], taps: [], more: true });
+    for (const c of f.charts) expect(c).toEqual({ inCard: true, keyUnder: true });
+    // 總覽: 兵力's chart under the two columns, its title and the key; the same chart as 兵力's page (its label).
+    const ov = dialog.locator(".st-ovarmy");
+    await expect(ov.locator("h3")).toHaveText("兵力");
+    await expect(ov.locator(".st-legend")).toContainText("我方");
+    await expect(ov.locator(".st-legend")).toContainText("敵方");
+    const chart = ov.getByRole("img");
+    await expect(chart).toHaveAttribute("aria-label", /^士兵數：我方最多 \d+ 名/);
+    const label = await chart.getAttribute("aria-label");
+    // Drawn at the size it shows (not a picture stretched): the SVG's own size × the zoom is its box; the room left
+    // taken, the page not scrolled (the chart's foot at the page's).
+    const drawn = await page.evaluate(() => {
+      const svg = document.querySelector(".st-ovarmy .st-chart > svg") as SVGSVGElement;
+      const r = svg.getBoundingClientRect();
+      const pg = (document.querySelector(".st-page") as HTMLElement).getBoundingClientRect();
+      const two = (document.querySelector(".st-two") as HTMLElement).getBoundingClientRect();
+      return { w: Number(svg.getAttribute("width")), h: Number(svg.getAttribute("height")), bw: r.width, bh: r.height, gap: pg.bottom - r.bottom, under: r.top >= two.bottom, scrolls: (document.querySelector(".st-page") as HTMLElement).scrollHeight > (document.querySelector(".st-page") as HTMLElement).clientHeight + 2 };
+    });
+    expect(Math.abs(drawn.w * zoom - drawn.bw), JSON.stringify(drawn)).toBeLessThanOrEqual(1);
+    expect(Math.abs(drawn.h * zoom - drawn.bh), JSON.stringify(drawn)).toBeLessThanOrEqual(1);
+    expect(drawn.h, "taller than the least (160)").toBeGreaterThan(200);
+    expect(drawn.under && !drawn.scrolls && drawn.gap >= 0 && drawn.gap <= 24, JSON.stringify(drawn)).toBe(true);
+    // The smallest words 18 px on the screen at 1.5 (12 before the zoom; the chart's ticks are its own, about 13).
+    const smallest = await page.evaluate(() => {
+      let least = 99;
+      const walk = document.createTreeWalker(document.querySelector(".stats-card") as HTMLElement, NodeFilter.SHOW_TEXT);
+      for (let n = walk.nextNode(); n !== null; n = walk.nextNode()) {
+        const e = n.parentElement;
+        if (e === null || (n.textContent ?? "").trim() === "" || e.closest("svg") !== null || e.getClientRects().length === 0) continue;
+        least = Math.min(least, Number.parseFloat(getComputedStyle(e).fontSize));
+      }
+      return least;
+    });
+    expect(smallest * zoom).toBeGreaterThanOrEqual(18);
+    // A 戰事 mark clicked: its card, as on 兵力's page (the same card for the same mark).
+    const mark = ov.locator(".st-wmarks .st-wm").first();
+    await expect(mark).toBeVisible();
+    const m = await mark.boundingBox();
+    if (m === null) throw new Error("no mark");
+    await page.mouse.click(m.x + m.width / 2, m.y + m.height / 2);
+    await expect(ov.locator(".st-wcard")).toBeVisible();
+    const said = await ov.locator(".st-wcard .st-wc1").textContent();
+    await dialog.getByRole("tab", { name: "兵力" }).click();
+    await expect(dialog.locator(".st-cardin .st-wcard .st-wc1")).toHaveText(said ?? "");
+    await expect(dialog.locator(".st-cardin").getByRole("img")).toHaveAttribute("aria-label", label ?? "");
+    // 1366 × 768 (1.21): the card no wider than the window, in the middle; 總覽's chart there too.
+    await dialog.getByRole("tab", { name: "總覽" }).click();
+    await page.setViewportSize({ width: 1366, height: 768 });
+    await expect.poll(async () => (await fits(page)).centred).toBe(true);
+    expect(await fits(page)).toMatchObject({ inside: true, centred: true, cut: [], wide: false, crossed: [], more: true });
+    await expect(ov.getByRole("img")).toBeVisible();
+  });
 });

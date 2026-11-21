@@ -879,3 +879,39 @@ body:has(.dialog.stats-page:not([hidden])) #proto-label {
   text-align: center;
   font-size: 13px;
 }
+
+/* ---- a large window (R26 07, design/r26/spec.md 07; ui-scale.ts sets .ui-large: 600 tall or more) ----
+   The card 1240 wide before the zoom (no wider than the window), in the middle: on 1920 × 950 at 1.5 it stretched to
+   both edges, its words at one end and its numbers at the other. */
+:root.ui-large .stats-page .stats-card {
+  left: 0;
+  right: 0;
+  width: min(1240px, calc(100vw / var(--ui-zoom, 1) - 2 * var(--st-mx)));
+  margin: 0 auto;
+}
+
+/* 總覽: 兵力's chart under 關鍵時刻 and 雙方數字 (the board's R26-07), in the room left; the page scrolls when that is
+   under 160. */
+.stats-page .st-ovarmy {
+  /* 戰事's card over the chart (.st-wcard, placed from the chart's top), as in .st-cardin. */
+  position: relative;
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  min-height: 0;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--st-edge);
+}
+
+.stats-page .st-ovhead {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 4px;
+}
+
+.stats-page .st-page .st-ovhead h3 {
+  font-size: 14px;
+}
