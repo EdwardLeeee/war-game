@@ -203,9 +203,10 @@ class Walk(unittest.TestCase):
 class Options(unittest.TestCase):
     def test_only_lower_and_earlier(self):
         o = D.options("--day-cap 500 --total-cap 3 --segment-hours x --day-segments 2 --chain-start 2026-11-21T05:00:00Z --short --api-fail".split())
-        self.assertEqual((o["day_cap"], o["total_cap"], o["segment_hours"], o["day_segments"]), (200.0, 3.0, 1.0, 2))
+        # No cap a day (D-160): a trial's --day-cap sets one, whatever its value.
+        self.assertEqual((o["day_cap"], o["total_cap"], o["segment_hours"], o["day_segments"]), (500.0, 3.0, 1.0, 2))
         self.assertEqual(o["chain_start"], "2026-11-21T05:00:00Z")
-        self.assertEqual(o["carry"], "--total-cap 3 --day-segments 2 --chain-start 2026-11-21T05:00:00Z --short")
+        self.assertEqual(o["carry"], "--day-cap 500 --total-cap 3 --day-segments 2 --chain-start 2026-11-21T05:00:00Z --short")
         self.assertTrue(o["api_fail"])
         self.assertEqual(D.options(["--chain-start", "2030-01-01T00:00:00Z"])["chain_start"], D.CHAIN_START)  # not later
         self.assertEqual(D.options(["--chain-start", "2026-01-01T00:00:00Z"])["chain_start"], D.CHAIN_START)  # not before the ledger
@@ -219,7 +220,7 @@ class Run(unittest.TestCase):
             f.return_id = return_id
             ok, text, ledger = go(f, env())
             self.assertTrue(ok, text)
-            self.assertEqual(f.posts, [{"ref": "main", "inputs": {"mode": D.SEGMENT_MODE, "hours": "1", "islands": str(D.SEGMENT_JOBS), "args": ""}}])
+            self.assertEqual(f.posts, [{"ref": "main", "inputs": {"mode": D.SEGMENT_MODE, "hours": "1", "islands": str(D.SEGMENT_JOBS_MAX), "args": ""}}])
             self.assertIn(f"新的 run {f.next_id}", text)
             self.assertIsNone(ledger["unseen"])
             self.assertAlmostEqual(ledger["closed"]["2026-11-23"], D.DISPATCH_HOURS)
@@ -356,11 +357,48 @@ class Run(unittest.TestCase):
     def test_hours_caps(self):
         f = Fake()
         f.add(8000100, t(600), actor="someone", event="workflow_dispatch", jobs=[job("exam (0)", 599, 60 * 8)])
-        # 8 hours used, a segment of SEGMENT_JOBS jobs of an hour each.
-        room = 8 + D.SEGMENT_HOURS * D.SEGMENT_JOBS
+        # 8 hours used, a segment of SEGMENT_JOBS_MAX jobs of an hour each (nothing else running).
+        room = 8 + D.SEGMENT_HOURS * D.SEGMENT_JOBS_MAX
         self.assertTrue(go(f, env(ARGS=f"--day-cap {room + 0.5}"))[0])
         self.assertFalse(go(f, env(ARGS=f"--day-cap {room - 0.5}"))[0])
         self.assertFalse(go(f, env(ARGS=f"--total-cap {room - 0.5}"))[0])
+
+    def test_no_cap_a_day_and_the_brake(self):
+        # The user (D-160): no cap a day, only the 5,000 in all; a trial's --day-cap still lowers it.
+        f = Fake()
+        f.add(8000100, t(1300), actor="someone", jobs=[job("exam (0)", 1299, 60 * 21)])  # 21 hours today
+        ok, text, _ = go(f, env())
+        self.assertTrue(ok, text)
+        self.assertIn("不設每天上限", text)
+        self.assertFalse(go(f, env(ARGS="--day-cap 30"))[0])
+        self.assertFalse(go(f, env(ARGS="--total-cap 30"))[0])
+        # The brake on the rate: a day of minimal chained segments plus what the schedule can start.
+        self.assertEqual(D.MAX_SEGMENTS_PER_DAY, 24 * 60 // D.MIN_SEGMENT_MINUTES + 48)
+        self.assertEqual(D.MAX_SEGMENTS_PER_DAY, 192)
+
+    def test_segment_takes_what_is_free(self):
+        def busy(n):
+            f = Fake()
+            f.add(8100000, t(5), status="in_progress", path=".github/workflows/sim.yml", actor="someone", jobs=[job(f"sim {i}", 4, 1, status="in_progress") for i in range(n)])
+            return f
+        # 6 running: 20 - 6 - 4 = 10 jobs.
+        f = busy(6)
+        ok, text, _ = go(f, env())
+        self.assertTrue(ok, text)
+        self.assertEqual(f.posts[0]["inputs"]["islands"], "10")
+        self.assertIn("10 個 job", text)
+        # None free with 4 kept: no segment (never one squeezed in).
+        for n in (16, 17, 20):
+            f = busy(n)
+            ok, text, _ = go(f, env())
+            self.assertFalse(ok, n)
+            self.assertIn("沒有可以用的", text)
+            self.assertEqual(f.posts, [])
+        # Nothing else running: the most, 16; a trial's --segment-jobs lowers it and is passed on.
+        f = busy(0)
+        go(f, env(ARGS="--segment-jobs 2"))
+        self.assertEqual(f.posts[0]["inputs"]["islands"], "2")
+        self.assertIn("--segment-jobs 2", f.posts[0]["inputs"]["args"])
 
     def test_not_seen_holds_off(self):
         f = Fake()
@@ -439,9 +477,9 @@ class Run(unittest.TestCase):
 
     def test_trial_options_pass_on(self):
         f = Fake()
-        ok, _, _ = go(f, env(EVENT="workflow_dispatch", MODE="dispatch", ARGS="--total-cap 3 --segment-hours 0.25 --short --api-fail-not"))
+        ok, _, _ = go(f, env(EVENT="workflow_dispatch", MODE="dispatch", ARGS="--total-cap 3 --segment-hours 0.25 --segment-jobs 4 --short --api-fail-not"))
         self.assertTrue(ok)
-        self.assertEqual(f.posts[0]["inputs"], {"mode": D.SEGMENT_MODE, "hours": "0.25", "islands": str(D.SEGMENT_JOBS), "args": "--total-cap 3 --segment-hours 0.25 --short"})
+        self.assertEqual(f.posts[0]["inputs"], {"mode": D.SEGMENT_MODE, "hours": "0.25", "islands": "4", "args": "--total-cap 3 --segment-hours 0.25 --segment-jobs 4 --short"})
 
 
 class GiveWay(unittest.TestCase):

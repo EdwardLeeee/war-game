@@ -1,8 +1,8 @@
 # D-086 B (war-game-ai, docs/research/2026-10-ai-nn.md): training the hard AI's small network on GitHub's
 # machines, CPU only. Started by hand only: from the Actions tab (workflow_dispatch, once this file is on
 # main), or by war-game-ai pushing a branch ai/train-* whose sim/src/ai/learn/run.json holds the same
-# settings as the inputs below (ceo 2026-10-19), so training can start before this is merged. One training at a time (its own concurrency group); at most 8
-# jobs at once, so Pages, Client, Sim and other work keep running. A job stops itself before GitHub's 6-hour
+# settings as the inputs below (ceo 2026-10-19), so training can start before this is merged. One training at a time (its own concurrency group); at most 16
+# jobs at once, 4 of the 20 runners kept free (the user 2026-11-21, D-160), so Pages, Client, Sim and other work keep running. A job stops itself before GitHub's 6-hour
 # limit and leaves a checkpoint as an artifact (kept 14 days, never committed); the next run goes on from it
 # (from_run). The last job adds up the runner hours of the run.
 #   dryrun  cores and games an hour
@@ -26,9 +26,10 @@
 #   gave way or failed; GitHub may start a schedule late or not at all: a hand dispatch, mode=dispatch, does the same).
 #   The dispatch job is the only job with actions: write and uses no secret; .github/ai-train/dispatch.py says when it
 #   starts a segment, how it pauses itself and how the pause is lifted. In short, nothing unless: AI_TRAIN is "on"; the
-#   hours stay within 200 a day (Taipei's date) and 5,000 in all, and at most 48 segments a day, all from the API; the
-#   chain is not paused; no other AI train run is running or waiting, no job of another workflow waits (D-123), 4 of the
-#   20 runners stay free; on a segment's tail, that segment trained properly.
+#   hours stay within 5,000 in all (no cap a day: the user, D-160), and at most 192 segments a day (a brake on the rate),
+#   all from the API; the chain is not paused; no other AI train run is running or waiting, no job of another workflow
+#   waits (D-123); a segment takes the runners free with 4 of the 20 kept, at most 16 (none free: no segment); on a
+#   segment's tail, that segment trained properly.
 #   To stop: set AI_TRAIN to "off" (no next segment; the one running ends within its hour), or cancel the run in the
 #   Actions tab: that stops at once and pauses the chain until the user says to go on (AI_TRAIN_RESUME).
 #   Any other AI train run started while a segment waits in the ai-train group cancels the waiting one (GitHub keeps one
@@ -53,7 +54,7 @@ on:
         description: The run whose artifacts this one starts from (es, eval)
         default: ""
       islands:
-        description: "es, exam: jobs, each its own search; examcheck: jobs the plans are split over (at most 8)"
+        description: "es, exam: jobs, each its own search; examcheck, auto: jobs the work is split over (at most 16)"
         default: "8"
       generations:
         description: "es: generations per job at most"
@@ -177,7 +178,7 @@ jobs:
           case "$mode" in dryrun|record|es|eval|exam|examcheck|chaintest|auto) ;; *) echo "mode $mode" >&2; exit 1 ;; esac
           islands=$(get islands 8)
           n=1
-          if [ "$mode" = "es" ] || [ "$mode" = "exam" ] || [ "$mode" = "examcheck" ] || [ "$mode" = "chaintest" ] || [ "$mode" = "auto" ]; then n=$(( islands < 1 ? 1 : islands > 8 ? 8 : islands )); fi
+          if [ "$mode" = "es" ] || [ "$mode" = "exam" ] || [ "$mode" = "examcheck" ] || [ "$mode" = "chaintest" ] || [ "$mode" = "auto" ]; then n=$(( islands < 1 ? 1 : islands > 16 ? 16 : islands )); fi
           # eval: "nets" lists networks in the branch (paths under sim/, "none": hard itself), one job each, at most 8.
           nets=$(echo "$S" | jq -c '.nets // []')
           k=$(echo "$nets" | jq 'length')
@@ -206,7 +207,7 @@ jobs:
     timeout-minutes: ${{ (needs.plan.outputs.mode == 'chaintest' || needs.plan.outputs.mode == 'auto') && 70 || 355 }}
     strategy:
       fail-fast: false
-      max-parallel: 8
+      max-parallel: 16
       matrix:
         island: ${{ fromJSON(needs.plan.outputs.islands) }}
     defaults:

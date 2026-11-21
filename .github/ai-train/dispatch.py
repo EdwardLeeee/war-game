@@ -12,11 +12,13 @@ times, step names), the ledger the dispatch job itself keeps, and the run's own 
 It starts nothing unless all of these hold:
   - AI_TRAIN is "on";
   - the time is past CHAIN_START (a trial's --chain-start can only move it earlier, so more segments are judged);
-  - the runner hours stay within DAY_CAP (Taipei's date) and TOTAL_CAP, counting every AI train run since LEDGER_START;
-  - at most MAX_SEGMENTS_PER_DAY segments started today (Taipei), counted from the API;
+  - the runner hours stay within TOTAL_CAP, counting every AI train run since LEDGER_START (no cap a day: the user, D-160;
+    a trial's --day-cap sets one, Taipei's date);
+  - at most MAX_SEGMENTS_PER_DAY segments started today (Taipei), counted from the API (a brake on the rate);
   - the chain is not paused (below);
   - no other AI train run is running or waiting in any of ACTIVE (only this run itself is left out), no job of another
-    workflow waits (D-123), and at least RESERVE of the RUNNERS stay free;
+    workflow waits (D-123), and at least RESERVE of the RUNNERS stay free: the segment takes what is free then, at most
+    SEGMENT_JOBS_MAX (the user, D-160), and none free is no segment;
   - the last dispatch was seen as a run, or is more than UNSEEN_HOLD old;
   - on the tail: this segment itself trained properly ("ok" below).
 Anything it cannot work out (the API failing, a list coming back short) starts nothing.
@@ -50,7 +52,8 @@ WORKFLOW, SCRATCH = ".github/workflows/ai-train.yml", ".github/workflows/ai-scra
 BOT = "github-actions[bot]"
 SEGMENT_MODE = "auto"  # the mode a segment runs: the exams (PR B; A2's trial ran chaintest)
 # The caps (D-147, ceo 2026-11-21): written here; AI_TRAIN and a trial's options can only lower them.
-DAY_CAP, TOTAL_CAP = 200.0, 5000.0
+# No cap a day (the user 2026-11-21, D-160): 5,000 in all, then it stops and the user is asked. A trial's --day-cap sets one.
+DAY_CAP, TOTAL_CAP = float("inf"), 5000.0
 # The ledger counts AI train runs created from this time on (trial segments too; not the examiner search before it).
 LEDGER_START = "2026-11-21T00:00:00Z"
 # Segments are judged from this time on, and nothing is dispatched before it (without a trial's --chain-start, which can
@@ -58,9 +61,15 @@ LEDGER_START = "2026-11-21T00:00:00Z"
 # the real date comes with PR B (the exams), after A2's trial (its segments made to fail, yield and run short) and PR A's
 # (its cancelled segment, run 44841753532), so neither pauses the training.
 CHAIN_START = "2099-01-01T00:00:00Z"
-SEGMENT_HOURS, SEGMENT_JOBS = 1.0, 4
-MAX_SEGMENTS_PER_DAY = 48  # what the 30-minute schedule allowed
+SEGMENT_HOURS = 1.0
+# The user 2026-11-21 (D-160): at most 16 at once, 4 of the 20 runners kept free. A segment takes what is free when it is
+# started, at most this; the exam's games and decisions do not depend on how many (auto.ts; ceo 2026-11-21).
+SEGMENT_JOBS_MAX = 16
 MIN_SEGMENT_MINUTES = 10
+# A brake on the rate, not a cap a day (ceo 2026-11-21): a day's minutes over MIN_SEGMENT_MINUTES (a chained segment
+# trains at least that, one segment at a time) plus the 48 the schedule can start (the segments that end early are not
+# chained). Normal days, hour-long segments, are about 24; it stops a broken minutes rule (segments of a minute).
+MAX_SEGMENTS_PER_DAY = 24 * 60 // MIN_SEGMENT_MINUTES + 48
 BAD_IN_A_ROW, YIELDS_IN_A_ROW = 3, 6
 SEE_WAIT, UNSEEN_HOLD = 180, 15 * 60  # seconds: waiting to see the new run; holding off after one not seen
 DISPATCH_HOURS = 0.01  # a dispatcher run books itself this (about half a minute); the tail is booked with its segment
@@ -108,6 +117,7 @@ def options(args):
         "total_cap": num("total-cap", TOTAL_CAP),
         "segment_hours": num("segment-hours", SEGMENT_HOURS),
         "day_segments": int(num("day-segments", MAX_SEGMENTS_PER_DAY)),
+        "segment_jobs": int(num("segment-jobs", SEGMENT_JOBS_MAX)),
         "chain_start": CHAIN_START,
         "api_fail": "--api-fail" in args,
         # Only for the segment (the trial's chaintest): fail, run short, or give way at once.
@@ -121,6 +131,7 @@ def options(args):
         pass
     carry = [f"--{n} {o[k]:g}" for n, k, cap in (("day-cap", "day_cap", DAY_CAP), ("total-cap", "total_cap", TOTAL_CAP), ("segment-hours", "segment_hours", SEGMENT_HOURS)) if o[k] < cap]
     carry += [f"--day-segments {o['day_segments']}"] if o["day_segments"] < MAX_SEGMENTS_PER_DAY else []
+    carry += [f"--segment-jobs {o['segment_jobs']}"] if o["segment_jobs"] < SEGMENT_JOBS_MAX else []
     carry += [f"--chain-start {o['chain_start']}"] if o["chain_start"] != CHAIN_START else []
     o["carry"] = " ".join(carry + o["flags"])
     return o
@@ -258,7 +269,6 @@ def run(env, api, now, sleep=time.sleep):
     actor, trig, attempt = env.get("ACTOR", ""), env.get("TRIGGERING_ACTOR", ""), env.get("RUN_ATTEMPT", "")
     switch, resume = env.get("AI_TRAIN", ""), env.get("AI_TRAIN_RESUME", "").strip()
     o = options(env.get("ARGS", "").split())
-    planned = o["segment_hours"] * SEGMENT_JOBS
     today = now.astimezone(TPE).date().isoformat()
     reasons, notes = [], []
 
@@ -398,12 +408,34 @@ def run(env, api, now, sleep=time.sleep):
         reasons.append(f"算不出時數或段的紀錄（{type(e).__name__}: {e}）")
         day_hours = total_hours = state = None
 
+    busy = jobs = 0
+    try:
+        for status in ACTIVE:
+            for r in api.every(f"repos/{repo}/actions/runs?status={status}&per_page=100", "workflow_runs"):
+                if r["id"] == run_id:
+                    continue  # only this run itself is left out
+                if r.get("path") == WORKFLOW:
+                    reasons.append(f"AI train 已經有別的 run 是 {status}（run {r['id']}，{r.get('display_title', '')}）")
+                jobs = api.every(f"repos/{repo}/actions/runs/{r['id']}/jobs?per_page=100", "jobs")
+                busy += sum(1 for j in jobs if j["status"] == "in_progress")
+                w = sum(1 for j in jobs if j["status"] in ("queued", "waiting", "pending", "requested"))
+                if w and r.get("path") not in (WORKFLOW, SCRATCH):
+                    reasons.append(f"{r.get('name')} 有 {w} 個 job 在等（run {r['id']}）")
+        # What is free with RESERVE kept, at most the segment's: none is no segment (never one squeezed in).
+        jobs = min(o["segment_jobs"], RUNNERS - busy - RESERVE)
+        if jobs < 1:
+            reasons.append(f"在跑的 job 有 {busy} 個，留 {RESERVE} 個空位之後沒有可以用的")
+    except Exception as e:
+        reasons.append(f"看不到別的工作（{type(e).__name__}: {e}）")
+    planned = o["segment_hours"] * max(jobs, 0)
+
+
     if switch != "on":
         reasons.append(f"開關 AI_TRAIN 是「{switch or '沒設'}」，不是 on")
     if now < when(o["chain_start"]):
         reasons.append(f"還沒到鏈的起點 {o['chain_start']}")
     if day_hours is not None:
-        if day_hours + planned > o["day_cap"]:
+        if o["day_cap"] < DAY_CAP and day_hours + planned > o["day_cap"]:
             reasons.append(f"今天已用 {day_hours:.2f} 小時，加這一段 {planned:.2f} 會超過每天上限 {o['day_cap']:g}")
         if total_hours + planned > o["total_cap"]:
             reasons.append(f"總共已用 {total_hours:.2f} 小時，加這一段 {planned:.2f} 會超過總上限 {o['total_cap']:g}")
@@ -418,28 +450,10 @@ def run(env, api, now, sleep=time.sleep):
     if ledger.get("unseen") and (now - when(ledger["unseen"])).total_seconds() < UNSEEN_HOLD:
         reasons.append(f"上次在 {ledger['unseen']} 派了，到現在還沒看到新的 run；{UNSEEN_HOLD // 60} 分鐘內不再派")
 
-    busy = 0
-    try:
-        for status in ACTIVE:
-            for r in api.every(f"repos/{repo}/actions/runs?status={status}&per_page=100", "workflow_runs"):
-                if r["id"] == run_id:
-                    continue  # only this run itself is left out
-                if r.get("path") == WORKFLOW:
-                    reasons.append(f"AI train 已經有別的 run 是 {status}（run {r['id']}，{r.get('display_title', '')}）")
-                jobs = api.every(f"repos/{repo}/actions/runs/{r['id']}/jobs?per_page=100", "jobs")
-                busy += sum(1 for j in jobs if j["status"] == "in_progress")
-                w = sum(1 for j in jobs if j["status"] in ("queued", "waiting", "pending", "requested"))
-                if w and r.get("path") not in (WORKFLOW, SCRATCH):
-                    reasons.append(f"{r.get('name')} 有 {w} 個 job 在等（run {r['id']}）")
-        if RUNNERS - busy - SEGMENT_JOBS < RESERVE:
-            reasons.append(f"在跑的 job 有 {busy} 個，再派 {SEGMENT_JOBS} 個會剩不到 {RESERVE} 個空位")
-    except Exception as e:
-        reasons.append(f"看不到別的工作（{type(e).__name__}: {e}）")
-
     go = not reasons
     started = ""
     if go:
-        inputs = {"mode": SEGMENT_MODE, "hours": f"{o['segment_hours']:g}", "islands": str(SEGMENT_JOBS), "args": o["carry"]}
+        inputs = {"mode": SEGMENT_MODE, "hours": f"{o['segment_hours']:g}", "islands": str(jobs), "args": o["carry"]}
         try:
             listing = f"repos/{repo}/actions/workflows/ai-train.yml/runs?event=workflow_dispatch&branch={ref}&per_page=30"
             before = {r["id"] for r in api.get(listing)["workflow_runs"]}
@@ -463,7 +477,7 @@ def run(env, api, now, sleep=time.sleep):
                 sleep(10)
             if seen:
                 ledger["unseen"] = None
-                started = f"派了一段 {SEGMENT_MODE}：{o['segment_hours']:g} 小時 × {SEGMENT_JOBS} 個 job（ref {ref}），新的 run {seen['id']}（{seen.get('status')}）"
+                started = f"派了一段 {SEGMENT_MODE}：{o['segment_hours']:g} 小時 × {jobs} 個 job（ref {ref}），新的 run {seen['id']}（{seen.get('status')}）"
             else:
                 ledger["unseen"] = iso(now)
                 started = f"派了一段 {SEGMENT_MODE}，但 {SEE_WAIT // 60} 分鐘內沒看到新的 run；{UNSEEN_HOLD // 60} 分鐘內不再派"
@@ -472,13 +486,14 @@ def run(env, api, now, sleep=time.sleep):
             ledger["unseen"] = iso(now)
 
     fmt = lambda h: "?" if h is None else f"{h:.2f}"
+    day_text = "不設每天上限" if o["day_cap"] >= DAY_CAP else f"試跑的每天上限 {o['day_cap']:g}"
     lines = [
         "## 派工（D-147）", "",
         f"- 時間：{now.astimezone(TPE):%Y-%m-%d %H:%M}（台北）；角色：{'段的結尾' if role == 'tail' else '派工' if role == 'dispatcher' else role}",
         f"- 這個 run：event {event}、mode {mode or '-'}、actor {actor}、triggering_actor {trig}、run_attempt {attempt}、ref {ref}",
-        f"- 今天（台北 {today}）已用：{fmt(day_hours)} 小時，上限 {o['day_cap']:g}；已派 {seg_today} 段，上限 {o['day_segments']}",
+        f"- 今天（台北 {today}）已用：{fmt(day_hours)} 小時（{day_text}）；已派 {seg_today} 段，上限 {o['day_segments']}",
         f"- 總共（從 {LEDGER_START} 起）已用：{fmt(total_hours)} 小時，上限 {o['total_cap']:g}",
-        f"- 這一段要用：{planned:.2f} 小時；在跑的別的 job：{busy} 個",
+        f"- 這一段要用：{planned:.2f} 小時（{jobs} 個 job，最多 {o['segment_jobs']}）；在跑的別的 job：{busy} 個",
         f"- 開關 AI_TRAIN：{switch or '沒設'}；AI_TRAIN_RESUME：{resume or '沒設'}；段從 {o['chain_start']} 起算",
     ]
     if own_cls is not None:
