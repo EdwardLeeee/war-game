@@ -224,8 +224,11 @@ class Api:
 
     def every(self, path, key):
         """All items of a paged list; an error if fewer came back than total_count says, three times running (a list
-        filtered by status can come back one short while a run changes status)."""
-        for _ in range(3):
+        filtered by status can come back one short while a run changes status: 2026-11-21, a run just dispatched was in
+        total_count but not in the list three times running, so it waits 10 seconds before looking again)."""
+        for attempt in range(3):
+            if attempt:
+                time.sleep(10)
             items, url, total = [], path, None
             while url:
                 page, url = self.call(url)
