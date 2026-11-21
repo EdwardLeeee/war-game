@@ -831,6 +831,8 @@ test("等錢治理：自動訓練開著時預留暫時提高到大城的花費�
 });
 
 test("攻擊、移動、堅守：第一列是這三顆和停止，選取資訊寫目前的狀態和三句說明（有法師時加晶砲的消耗）；全部同一種時那顆亮；攻擊中、移動中再按，或選位置時取消，都停下改成堅守（D-050、D-054、D-094、D-095）", async ({ page }, info) => {
+  // EPYC 7763 (#537): 57.4 s of 60 in #548's run 44838086316 (26.1 s on an EPYC 9V45); twice that.
+  test.setTimeout(120_000);
   // The prototype's words and buttons, line by line (正式介面's R14 words: r6-cmds.spec, r6-sel.spec).
   await asProto(page);
   const spear = await selectSpearmen(page);
@@ -1064,6 +1066,8 @@ test("隊形：編隊裡超過一半是散開時，補進來的新兵也送散�
 });
 
 test("留守：治理預設留最少駐軍數、搶預設 0，用 −／+ 調；留守的兵守城、還算原本的編隊（按鈕寫駐N）、不跟全軍走（D-026、使用者 2026-10-26）", async ({ page }, info) => {
+  // EPYC 7763 (#537): 54.3 s of 60 in #548's run 44838086316; twice that.
+  test.setTimeout(120_000);
   const spear = await ownIds(page, [1]);
   const mage = (await ownIds(page, [3]))[0];
   // Three spearmen and a mage walk into the small town at (30, 66), radius 4. In the order
@@ -1284,6 +1288,9 @@ test("搶的留守（D-084）：大城要 3 名，城裡只有 2 名時留 2 名
 });
 
 test("編隊自動補兵：缺人時新訓練的兵補進來，按鈕顯示現有／目標；訓練出來就走去會合；可以關掉（D-026、D-054）", async ({ page }, info) => {
+  // CI's slowest machines (EPYC 7763, #537): over 60 s in #548's run 44838086316 (41.2 s on an EPYC 9V74, main's 44836538099),
+  // three buildings tapped (tapOwnBuilding pauses for each); twice about that.
+  test.setTimeout(150_000);
   const spear = await selectSpearmen(page);
   await saveGroup(page, GROUP_1);
   const g1 = page.locator(GROUP_1);
