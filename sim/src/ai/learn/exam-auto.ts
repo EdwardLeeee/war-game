@@ -67,6 +67,9 @@ async function cmdWork(): Promise<void> {
   const s = readJson<State>(arg("state", "state.json"));
   const resumeId = arg("resume", "").trim();
   if (resumeId !== "") resume(s, resumeId, now());
+  // Moved on as the merge will (not saved): a state just started from its config has no candidate taken yet, and its
+  // first segment would play none of the candidate's games (PR B trial, run 44872573528).
+  step(s, "P-work", now());
   const island = Number(arg("island", "0"));
   const islands = Number(arg("islands", "1"));
   const hours = Number(arg("hours", "1"));
