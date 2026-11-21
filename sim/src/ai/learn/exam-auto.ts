@@ -147,6 +147,7 @@ function cmdMerge(): void {
   }
   let games = 0;
   let canary: string[] = [];
+  let yielded = 0;
   for (const f of findResults(arg("results", "").split(",").filter((x) => x !== ""))) {
     const r = readJson<Results>(f);
     for (const [k, v] of Object.entries(r.results)) {
@@ -156,9 +157,12 @@ function cmdMerge(): void {
       }
     }
     if (r.canary.length > 0) canary = r.canary;
+    if (r.stopped.startsWith("讓位")) yielded++;
     summary(`- job ${r.island + 1}：${r.games} 局、${r.hours.toFixed(2)} 小時，${r.stopped}`);
   }
   summary(`- 新的結果 ${games} 局`);
+  // The weekly report counts the segments that gave way (ceo 2026-11-21).
+  if (yielded > 0) s.log.push({ at, what: `讓位：這一段 ${yielded} 個 job 讓位（D-123）` });
   if (s.paused === null) summary(`- 固定的三局：${checkCanary(s, canary, arg("tree", ""), arg("commit", ""), pauseId, at)}`);
   for (const line of step(s, pauseId, at)) summary(`- ${line}`);
   prune(s);
@@ -209,6 +213,8 @@ function report(s: State): string[] {
     "## 暫停和恢復",
     "",
   );
+  const yields = s.log.filter((l) => l.what.startsWith("讓位"));
+  lines.splice(4, 0, `- 讓位的段：${yields.length} 段${yields.length > 0 ? `（最近一次 ${yields.at(-1)!.at}）` : ""}`);
   const pauses = s.log.filter((l) => l.what.startsWith("暫停") || l.what.startsWith("恢復"));
   lines.push(...(pauses.length === 0 ? ["- 沒有"] : pauses.map((l) => `- ${l.at}：${l.what}`)));
   lines.push(
