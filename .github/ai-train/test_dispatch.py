@@ -418,5 +418,40 @@ class Run(unittest.TestCase):
         self.assertEqual(f.posts[0]["inputs"], {"mode": D.SEGMENT_MODE, "hours": "0.25", "islands": "1", "args": "--total-cap 3 --segment-hours 0.25 --short"})
 
 
+class GiveWay(unittest.TestCase):
+    def setUp(self):
+        import giveway
+        self.why = lambda f: giveway.why(f, REPO, NOW)
+
+    @staticmethod
+    def waiting(minutes, status="queued"):
+        return {"name": "e2e", "status": status, "created_at": t(minutes), "run_attempt": 1}
+
+    def test_by_jobs_not_the_run(self):
+        f = Fake()
+        # 2026-11-21: a run "queued" for 12 minutes, every job running: no reason to give way.
+        f.add(1, t(12), status="queued", path=".github/workflows/client.yml", actor="someone", jobs=[self.waiting(12, "in_progress")])
+        self.assertEqual(self.why(f), "")
+        # A job waiting 10 minutes: give way; 5 minutes: not yet.
+        f.jobs[1].append(self.waiting(5))
+        self.assertEqual(self.why(f), "")
+        f.jobs[1].append(self.waiting(11))
+        self.assertIn("在等 11 分鐘", self.why(f))
+
+    def test_deploy_at_once_and_a_run_with_no_jobs_yet(self):
+        f = Fake()
+        f.add(2, t(1), status="in_progress", path=".github/workflows/pages.yml", event="push", actor="someone", jobs=[self.waiting(1)])
+        self.assertIn("run 2", self.why(f))
+        f = Fake()
+        f.add(3, t(1), status="in_progress", path=".github/workflows/pages.yml", event="pull_request", actor="someone", jobs=[self.waiting(1)])
+        self.assertEqual(self.why(f), "")  # a pull request's build of the site is not the deployment
+        f = Fake()
+        f.add(4, t(11), status="queued", path=".github/workflows/sim.yml", actor="someone", jobs=[])
+        self.assertIn("run 4", self.why(f))
+        f = Fake()
+        f.add(5, t(30), status="queued", actor="someone", jobs=[])  # the training's own: never
+        self.assertEqual(self.why(f), "")
+
+
 if __name__ == "__main__":
     unittest.main()

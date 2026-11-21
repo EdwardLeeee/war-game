@@ -277,7 +277,8 @@ jobs:
             exam) node src/ai/learn/exam.ts search --seed $((ISLAND + 1)) --hours "$HOURS" --parents-from "$F" --out "$O" "$@" ;;
             examcheck) node src/ai/learn/exam.ts check --from "$F" --games "$GAMES" --shard "$ISLAND" --shards "$(echo "$ISLANDS" | jq length)" --out "$O" "$@" ;;
             # D-147 PR A: a segment of the chain for its trial: dryrun again and again until `hours` (at most 1), giving way
-            # as exam.ts does (D-123): a deployment of the site waiting, or another job waiting 10 minutes or more. Giving
+            # (D-123, .github/ai-train/giveway.py): a deployment of the site waiting, or another job waiting 10 minutes or
+            # more, judged by the jobs (A2: a run can stay "queued" while all its jobs run). Giving
             # way sets the output `yielded`, so the step 讓位 runs (the dispatcher reads that step, in the API). For A2's
             # trial, in args: --fail fails, --short stops after about 2 minutes, --yield gives way at once.
             chaintest)
@@ -290,8 +291,8 @@ jobs:
               case " $* " in *" --short "*) stop=$(( t0 + 240 )); why="--short（A2 試跑）" ;; esac
               case " $* " in *" --yield "*) stop=0; why="讓位（A2 試跑 --yield）"; echo "yielded=true" >> "$GITHUB_OUTPUT" ;; esac
               while [ $(( $(date +%s) + 120 )) -lt "$stop" ]; do
-                q=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?status=queued&per_page=50" -q '[.workflow_runs[] | select(.path != ".github/workflows/ai-train.yml" and .path != ".github/workflows/ai-scratch.yml") | select((.name == "Pages" and .event == "push" and .head_branch == "main") or ((now - (.created_at | fromdate)) >= 600)) | "\(.name) run \(.id)"] | first // empty' || echo "API 出錯")
-                if [ -n "$q" ]; then why="讓位：$q 在等"; echo "yielded=true" >> "$GITHUB_OUTPUT"; break; fi
+                q=$(python3 "$GITHUB_WORKSPACE/.github/ai-train/giveway.py")
+                if [ -n "$q" ]; then why="讓位：$q"; echo "yielded=true" >> "$GITHUB_OUTPUT"; break; fi
                 node $T dryrun --out "$O/$k" > /dev/null
                 k=$((k + 1))
               done
