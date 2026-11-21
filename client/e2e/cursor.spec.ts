@@ -67,7 +67,8 @@ async function cursorThenRight(page: Page, p: { x: number; y: number }, want: st
   return (await orders(page)).slice(from).map((o) => o.c);
 }
 
-test("游標＝右鍵在那裡會下的指令：敵人劍＝攻擊、地面箭頭＝走過去、遠程指主城城門＝進駐、只選槍兵指主城箭頭＝走過去、村民指樹或田斧頭＝採集", async ({ page }) => {
+// Two tests (one took 26 s here, about 67 s and up to 112 s on CI's slowest): soldiers, then farmers.
+test("選了兵，游標＝右鍵在那裡會下的指令：敵人劍＝攻擊、地面箭頭＝走過去、遠程指主城城門＝進駐、只選槍兵指主城箭頭＝走過去", async ({ page }) => {
   const check = watchErrors(page);
   await start(page);
   const soldiers = [...(await own(page, SPEARMAN)), ...(await own(page, RANGED))];
@@ -92,6 +93,15 @@ test("游標＝右鍵在那裡會下的指令：敵人劍＝攻擊、地面箭�
   const went = await cursorThenRight(page, p, "gate");
   expect(went.length).toBeGreaterThan(0);
   expect(went).not.toContain("retreat");
+  check();
+});
+
+test("選了村民，游標＝右鍵在那裡會下的指令：樹斧頭＝採集、蓋好的田斧頭（去種田）、蓋到一半的民居鎚子＝去蓋", async ({ page }) => {
+  const check = watchErrors(page);
+  await start(page);
+  const city = (await page.evaluate(() => window.__proto?.game?.buildings() ?? [])).find((b) => b.type === MAIN_CITY && b.owner === ME);
+  if (city === undefined) throw new Error("no main city");
+  let p: { x: number; y: number };
   // Farmers: a tree, an axe (gather); our finished field, an axe too (they farm it: the sim's repair there).
   const farmers = (await own(page, FARMER)).slice(0, 2);
   await select(page, farmers);
