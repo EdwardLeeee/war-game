@@ -51,6 +51,34 @@ const badge = (page: Page, scope: string, name: RegExp) =>
     .first()
     .evaluate((b) => b.querySelector(":scope > .hk")?.textContent ?? "");
 
+/**
+ * Many badges at once, in one look at the page: `badge` asks the browser's accessibility tree a button at a time, about
+ * 1 s each at 1920 × 950 here and 3 to 4 times that on CI's slowest (hotkeys:105 took 114 s of 120 on an EPYC 7763).
+ * A button's name as its accessible name reads: its aria-label, else its words without the badge (aria-hidden).
+ */
+const badges = (page: Page, asks: [scope: string, name: RegExp][]) =>
+  page.evaluate(
+    (list) =>
+      list.map(([scope, source]) => {
+        const re = new RegExp(source);
+        const name = (b: Element) => {
+          const label = b.getAttribute("aria-label");
+          if (label !== null) return label.replace(/\s+/g, " ").trim();
+          let text = "";
+          const walk = (n: Node) => {
+            if (n instanceof Element && (n.getAttribute("aria-hidden") === "true" || n.closest("[hidden]") !== null)) return;
+            if (n.nodeType === Node.TEXT_NODE) text += ` ${n.textContent ?? ""}`;
+            for (const c of n.childNodes) walk(c);
+          };
+          walk(b);
+          return text.replace(/\s+/g, " ").trim();
+        };
+        const b = [...document.querySelectorAll(`${scope} button`)].find((e) => (e as HTMLElement).offsetParent !== null && re.test(name(e)));
+        return b?.querySelector(":scope > .hk")?.textContent ?? `(no button ${source} in ${scope})`;
+      }),
+    asks.map(([scope, re]) => [scope, re.source] as [string, string]),
+  );
+
 /** Open ground near the middle of the window: nothing picked there. */
 async function ground(page: Page): Promise<{ x: number; y: number }> {
   for (const [dx, dy] of [
@@ -100,27 +128,37 @@ const covering = (page: Page) =>
 test.describe("1920×950", () => {
   test.use({ viewport: { width: 1920, height: 950 } });
 
-test("角標：指令那一排 Q W E R（沒有進駐時更多照樣是 R），更多打開時 A S D F；全軍 F2、選單 Esc、全軍撤退 Bksp、暫停 Space；編隊沒有角標；指令、更多、建造選單、兵營和主城的面板上沒有一顆角標蓋到字或圖示", async ({ page }) => {
+// Two tests (ceo 2026-11-21: over 60% of its time on CI's slowest, a test is made shorter or given twice its time): the
+// one before took 114 s of 120 on an EPYC 7763 (#552 on), and 126 s once (#558's run 44874555783).
+test("角標：指令那一排 Q W E R（沒有進駐時更多照樣是 R），更多打開時 A S D F；全軍 F2、選單 Esc、全軍撤退 Bksp、暫停 Space；編隊沒有角標；指令、更多、建造選單上沒有一顆角標蓋到字或圖示", async ({ page }) => {
   const check = watchErrors(page);
   await start(page);
   await army(page);
   const cmds = ".cmds";
-  expect(await badge(page, cmds, /^攻擊/)).toBe("Q");
-  expect(await badge(page, cmds, /^移動/)).toBe("W");
-  expect(await badge(page, cmds, /^更多/)).toBe("R");
-  expect(await badge(page, "#hud", /^全軍$|全軍 \d|^全軍：/)).toBe("F2");
-  expect(await badge(page, "body", /^選單/)).toBe("Esc");
-  expect(await badge(page, "#hud", /^全軍撤退/)).toBe("Bksp");
-  expect(await badge(page, "body", /^暫停|^繼續/)).toBe("Space");
+  expect(
+    await badges(page, [
+      [cmds, /^攻擊/],
+      [cmds, /^移動/],
+      [cmds, /^更多/],
+      ["#hud", /^全軍$|全軍 \d|^全軍：/],
+      ["body", /^選單/],
+      ["#hud", /^全軍撤退/],
+      ["body", /^暫停|^繼續/],
+    ]),
+  ).toEqual(["Q", "W", "R", "F2", "Esc", "Bksp", "Space"]);
   expect(await page.locator(".group-btn .hk").count(), "groups: their number is the key").toBe(0);
   // 更多 shut: its badges with it; open: A S D F (隊形, 堅守, 整理隊形, 停止).
   await expect(page.locator(".cmds-more .hk").first()).toBeHidden();
   await page.keyboard.press("r");
   await expect(page.locator(".cmds-more")).toBeVisible();
-  expect(await badge(page, ".cmds-more", /^隊形/)).toBe("A");
-  expect(await badge(page, ".cmds-more", /^堅守/)).toBe("S");
-  expect(await badge(page, ".cmds-more", /^整理隊形/)).toBe("D");
-  expect(await badge(page, ".cmds-more", /^停止/)).toBe("F");
+  expect(
+    await badges(page, [
+      [".cmds-more", /^隊形/],
+      [".cmds-more", /^堅守/],
+      [".cmds-more", /^整理隊形/],
+      [".cmds-more", /^停止/],
+    ]),
+  ).toEqual(["A", "S", "D", "F"]);
   // A badge is not in the buttons' names.
   await expect(page.locator(".cmds").getByRole("button", { name: "攻擊", exact: false }).first()).not.toHaveAccessibleName(/Q/);
   // None over words or an icon: the soldiers' row with 更多 open, 建造's page, the barracks' and the main city's panels.
@@ -133,7 +171,12 @@ test("角標：指令那一排 Q W E R（沒有進駐時更多照樣是 R），�
   await expect(page.locator(".cmds.build-page")).toBeVisible();
   await expect.poll(() => page.locator(".cmds.build-page .hk").count()).toBeGreaterThan(5);
   expect(await covering(page), "建造's page").toEqual([]);
-  await page.keyboard.press("Escape");
+  check();
+});
+
+test("角標：兵營和主城的面板上沒有一顆角標蓋到字或圖示", async ({ page }) => {
+  const check = watchErrors(page);
+  await start(page);
   for (const [type, name] of [
     [6, "兵營"],
     [0, "主城"],

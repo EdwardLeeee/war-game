@@ -102,6 +102,8 @@ test.describe("滑鼠 1920×950", () => {
 
   test("開局就打開，在左下角 176×176；地圖在右邊、閒置在上面、選兵那一條和選取資訊在右邊（252），全體回城在閒置上面；都不互蓋、不出視窗", async ({ page }, info) => {
     test.skip(info.project.name !== "chromium", "layout: Chromium (ceo 2026-11-21)");
+    // On CI's slowest (EPYC 7763) about 45 s, 73 s at worst (× 2.56 and × 4.17 of here, ceo 2026-11-21: over 60%, twice).
+    test.setTimeout(150_000);
     const check = watchErrors(page);
     await start(page, CROWDED);
     await docked(page);
@@ -157,7 +159,9 @@ test.describe("滑鼠 1366×768", () => {
   test.use({ viewport: { width: 1366, height: 768 }, isMobile: false, hasTouch: false, deviceScaleFactor: 1, reducedMotion: "reduce" });
   test.describe.configure({ timeout: 120_000 });
 
-  test("地圖收起、再按打開，最擠的選兵那一條跟著讓開、回來，✕ 都在條內", async ({ page }) => {
+  test("地圖收起、再按打開，最擠的選兵那一條跟著讓開、回來，✕ 都在條內；收起以後按 Q 選地方，小地圖自己打開也什麼都不動", async ({ page }) => {
+    // On CI's slowest about 56 s, 91 s at worst (× 2.56 and × 4.17 of here); twice that.
+    test.setTimeout(180_000);
     const check = watchErrors(page);
     await start(page, CROWDED);
     await docked(page);
@@ -169,6 +173,17 @@ test.describe("滑鼠 1366×768", () => {
     await putAway(page);
     expect(near((await at(page, "#hud .sel-bar")).left, 72)).toBe(true);
     await crowdOk(page);
+    // Put away, Q (攻擊 picks a spot): the minimap opens on its own over 地圖, as on a phone; the bar, 閒置 and 地圖 stay
+    // where they are, and after (Esc) too (ceo 2026-11-21: they jumped aside and back at each pick).
+    const where = async () => ({ bar: await at(page, "#hud .sel-bar"), idle: await at(page, "#hud .idle-btn"), map: await at(page, "#hud .map-btn") });
+    const before = await where();
+    await page.keyboard.press("q");
+    await expect.poll(async () => await left(page)).toMatchObject({ minimap: true, auto: true, docked: false });
+    await expect(page.locator("#hud .minimap")).toBeVisible();
+    expect(await where()).toEqual(before);
+    await page.keyboard.press("Escape");
+    await expect.poll(async () => await left(page)).toMatchObject({ minimap: false, auto: false, docked: false });
+    expect(await where()).toEqual(before);
     await page.locator("#hud .map-btn").click();
     await docked(page);
     expect(near((await at(page, "#hud .sel-bar")).left, 252)).toBe(true);
@@ -181,9 +196,9 @@ test.describe("滑鼠 1366×768", () => {
     // changed size, and the resize event (handed over with a frame) came 5 s late or not before the test gave up (17
     // frames in the whole test, Chromium's 126).
     test.skip(info.project.name !== "chromium", "the window's size: Chromium");
-    // Six sizes, each the battlefield drawn again: on CI's slowest (EPYC 7763) about 67 s, 75 s at worst (× 2.54 and
-    // × 2.86 of here); twice that.
-    test.setTimeout(150_000);
+    // Six sizes, each the battlefield drawn again: on CI's slowest (EPYC 7763) about 65 s, 106 s at worst (× 2.56 and
+    // × 4.17 of here); twice that.
+    test.setTimeout(210_000);
     const check = watchErrors(page);
     await start(page, CROWDED);
     await docked(page);
@@ -222,7 +237,7 @@ test.describe("滑鼠 1366×768", () => {
   });
 
   test("地圖收起過：視窗縮放後不自己打開，回開局畫面再繼續這局也收著；重來（新的一局）又打開", async ({ page }, info) => {
-    // Two games' starts: on CI's slowest (EPYC 7763) about 56 s, 63 s at worst (× 2.54 and × 2.86 of here); 180 s.
+    // Two games' starts: on CI's slowest (EPYC 7763) about 56 s, 90 s at worst (× 2.56 and × 4.17 of here); twice that.
     test.setTimeout(180_000);
     const check = watchErrors(page);
     await start(page);

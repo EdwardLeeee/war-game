@@ -621,20 +621,24 @@ export class Hud {
    */
   closeMinimap(): void {
     this.setMinimap(this.docked && !this.minimapShut);
-    this.minimapAuto = false;
   }
 
   private toggleMinimap(): void {
     this.setMinimap(!this.minimapOpen);
-    this.minimapAuto = false;
     if (this.docked) this.minimapShut = !this.minimapOpen;
   }
 
-  private setMinimap(open: boolean): void {
+  /**
+   * Open or put away; `auto`: on its own (攻擊, 移動 picking a spot; 開局提示). Docked at the bottom left, the rest
+   * out of its way, only when it is open as 常開 (R26 04): open on its own (地圖 having put it away), it opens over
+   * 地圖 as on a phone and nothing moves (ceo 2026-11-21: the bar, 閒置 and 地圖 jumped aside and back at each pick).
+   */
+  private setMinimap(open: boolean, auto = false): void {
     this.minimapOpen = open;
+    this.minimapAuto = open && auto;
     this.minimap.canvas.classList.toggle("closed", !open);
     this.mapBtn?.classList.toggle("active", open);
-    this.root.classList.toggle("mm-docked", this.docked && open);
+    this.root.classList.toggle("mm-docked", this.docked && open && !this.minimapAuto);
   }
 
   /** 小地圖常開 (R26 04): docked or not as the window and the pointer are now (nothing if unchanged). */
@@ -642,9 +646,11 @@ export class Hud {
     const dock = this.mouseQuery?.matches === true && largeWindow() && innerWidth / uiZoom() >= DOCK_MIN_WIDTH;
     if (dock === this.docked) return;
     this.docked = dock;
-    if (dock && !this.minimapShut && !this.minimapOpen) this.setMinimap(true);
+    // Docked (open as 常開, also over one open on its own), unless 地圖 put it away; not docked: put away, unless it
+    // is open on its own (it closes as its pick ends).
+    if (dock && !this.minimapShut) this.setMinimap(true);
     else if (!dock && this.minimapOpen && !this.minimapAuto) this.setMinimap(false);
-    else this.setMinimap(this.minimapOpen);
+    else this.setMinimap(this.minimapOpen, this.minimapAuto);
   }
 
   /**
@@ -652,7 +658,7 @@ export class Hud {
    * how many places 地圖 counts.
    */
   get leftForTest(): { minimap: boolean; auto: boolean; docked: boolean; recall: string; places: number } {
-    return { minimap: this.minimapOpen, auto: this.minimapAuto, docked: this.docked && this.minimapOpen, recall: this.recallLook, places: this.minimapOpen ? 0 : this.alerts.length };
+    return { minimap: this.minimapOpen, auto: this.minimapAuto, docked: this.root.classList.contains("mm-docked"), recall: this.recallLook, places: this.minimapOpen ? 0 : this.alerts.length };
   }
 
   /** 正式介面, every frame: the minimap opening and closing on its own, 地圖's alarm, 全體回城 (R6-13, R6-22). */
@@ -661,13 +667,8 @@ export class Hud {
     // (INV-43); closed again after, if it opened on its own.
     const mode = this.game.mode;
     const want = mode === "advance" || mode === "retreat" || (this.flash !== null && now < this.flash.until);
-    if (want && !this.minimapOpen) {
-      this.setMinimap(true);
-      this.minimapAuto = true;
-    } else if (!want && this.minimapAuto) {
-      this.setMinimap(false);
-      this.minimapAuto = false;
-    }
+    if (want && !this.minimapOpen) this.setMinimap(true, true);
+    else if (!want && this.minimapAuto) this.setMinimap(this.docked && !this.minimapShut);
     // 地圖 while the minimap is put away and something is hit: red, flashing, how many places (R6-22;
     // 減少動態效果: red, not flashing). Open, the minimap's red rings flash instead.
     const places = this.minimapOpen ? 0 : this.alerts.length;

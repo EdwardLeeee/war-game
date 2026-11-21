@@ -490,6 +490,16 @@ export class SelectionInfo {
   private hasHelp = false;
   /** The screen size and title the cells were last fitted to (fitBar). */
   private barFit = "";
+  /**
+   * The bar's own width changed (R26 04: the minimap docked or put away moves its left; 建造's five columns its right;
+   * the window): fitted again at the next update (fitBar). Watched, so that no update reads the layout to find out.
+   */
+  private readonly barResize =
+    typeof ResizeObserver === "function"
+      ? new ResizeObserver(() => {
+          this.barFit = "";
+        })
+      : null;
 
   private tapOutside(target: EventTarget | null): void {
     if (!(target instanceof Node) || this.bar === null || this.help === null) return;
@@ -594,6 +604,7 @@ export class SelectionInfo {
         this.bar.replaceChildren();
         this.help?.replaceChildren();
         this.barRow = this.qCell = this.legionCell = this.extraCell = null;
+        this.barResize?.disconnect();
         this.bar.hidden = !barMode;
         if (barMode) this.buildBar(view, ids);
         else {
@@ -635,12 +646,19 @@ export class SelectionInfo {
     if (bar === null || help === null) return;
     const row = el("div", bar, "bar-row");
     this.barRow = row;
+    this.barResize?.observe(row);
     const group = this.host.groupView();
     const title = el("div", row, "bar-title");
     const t1 = el("span", title, "t1");
     const t2 = el("span", title, "t2");
     const set = (e: HTMLElement, text: string) => {
       if (e.textContent !== text) e.textContent = text;
+    };
+    // A number a digit longer or shorter (9 to 10) may push a kind out or make room: fitted again (fitBar).
+    const setCount = (e: HTMLElement, text: string) => {
+      if (e.textContent === text) return;
+      if ((e.textContent ?? "").length !== text.length) this.barFit = "";
+      e.textContent = text;
     };
     const u0 = view.curr?.snap.units;
     const ownerOf = (id: number) => {
@@ -658,7 +676,7 @@ export class SelectionInfo {
           has += this.host.groupHas(group, t);
           want += this.host.groupWant(group, t);
         }
-        set(n, has > 0 || want > 0 ? `${has}/${want}` : "還沒有兵");
+        setCount(n, has > 0 || want > 0 ? `${has}/${want}` : "還沒有兵");
       });
     } else if (ids.length === 1) {
       el("b", t1, "", `${this.whose(ownerOf(ids[0]))}${UNIT_NAME[view.unitType(ids[0])] ?? "單位"}`);
@@ -707,7 +725,7 @@ export class SelectionInfo {
         const chip = cell(row, "bar-chip", `只選${name}`, () => this.host.selectOnly(this.barUnits(view).filter((id) => view.unitType(id) === kind)));
         el("span", chip, "", name);
         const cnt = el("span", chip, "cnt");
-        this.barUpdaters.push(() => set(cnt, `${this.barUnits(view).filter((id) => view.unitType(id) === kind).length}`));
+        this.barUpdaters.push(() => setCount(cnt, `${this.barUnits(view).filter((id) => view.unitType(id) === kind).length}`));
       }
       // The kinds that do not fit (fitBar): how many more; a group's opens 軍團畫面.
       this.extraCell = group !== null ? cell(row, "bar-extra", "打開軍團畫面看全部兵種", () => this.openLegion()) : el("span", row, "bar-cell bar-extra");
@@ -750,16 +768,15 @@ export class SelectionInfo {
 
   /**
    * The kinds that fit along the bar (R24-02 ⑥): from the last, those that do not give way to 「+N 種」.
-   * Measured, never by device, when the screen, the title or the bar's own width changes (R26 04: the minimap docked
-   * or put away moves its left, the window the same; 建造's five columns its right), or what is in it no longer fits
-   * (a count a digit longer).
+   * Measured, never by device, when the screen, the title, a count's length or the bar's own width changes (barResize:
+   * R26 04's minimap docked or put away moves its left, the window the same).
    */
   private fitBar(): void {
     const row = this.barRow;
     const extra = this.extraCell;
     if (row === null || extra === null) return;
-    const size = `${innerWidth}x${innerHeight}:${row.clientWidth}`;
-    if (this.barFit === size && row.scrollWidth <= row.clientWidth + 1) return;
+    const size = `${innerWidth}x${innerHeight}`;
+    if (this.barFit === size) return;
     this.barFit = size;
     const chips = [...row.querySelectorAll<HTMLElement>(".bar-chip")];
     for (const c of chips) c.hidden = false;
