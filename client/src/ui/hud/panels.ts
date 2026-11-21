@@ -182,6 +182,9 @@ export function keepLine(view: GameView, town: number, state: number, owner: num
  * 攻擊／移動／堅守, the three orders for soldiers (D-050: 「指揮軍團進攻與撤退還有堅守的指令仍然
  * 不明確」; D-094 renamed 進攻、撤退), a line each in the player's words, under the selection.
  */
+/** 市場's note on how prices move counts as seen after this long on the screen (or a trade made from its panel). */
+export const MARKET_NOTE_SEEN_MS = 4000;
+
 export const ORDER_TEXT = {
   advance: "攻擊：點地面或小地圖攻擊移動，遇到敵人就打；點敵人集中打它",
   retreat: "移動：點地面或小地圖走過去，路上不還手；點主城回家",
@@ -1330,24 +1333,39 @@ export class SelectionInfo {
     const box = el("div", this.el, "market");
     box.setAttribute("role", "group");
     box.setAttribute("aria-label", "市場");
+    // How prices move: until this device's player has seen it (the user, on the draft: so that the panel stays short),
+    // which is a trade made here or the panel open with it MARKET_NOTE_SEEN_MS (ceo 2026-11-20: drawn once is not seen;
+    // a panel built again by 暫停 or 繼續 the moment it opened lost it for good).
+    let unseen = !loadHintSeen(MARKET_HINT_KEY);
+    let shownAt: number | null = null;
+    const seen = () => {
+      if (!unseen) return;
+      unseen = false;
+      saveHintSeen(MARKET_HINT_KEY);
+    };
     const rows = MARKET_RESOURCES.map((r) => {
       const word = RESOURCE_WORD[r] ?? "";
       const row = el("div", box, "market-row");
       el("span", row, "market-word", word);
-      const buy = button(row, `買 ${m.lot} ${word}`, " ", () => this.host.command(tradeOne(r, true)), "secondary market-buy");
-      const sell = button(row, `賣 ${m.lot} ${word}`, " ", () => this.host.command(tradeOne(r, false)), "secondary market-sell");
+      const trade = (buy: boolean) => () => {
+        seen();
+        this.host.command(tradeOne(r, buy));
+      };
+      const buy = button(row, `買 ${m.lot} ${word}`, " ", trade(true), "secondary market-buy");
+      const sell = button(row, `賣 ${m.lot} ${word}`, " ", trade(false), "secondary market-sell");
       return { r, word, buy, sell };
     });
-    // How prices move: the first time a market's panel opens on this device only (the user, on the draft), so the panel stays short.
-    if (!loadHintSeen(MARKET_HINT_KEY)) {
-      saveHintSeen(MARKET_HINT_KEY);
-      el("p", box, "market-note", `每按一下買或賣 ${m.lot}。買了會變貴、賣了會變便宜，之後慢慢回到 ${m.start} 金。`);
-    }
+    const note = unseen ? el("p", box, "market-note", `每按一下買或賣 ${m.lot}。買了會變貴、賣了會變便宜，之後慢慢回到 ${m.start} 金。`) : null;
     const sub = (b: HTMLButtonElement, text: string) => {
       const span = b.querySelector(".sub") as HTMLElement;
       if (span.textContent !== text) span.textContent = text;
     };
     return () => {
+      // Seen once it has been on the screen MARKET_NOTE_SEEN_MS (as long as this panel is the one up).
+      if (unseen && note !== null && note.isConnected && note.getClientRects().length > 0) {
+        shownAt ??= performance.now();
+        if (performance.now() - shownAt >= MARKET_NOTE_SEEN_MS) seen();
+      }
       const h = view.header;
       if (h === null) return;
       for (const { r, word, buy, sell } of rows) {
