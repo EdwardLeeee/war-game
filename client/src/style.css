@@ -1817,3 +1817,32 @@ b.seat-label {
   font-size: 12px;
   line-height: 1.45;
 }
+
+/* --- 游標 (R26 05; design/r26/spec.md 05, ceo 2026-11-21): what the right button would do there (input/cursor.ts) --------
+   On the battlefield only, with a mouse (Game.updateCursor): 攻擊 a sword, 進駐 a gate, 蓋、修 a hammer, 採集 an axe;
+   else the arrow. The 32 px picture first (a browser without image-set keeps it), then the 2× one for a sharp screen
+   (WebKit's own name, then the standard one). Hot spots from public/cursors/hotspots.json, in the 32 px picture's
+   pixels (the 64's are twice them). */
+#stage canvas.cur-sword {
+  cursor: url("/cursors/sword-32.png") 2 3, auto;
+  cursor: -webkit-image-set(url("/cursors/sword-32.png") 1x, url("/cursors/sword-64.png") 2x) 2 3, auto;
+  cursor: image-set(url("/cursors/sword-32.png") 1x, url("/cursors/sword-64.png") 2x) 2 3, auto;
+}
+
+#stage canvas.cur-gate {
+  cursor: url("/cursors/gate-32.png") 16 16, auto;
+  cursor: -webkit-image-set(url("/cursors/gate-32.png") 1x, url("/cursors/gate-64.png") 2x) 16 16, auto;
+  cursor: image-set(url("/cursors/gate-32.png") 1x, url("/cursors/gate-64.png") 2x) 16 16, auto;
+}
+
+#stage canvas.cur-hammer {
+  cursor: url("/cursors/hammer-32.png") 4 9, auto;
+  cursor: -webkit-image-set(url("/cursors/hammer-32.png") 1x, url("/cursors/hammer-64.png") 2x) 4 9, auto;
+  cursor: image-set(url("/cursors/hammer-32.png") 1x, url("/cursors/hammer-64.png") 2x) 4 9, auto;
+}
+
+#stage canvas.cur-axe {
+  cursor: url("/cursors/axe-32.png") 9 2, auto;
+  cursor: -webkit-image-set(url("/cursors/axe-32.png") 1x, url("/cursors/axe-64.png") 2x) 9 2, auto;
+  cursor: image-set(url("/cursors/axe-32.png") 1x, url("/cursors/axe-64.png") 2x) 9 2, auto;
+}

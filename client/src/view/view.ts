@@ -585,6 +585,17 @@ export class GameView implements IntentWorld {
     return b[o + B.progress] < 1000 || b[o + B.hp] < max || type === BuildingType.Farm;
   }
 
+  /**
+   * A finished farm, unhurt: farmers sent there farm it (food), neither building nor repairing it (游標, R26 05: the
+   * axe of 採集, not the hammer).
+   */
+  farmed(id: number): boolean {
+    const o = this.buildingRow(id);
+    const b = this.curr?.snap.buildings;
+    if (o < 0 || b === undefined || b[o + B.type] !== BuildingType.Farm) return false;
+    return b[o + B.progress] >= 1000 && b[o + B.hp] >= this.buildingMaxHp(b, o);
+  }
+
   /** Own main city hit in the last 10 s: repairs wait until the lock ends (sim/PROTOCOL.md 3.1, D-022). */
   buildingRepairLocked(id: number): boolean {
     const o = this.buildingRow(id);

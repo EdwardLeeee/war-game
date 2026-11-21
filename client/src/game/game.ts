@@ -25,6 +25,7 @@ import {
   wheelItems,
 } from "../input/intent.ts";
 import { attachPointer } from "../input/pointer.ts";
+import { CURSOR_KINDS, cursorFor, type CursorKind } from "../input/cursor.ts";
 import { attachViewScroll, ViewScroll } from "../input/view-scroll.ts";
 import { attachHotkeys, type HotKey } from "../input/hotkeys.ts";
 import { enemyTooClose, type GroupOrder, oneCluster, REFORM_CLEAR_CELLS, reformCell, reformFacing, reformMode, type Spot } from "./reform.ts";
@@ -344,6 +345,14 @@ export class Game implements GestureHost {
     return this.options.measure === true || phase === "warmup" || phase === "measuring";
   }
   private readonly recognizer: GestureRecognizer;
+  /**
+   * 游標 (R26 05): where the mouse is over the battlefield (the canvas's own coordinates; null: not over it), and what
+   * the cursor was worked out from last (updateCursor): worked out again only when that changes.
+   */
+  private hover: { x: number; y: number } | null = null;
+  private cursorKey = "";
+  private cursorSnap: unknown = null;
+  private cursorKind: CursorKind | null = null;
   /** The arrow keys and the window's edge (R26 06 B, with a mouse). */
   private readonly viewScroll = new ViewScroll();
   private renderer: WorldRenderer | null = null;
@@ -460,6 +469,25 @@ export class Game implements GestureHost {
     };
     app.canvas.addEventListener("wheel", wheel, { passive: false });
     this.cleanups.push(() => app.canvas.removeEventListener("wheel", wheel));
+    // 游標 (R26 05): the battlefield's cursor is style.css's (.cur-*): Pixi's events wrote their own on the canvas
+    // ("inherit", inline, over any class) as the mouse moved; an empty one leaves the canvas's style alone.
+    const events = (app.renderer as { events?: { cursorStyles: Record<string, string> } }).events;
+    if (events !== undefined) events.cursorStyles.default = "";
+    // 游標 (R26 05): the mouse over the battlefield (a finger's taps are not where a cursor is).
+    const hover = (e: PointerEvent) => {
+      if (e.pointerType !== "mouse") return;
+      const r = app.canvas.getBoundingClientRect();
+      this.hover = { x: e.clientX - r.left, y: e.clientY - r.top };
+    };
+    const away = () => {
+      this.hover = null;
+    };
+    app.canvas.addEventListener("pointermove", hover, { passive: true });
+    app.canvas.addEventListener("pointerleave", away);
+    this.cleanups.push(() => {
+      app.canvas.removeEventListener("pointermove", hover);
+      app.canvas.removeEventListener("pointerleave", away);
+    });
     // With a mouse (design/r26/spec.md section 0): the arrow keys and the window's edge move the view.
     const mouse = typeof matchMedia === "function" ? matchMedia("(hover: hover) and (pointer: fine)") : null;
     this.cleanups.push(attachViewScroll(this.viewScroll, () => mouse?.matches === true && this.view !== null));
@@ -3072,6 +3100,7 @@ export class Game implements GestureHost {
     if (this.mode === "enter") this.enterFrame(now, cam);
     this.renderer.draw(now, cam, this.placement);
     this.hud.frame(now);
+    this.updateCursor(view, cam);
     this.frameTimes.add(dt, performance.now() - now);
     // ✓ and ✗ follow the preview on screen while the camera pinches or flings (a few style writes).
     if (this.placement?.phase === "confirm") this.showPlaceButtons();
@@ -3446,35 +3475,79 @@ export class Game implements GestureHost {
       this.tutor.blocked();
       return;
     }
-    const w = this.world(x, y);
-    const r = this.hitRadius();
-    this.apply(this.enterByClick(commandIntents(view, view.selection, w.x, w.y, r, UNIT_CORE_HIT_PT / (this.camera?.scale ?? 1)), w.x, w.y, r));
+    const plan = this.rightPlan(x, y);
+    if (plan === null) return;
+    const c = plan.enter;
+    if (c !== null && !c.plan.off) {
+      this.enterInto(c, false);
+      this.apply(withoutUnits(plan.orders, plan.taken));
+      return;
+    }
+    if (c !== null && c.plan.full && c.plan.why !== null) this.toast(c.plan.why);
+    this.apply(plan.orders);
   }
 
   /**
-   * The mouse's right click on a place of ours 進駐 goes into (R26 06 a, ceo 2026-11-20: 「右鍵點自己能進駐的地方：進得
-   * 去的進駐，進不去的走到旁邊」), where the click is a walk there (an enemy in our town is still 攻擊, a tree 採集, a
-   * farmer's building with work 修): lit, those its tag sends go in and out of what is selected (a town: as its tag
-   * says, those another town keeps stay), the rest walk there; grey, all walk there, as before. Full, saying so; their
-   * kind cannot, they are in it already, or their town keeps them (the order says that itself): nothing said.
-   * Returns the orders left of `out`.
+   * The mouse's right button at (x, y), worked out and not done (Game.order does it; the cursor shows it, R26 05): the
+   * orders a tap would give the units selected (commandIntents), and the place of ours 進駐 goes into there, if any.
+   *
+   * A place of ours (R26 06 a, ceo 2026-11-20: 「右鍵點自己能進駐的地方：進得去的進駐，進不去的走到旁邊」), where the
+   * click is a walk there (an enemy in our town is still 攻擊, a tree 採集, a farmer's building with work 修): lit
+   * (`enter` not off), `taken` go in and out of what is selected (a town: as its tag says, those another town keeps
+   * stay), the rest walk there; grey, all walk there, as before (full: Game.order says so; their kind cannot, they are
+   * in it already, or their town keeps them: the order says that itself).
    */
-  private enterByClick(out: Intent[], wx: number, wy: number, r: number): Intent[] {
+  private rightPlan(x: number, y: number): { orders: Intent[]; enter: EnterChoice | null; taken: number[] } | null {
     const view = this.view;
-    if (view === null || !enterOn(view.rules)) return out;
-    if (!walkingTo(out, toCell(wx), toCell(wy)).some((id) => isSoldier(view.unitType(id)))) return out;
-    const pick = view.pick(wx, wy, r);
+    if (view === null) return null;
+    const w = this.world(x, y);
+    const r = this.hitRadius();
+    const orders = commandIntents(view, view.selection, w.x, w.y, r, UNIT_CORE_HIT_PT / (this.camera?.scale ?? 1));
+    const none = { orders, enter: null, taken: [] };
+    if (!enterOn(view.rules)) return none;
+    if (!walkingTo(orders, toCell(w.x), toCell(w.y)).some((id) => isSoldier(view.unitType(id)))) return none;
+    const pick = view.pick(w.x, w.y, r);
     const choices = this.enterChoices();
-    const at = enterPlaceAt(choices, pick !== null && pick.kind === "building" && pick.owner === view.me ? pick.id : null, wx, wy);
+    const at = enterPlaceAt(choices, pick !== null && pick.kind === "building" && pick.owner === view.me ? pick.id : null, w.x, w.y);
     const c = choices.find((v) => v.id === at);
-    if (c === undefined) return out;
-    if (c.plan.off) {
-      if (c.plan.full && c.plan.why !== null) this.toast(c.plan.why);
-      return out;
-    }
-    const taken = c.kind === "town" ? this.army.withGroups(view.selection.units).filter((u) => isSoldier(view.unitType(u))) : c.plan.go;
-    this.enterInto(c, false);
-    return withoutUnits(out, taken);
+    if (c === undefined) return none;
+    const taken = c.plan.off ? [] : c.kind === "town" ? this.army.withGroups(view.selection.units).filter((u) => isSoldier(view.unitType(u))) : c.plan.go;
+    return { orders, enter: c, taken };
+  }
+
+  /**
+   * 游標 (R26 05): the battlefield's cursor (style.css .cur-*), worked out again as the mouse moves, a snapshot comes (an
+   * enemy walks in under a mouse held still), the selection, the mode, a building being placed or the camera changes.
+   */
+  private updateCursor(view: GameView, cam: Camera): void {
+    const h = this.hover;
+    const sel = view.selection;
+    const key = h === null ? "" : `${h.x},${h.y}|${this.mode}|${this.placement !== null}|${sel.units.length},${sel.units[0] ?? -1},${sel.units.at(-1) ?? -1},${sel.building ?? -1}|${cam.x},${cam.y},${cam.scale}`;
+    if (key === this.cursorKey && view.curr === this.cursorSnap) return;
+    this.cursorKey = key;
+    this.cursorSnap = view.curr;
+    const kind = h === null ? null : this.cursorAt(h.x, h.y);
+    if (kind === this.cursorKind) return;
+    this.cursorKind = kind;
+    const c = this.app.canvas.classList;
+    for (const k of CURSOR_KINDS) c.toggle(`cur-${k}`, k === kind);
+  }
+
+  /** 游標 (tests): the cursor now; null, the arrow. */
+  get cursorForTest(): CursorKind | null {
+    return this.cursorKind;
+  }
+
+  /**
+   * 游標 (R26 05, input/cursor.ts): what the right button would do at (x, y) now, as Game.order would (rightPlan); null,
+   * the arrow: picking a place, placing a building, or where 新手教學 takes no tap.
+   */
+  cursorAt(x: number, y: number): CursorKind | null {
+    if (this.placement !== null || this.mode !== "normal") return null;
+    if (this.tutor !== null && !this.tutor.tapAllowed(x, y)) return null;
+    const plan = this.rightPlan(x, y);
+    const view = this.view;
+    return plan === null || view === null ? null : cursorFor(plan.orders, plan.enter !== null && !plan.enter.plan.off, (id) => view.farmed(id));
   }
 
   /**
