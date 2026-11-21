@@ -225,3 +225,44 @@ test("auto: a new champion that drops against the baseline pauses", () => {
   assert.equal(s.champion, planHash(b));
   assert.match(s.paused?.reason ?? "", /對基準掉了/);
 });
+
+test("auto: how many jobs a segment has does not change what is played or decided (ceo 2026-11-21)", () => {
+  const equal: HP = { townRest: 2 };
+  const weak: HP = { farmers: 14, production: 1 };
+  const strong: HP = { pushArmy: 99 };
+  const fakes: Record<string, Fake> = {
+    [planHash(equal)]: { exWins: 0.3, edge: 0 },
+    [planHash(weak)]: { exWins: 0.45, edge: -0.15 },
+    [planHash(strong)]: { exWins: 0.3, edge: 0.1 },
+  };
+  /** Segments of `jobs` jobs, each job playing every jobs-th game of what is needed (as exam-auto.ts work), and only a
+   * part of it before its hour is up (drawn), then a merge. */
+  const runWith = (jobs: number) => {
+    const s = init(EXAMINERS, [
+      { id: "equal", plan: equal, round: 0 },
+      { id: "weak", plan: weak, round: 0 },
+      { id: "strong", plan: strong, round: 1 },
+    ]);
+    const r = rng(1000 + jobs);
+    let played = 0;
+    for (let seg = 0; seg < 5000 && s.paused === null && !s.done; seg++) {
+      const all = needed(s).filter((x) => !x.key.startsWith("canary|"));
+      for (let k = 0; k < jobs; k++) {
+        const mine = all.filter((_, i) => i % jobs === k);
+        const part = mine.slice(0, Math.ceil(mine.length * (0.2 + 0.8 * r())));
+        play(s, part, fakes);
+        played += part.length;
+      }
+      checkCanary(s, ["a", "b", "c"], "tree", "commit", `P-${seg}`, "t");
+      step(s, `P-${seg}`, "t");
+    }
+    return { decided: s.decided.map((d) => ({ id: d.id, verdict: d.verdict, why: d.why, looks: d.looks, ex: d.ex, vs: d.vs })), champion: s.champion, played };
+  };
+  const three = runWith(3);
+  const sixteen = runWith(16);
+  const one = runWith(1);
+  assert.equal(three.decided.length, 3);
+  assert.deepEqual(sixteen.decided, three.decided);
+  assert.deepEqual(one.decided, three.decided);
+  assert.equal(sixteen.champion, three.champion);
+});
