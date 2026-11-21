@@ -48,7 +48,7 @@ import urllib.request
 
 WORKFLOW, SCRATCH = ".github/workflows/ai-train.yml", ".github/workflows/ai-scratch.yml"
 BOT = "github-actions[bot]"
-SEGMENT_MODE = "chaintest"  # the mode a segment runs (PR B: the exams)
+SEGMENT_MODE = "auto"  # the mode a segment runs: the exams (PR B; A2's trial ran chaintest)
 # The caps (D-147, ceo 2026-11-21): written here; AI_TRAIN and a trial's options can only lower them.
 DAY_CAP, TOTAL_CAP = 200.0, 5000.0
 # The ledger counts AI train runs created from this time on (trial segments too; not the examiner search before it).
@@ -58,7 +58,7 @@ LEDGER_START = "2026-11-21T00:00:00Z"
 # the real date comes with PR B (the exams), after A2's trial (its segments made to fail, yield and run short) and PR A's
 # (its cancelled segment, run 44841753532), so neither pauses the training.
 CHAIN_START = "2099-01-01T00:00:00Z"
-SEGMENT_HOURS, SEGMENT_JOBS = 1.0, 1
+SEGMENT_HOURS, SEGMENT_JOBS = 1.0, 4
 MAX_SEGMENTS_PER_DAY = 48  # what the 30-minute schedule allowed
 MIN_SEGMENT_MINUTES = 10
 BAD_IN_A_ROW, YIELDS_IN_A_ROW = 3, 6
@@ -66,6 +66,10 @@ SEE_WAIT, UNSEEN_HOLD = 180, 15 * 60  # seconds: waiting to see the new run; hol
 DISPATCH_HOURS = 0.01  # a dispatcher run books itself this (about half a minute); the tail is booked with its segment
 RUNNERS, RESERVE = 20, 4  # D-123
 YIELD_STEP = "讓位"
+# PR B: the merge job runs this step when the exam paused itself (auto.ts: A/A, base, canary, rounds, candidates, done).
+EXAM_STOP_STEP = "考試暫停"
+# Jobs of a segment that train nothing (their minutes are not the segment's training).
+SIDE_JOBS = ("plan", "merge", "dispatch", "hours")
 STOP = ("cancelled", "timed_out")
 ACTIVE = ("in_progress", "queued", "pending", "waiting", "requested")
 LEDGER_VERSION = 2
@@ -139,10 +143,12 @@ def classify(conclusion, jobs, own=False):
         if conclusion != "success":
             return "bad", f"結論是 {conclusion}"
     work = [j for j in jobs if j.get("name") not in ("dispatch", "hours")]
+    if any(s.get("name") == EXAM_STOP_STEP and s.get("conclusion") == "success" for j in work for s in j.get("steps") or []):
+        return "stop", "考試自己暫停了（原因在這一段 merge job 的 summary）"
     for j in work:
         if j.get("conclusion") not in ("success", "skipped"):
             return "bad", f"{j.get('name')} 是 {j.get('conclusion')}"
-    train = [j for j in work if j.get("name") != "plan" and j.get("conclusion") == "success"]
+    train = [j for j in work if j.get("name") not in SIDE_JOBS and j.get("conclusion") == "success"]
     if not train:
         return "bad", "沒有跑完的訓練 job"
     m = min(minutes(j) for j in train)
@@ -162,7 +168,7 @@ def walk(segs, resumed, resume):
         recent = (recent + [f"run {sid}：{why}"])[-6:]
         reason = None
         if cls == "stop":
-            reason = f"有一段被取消或逾時（run {sid}）"
+            reason = f"{why}（run {sid}）"
         elif cls in ("bad", "short"):
             bad += 1
             if bad >= BAD_IN_A_ROW:

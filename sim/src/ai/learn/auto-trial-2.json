@@ -1,0 +1,6 @@
+{
+  "name": "trial-2",
+  "note": "D-147 PR B's trial, the other way round (ceo 2026-11-21): the baseline weakened (fewer farmers and production), the candidate hard itself, which should be promoted; then the new champion against the baseline.",
+  "baseline": { "farmers": 14, "production": 1 },
+  "candidates": [{ "id": "hard", "plan": {}, "round": 0 }]
+}

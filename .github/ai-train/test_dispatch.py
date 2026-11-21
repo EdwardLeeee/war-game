@@ -153,6 +153,14 @@ class Classify(unittest.TestCase):
         self.assertEqual(D.classify("success", seg_jobs(70, 9, yielded=True))[0], "yield")
         self.assertEqual(D.classify("success", seg_jobs(70, 40, yielded=True))[0], "ok")  # gave way after training enough
 
+    def test_exam_paused_and_merge_minutes(self):
+        jobs = seg_jobs(70, 60)
+        merge = job("merge", 9, 2, steps=[("Merge", "success"), (D.EXAM_STOP_STEP, "success")])
+        self.assertEqual(D.classify("success", jobs + [merge])[0], "stop")
+        merge["steps"][1]["conclusion"] = "skipped"
+        self.assertEqual(D.classify("success", jobs + [merge])[0], "ok")  # the merge job's 2 minutes are not training
+        self.assertEqual(D.classify("success", jobs + [job("merge", 9, 2, "failure")])[0], "bad")
+
     def test_own_run_still_going(self):
         jobs = seg_jobs(70, 60)
         jobs[-1].update(status="in_progress", conclusion=None, completed_at=None)  # this dispatch job
@@ -211,7 +219,7 @@ class Run(unittest.TestCase):
             f.return_id = return_id
             ok, text, ledger = go(f, env())
             self.assertTrue(ok, text)
-            self.assertEqual(f.posts, [{"ref": "main", "inputs": {"mode": D.SEGMENT_MODE, "hours": "1", "islands": "1", "args": ""}}])
+            self.assertEqual(f.posts, [{"ref": "main", "inputs": {"mode": D.SEGMENT_MODE, "hours": "1", "islands": str(D.SEGMENT_JOBS), "args": ""}}])
             self.assertIn(f"新的 run {f.next_id}", text)
             self.assertIsNone(ledger["unseen"])
             self.assertAlmostEqual(ledger["closed"]["2026-11-23"], D.DISPATCH_HOURS)
@@ -348,9 +356,11 @@ class Run(unittest.TestCase):
     def test_hours_caps(self):
         f = Fake()
         f.add(8000100, t(600), actor="someone", event="workflow_dispatch", jobs=[job("exam (0)", 599, 60 * 8)])
-        self.assertTrue(go(f, env(ARGS="--day-cap 9.5"))[0])
-        self.assertFalse(go(f, env(ARGS="--day-cap 8.5"))[0])
-        self.assertFalse(go(f, env(ARGS="--total-cap 8.5"))[0])
+        # 8 hours used, a segment of SEGMENT_JOBS jobs of an hour each.
+        room = 8 + D.SEGMENT_HOURS * D.SEGMENT_JOBS
+        self.assertTrue(go(f, env(ARGS=f"--day-cap {room + 0.5}"))[0])
+        self.assertFalse(go(f, env(ARGS=f"--day-cap {room - 0.5}"))[0])
+        self.assertFalse(go(f, env(ARGS=f"--total-cap {room - 0.5}"))[0])
 
     def test_not_seen_holds_off(self):
         f = Fake()
@@ -431,7 +441,7 @@ class Run(unittest.TestCase):
         f = Fake()
         ok, _, _ = go(f, env(EVENT="workflow_dispatch", MODE="dispatch", ARGS="--total-cap 3 --segment-hours 0.25 --short --api-fail-not"))
         self.assertTrue(ok)
-        self.assertEqual(f.posts[0]["inputs"], {"mode": D.SEGMENT_MODE, "hours": "0.25", "islands": "1", "args": "--total-cap 3 --segment-hours 0.25 --short"})
+        self.assertEqual(f.posts[0]["inputs"], {"mode": D.SEGMENT_MODE, "hours": "0.25", "islands": str(D.SEGMENT_JOBS), "args": "--total-cap 3 --segment-hours 0.25 --short"})
 
 
 class GiveWay(unittest.TestCase):

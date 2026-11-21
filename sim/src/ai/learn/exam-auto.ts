@@ -3,9 +3,10 @@
 //   node src/ai/learn/exam-auto.ts init  --config FILE --out STATE
 //       A state from a config: { "name": "...", "baseline": {...}, "candidates": [{ "id", "plan", "round" }] } (plans:
 //       Partial<HardPlan>), the examiners of examiners.json (next to this file).
-//   node src/ai/learn/exam-auto.ts work  --state STATE --island K --islands N --hours H --out DIR
+//   node src/ai/learn/exam-auto.ts work  --state STATE --island K --islands N --hours H --out DIR [--resume ID]
 //       Plays this job's share of the games the state still needs (every N-th from the K-th; the canary on job 0 only),
-//       until H hours or it gives way (D-123, yield.ts); writes DIR/results.json as it goes.
+//       until H hours or it gives way (D-123, yield.ts); writes DIR/results.json as it goes. --resume (AI_TRAIN_RESUME)
+//       lifts that pause first, as the merge will (else the first segment after a resume would play nothing).
 //   node src/ai/learn/exam-auto.ts merge --state STATE --results DIR[,DIR] --out STATE --pause-id P-<run id>
 //                                        [--tree T --commit C] [--resume ID]
 //       The only writer of the state: adds the jobs' results, checks the canary, lifts the pause named by --resume
@@ -64,6 +65,8 @@ function cmdInit(): void {
 
 async function cmdWork(): Promise<void> {
   const s = readJson<State>(arg("state", "state.json"));
+  const resumeId = arg("resume", "").trim();
+  if (resumeId !== "") resume(s, resumeId, now());
   const island = Number(arg("island", "0"));
   const islands = Number(arg("islands", "1"));
   const hours = Number(arg("hours", "1"));

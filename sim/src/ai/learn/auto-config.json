@@ -1,0 +1,10 @@
+{
+  "name": "trial-1",
+  "note": "D-147 PR B's trial (ceo 2026-11-21): candidates whose answer is known. identical: hard itself (rejected at once); equal: a setting that changes little (rejected, after many games: what an equal candidate costs); weak: fewer farmers and production (rejected quickly). PR C replaces this file with the training's candidates (a new name: a new state).",
+  "baseline": {},
+  "candidates": [
+    { "id": "identical", "plan": {}, "round": 0 },
+    { "id": "equal", "plan": { "townRest": 2 }, "round": 0 },
+    { "id": "weak", "plan": { "farmers": 14, "production": 1 }, "round": 0 }
+  ]
+}

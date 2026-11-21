@@ -14,6 +14,10 @@
 #           search per job (islands), each its own seeds
 #   examcheck  D-147: the best of each kind from an exam run (from_run), on fresh seeds (exam.ts check), split over the jobs
 #   chaintest  D-147 PR A: one segment of the chain for its trial, dryrun again and again until `hours`; gives way (D-123)
+#   auto    D-147 PR B: a segment of the automatic exam (src/ai/learn/exam-auto.ts): each job plays its share of the games
+#           the exam state needs (islands: jobs), then the merge job adds them up, decides and keeps the state (artifact
+#           ai-train-state-<config name>, 90 days). The config: args --config FILE (under sim/), else
+#           src/ai/learn/auto-config.json. The chain's segments run this mode.
 #   dispatch   D-147: the dispatcher alone (as the schedule runs it), its `args` for the trial (lower caps only)
 #
 # D-147 (ceo 2026-11-21; A2: the chain goes on by itself) — the chain that trains with nobody watching:
@@ -41,9 +45,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: dryrun, record, es, eval, exam, examcheck, chaintest or dispatch
+        description: dryrun, record, es, eval, exam, examcheck, chaintest, auto or dispatch
         type: choice
-        options: [dryrun, record, es, eval, exam, examcheck, chaintest, dispatch]
+        options: [dryrun, record, es, eval, exam, examcheck, chaintest, auto, dispatch]
         default: dryrun
       from_run:
         description: The run whose artifacts this one starts from (es, eval)
@@ -88,18 +92,18 @@ jobs:
   # D-147: decides whether to start the next segment, and starts it (.github/ai-train/dispatch.py; see the top of this
   # file). The only job with actions: write; it uses no secret.
   dispatch:
-    needs: [plan, train]
+    needs: [plan, train, merge]
     # Three ways, and never once the run is cancelled (!cancelled(): with a status function in it, no success() is
     # added; always() would run after a cancel too):
     #   the schedule with the switch on (plan and train skipped; off, this job is skipped too: "AI train: dispatch (off)");
     #   a hand dispatch, mode=dispatch;
     #   the tail of a segment: the run started by the dispatcher (github-actions[bot], also as triggering actor), its first
-    #   attempt (a Re-run is not chained), on main, the switch on now, the training jobs all succeeded.
+    #   attempt (a Re-run is not chained), on main, the switch on now, the training jobs and the merge all succeeded.
     if: >-
       github.repository == 'EdwardLeeee/war-game' && !cancelled() && (
       (github.event_name == 'schedule' && vars.AI_TRAIN == 'on') ||
       (github.event_name == 'workflow_dispatch' && inputs.mode == 'dispatch') ||
-      (github.event_name == 'workflow_dispatch' && inputs.mode == 'chaintest' && needs.train.result == 'success' &&
+      (github.event_name == 'workflow_dispatch' && inputs.mode == 'auto' && needs.train.result == 'success' && needs.merge.result == 'success' &&
       github.actor == 'github-actions[bot]' && github.triggering_actor == 'github-actions[bot]' &&
       github.run_attempt == '1' && github.ref == 'refs/heads/main' && vars.AI_TRAIN == 'on'))
     runs-on: ubuntu-latest
@@ -170,10 +174,10 @@ jobs:
           fi
           get() { echo "$S" | jq -r --arg k "$1" --arg d "$2" '.[$k] // $d | if type == "string" then . else tojson end'; }
           mode=$(get mode dryrun)
-          case "$mode" in dryrun|record|es|eval|exam|examcheck|chaintest) ;; *) echo "mode $mode" >&2; exit 1 ;; esac
+          case "$mode" in dryrun|record|es|eval|exam|examcheck|chaintest|auto) ;; *) echo "mode $mode" >&2; exit 1 ;; esac
           islands=$(get islands 8)
           n=1
-          if [ "$mode" = "es" ] || [ "$mode" = "exam" ] || [ "$mode" = "examcheck" ] || [ "$mode" = "chaintest" ]; then n=$(( islands < 1 ? 1 : islands > 8 ? 8 : islands )); fi
+          if [ "$mode" = "es" ] || [ "$mode" = "exam" ] || [ "$mode" = "examcheck" ] || [ "$mode" = "chaintest" ] || [ "$mode" = "auto" ]; then n=$(( islands < 1 ? 1 : islands > 8 ? 8 : islands )); fi
           # eval: "nets" lists networks in the branch (paths under sim/, "none": hard itself), one job each, at most 8.
           nets=$(echo "$S" | jq -c '.nets // []')
           k=$(echo "$nets" | jq 'length')
@@ -198,8 +202,8 @@ jobs:
     needs: plan
     name: ${{ needs.plan.outputs.mode }} (${{ matrix.island }})
     runs-on: ubuntu-latest
-    # D-147: a chain segment is ended within its hour whatever happens (chaintest; the real segments the same, PR B).
-    timeout-minutes: ${{ needs.plan.outputs.mode == 'chaintest' && 70 || 355 }}
+    # D-147: a chain segment is ended within its hour whatever happens (chaintest, auto: the job stops itself before).
+    timeout-minutes: ${{ (needs.plan.outputs.mode == 'chaintest' || needs.plan.outputs.mode == 'auto') && 70 || 355 }}
     strategy:
       fail-fast: false
       max-parallel: 8
@@ -228,6 +232,15 @@ jobs:
         run: |
           IFS=, read -ra ids <<< "$RUNS"
           for id in "${ids[@]}"; do gh run download "$id" --repo "$GITHUB_REPOSITORY" --dir "${GITHUB_WORKSPACE}/from/$id"; done
+      # D-147 PR B: the exam state this segment plays for (the merge job reads the same one).
+      - name: Exam state
+        if: needs.plan.outputs.mode == 'auto'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARGS: ${{ needs.plan.outputs.args }}
+        run: |
+          C=$(echo " $ARGS " | sed -n 's/.* --config \([^ ]*\) .*/\1/p')
+          "$GITHUB_WORKSPACE/.github/ai-train/exam-state.sh" "${C:-src/ai/learn/auto-config.json}" "$GITHUB_WORKSPACE/state"
       - name: Train
         id: t
         env:
@@ -242,7 +255,8 @@ jobs:
           NETS: ${{ needs.plan.outputs.nets }}
           ISLANDS: ${{ needs.plan.outputs.islands }}
           # D-147 (exam.ts, ceo 2026-11-16): it gives way to Pages and to jobs long waiting (D-123), reading the runs.
-          YIELD_REPO: ${{ (needs.plan.outputs.mode == 'exam' || needs.plan.outputs.mode == 'examcheck') && github.repository || '' }}
+          YIELD_REPO: ${{ (needs.plan.outputs.mode == 'exam' || needs.plan.outputs.mode == 'examcheck' || needs.plan.outputs.mode == 'auto') && github.repository || '' }}
+          AI_TRAIN_RESUME: ${{ vars.AI_TRAIN_RESUME }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -o pipefail
@@ -275,6 +289,8 @@ jobs:
               node $T eval --net "$N" --games "$GAMES" --out "$O" "$@" ;;
             # D-147: run.json "args" adds exam.ts's options (--map, --pool, --rounds, --cap, --top, --seed-from, --qualify).
             exam) node src/ai/learn/exam.ts search --seed $((ISLAND + 1)) --hours "$HOURS" --parents-from "$F" --out "$O" "$@" ;;
+            # D-147 PR B: this job's share of the exam's games; giving way sets the output `yielded` (exam-auto.ts).
+            auto) node src/ai/learn/exam-auto.ts work --state "$GITHUB_WORKSPACE/state/state.json" --island "$ISLAND" --islands "$(echo "$ISLANDS" | jq length)" --hours "$HOURS" --out "$O" --resume "$AI_TRAIN_RESUME" ;;
             examcheck) node src/ai/learn/exam.ts check --from "$F" --games "$GAMES" --shard "$ISLAND" --shards "$(echo "$ISLANDS" | jq length)" --out "$O" "$@" ;;
             # D-147 PR A: a segment of the chain for its trial: dryrun again and again until `hours` (at most 1), giving way
             # (D-123, .github/ai-train/giveway.py): a deployment of the site waiting, or another job waiting 10 minutes or
@@ -307,11 +323,61 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: train-${{ needs.plan.outputs.mode }}${{ (needs.plan.outputs.mode == 'es' || needs.plan.outputs.mode == 'exam' || needs.plan.outputs.mode == 'examcheck' || needs.plan.outputs.mode == 'chaintest' || needs.plan.outputs.nets != '[]') && format('-{0}', matrix.island) || '' }}
+          name: train-${{ needs.plan.outputs.mode }}${{ (needs.plan.outputs.mode == 'es' || needs.plan.outputs.mode == 'exam' || needs.plan.outputs.mode == 'examcheck' || needs.plan.outputs.mode == 'chaintest' || needs.plan.outputs.mode == 'auto' || needs.plan.outputs.nets != '[]') && format('-{0}', matrix.island) || '' }}
           path: out/
           # D-147 (ceo 2026-11-21): kept 90 days.
           retention-days: 90
           if-no-files-found: ignore
+
+  # D-147 PR B: the only writer of the exam state. Adds up the training jobs' results (whatever they left: a job that
+  # failed or gave way leaves what it played), lifts the pause AI_TRAIN_RESUME names, decides, and keeps the new state.
+  # Not once the run is cancelled. The step 考試暫停 runs when the exam paused itself or is done: the dispatcher reads it
+  # (in the API) and pauses the chain as P-<this run's id>, the same name as the exam's pause.
+  merge:
+    needs: [plan, train]
+    if: "!cancelled() && needs.plan.outputs.mode == 'auto'"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: sim
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - name: Exam state
+        id: s
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARGS: ${{ needs.plan.outputs.args }}
+        run: |
+          C=$(echo " $ARGS " | sed -n 's/.* --config \([^ ]*\) .*/\1/p')
+          "$GITHUB_WORKSPACE/.github/ai-train/exam-state.sh" "${C:-src/ai/learn/auto-config.json}" "$GITHUB_WORKSPACE/state"
+      # None left (every job failed at the start): nothing to add, the games are played again next segment.
+      - name: This segment's results
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          pattern: train-auto-*
+          path: results
+      - name: Merge
+        id: m
+        env:
+          AI_TRAIN_RESUME: ${{ vars.AI_TRAIN_RESUME }}
+        run: |
+          W="$GITHUB_WORKSPACE"
+          node src/ai/learn/exam-auto.ts merge --state "$W/state/state.json" --results "$W/results" --out "$W/new/state.json" \
+            --pause-id "P-${{ github.run_id }}" --tree "$(git rev-parse HEAD:sim/src)" --commit "$GITHUB_SHA" --resume "$AI_TRAIN_RESUME" > /dev/null
+          cat "$W/new/summary.md" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.s.outputs.name }}
+          path: new/
+          retention-days: 90
+      - name: 考試暫停
+        if: steps.m.outputs.paused == 'true' || steps.m.outputs.done == 'true'
+        run: echo "考試暫停了或考完了（原因在上面的 summary）；鏈會暫停，要使用者同意才再跑（AI_TRAIN_RESUME）"
 
   hours:
     needs: train
