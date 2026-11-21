@@ -30,7 +30,9 @@
 #   To stop: set AI_TRAIN to "off" (no next segment; the one running ends within its hour), or cancel the run in the Actions
 #   tab to stop at once.
 name: AI train
-run-name: "${{ (github.event_name == 'schedule' && vars.AI_TRAIN != 'on') && 'AI train: dispatch (off)' || ((github.event_name == 'schedule' || inputs.mode == 'dispatch') && 'AI train: dispatch' || format('AI train: {0}', inputs.mode || github.ref_name)) }}"
+# Only the dispatcher's runs get a name of their own: a run's `name` in the API is its run-name, and exam.ts tells AI train
+# runs by name; every other run is named "AI train" as before.
+run-name: "${{ (github.event_name == 'schedule' && vars.AI_TRAIN != 'on') && 'AI train: dispatch (off)' || ((github.event_name == 'schedule' || inputs.mode == 'dispatch') && 'AI train: dispatch' || 'AI train') }}"
 
 on:
   # D-147: the dispatcher, every 30 minutes (off the hour, when GitHub's schedules crowd).
@@ -259,17 +261,19 @@ jobs:
                   reasons.append(f"總共已用 {total_hours:.2f} 小時，加這一段 {planned:.2f} 會超過總上限 {total_cap:g}")
 
           busy = waiting_jobs = 0
+          # Told by their workflow file: a run's `name` is its run-name.
+          OWN, SCRATCH = ".github/workflows/ai-train.yml", ".github/workflows/ai-scratch.yml"
           try:
               for status in ("in_progress", "queued"):
                   for r in every(f"repos/{repo}/actions/runs?status={status}&per_page=100", "workflow_runs"):
                       if r["id"] == run_id or r.get("display_title", "").startswith("AI train: dispatch"):
                           continue
-                      if r["name"] == "AI train":
+                      if r.get("path") == OWN:
                           reasons.append(f"已經有一段訓練在{'跑' if status == 'in_progress' else '等'}（run {r['id']}）")
                       jobs = every(f"repos/{repo}/actions/runs/{r['id']}/jobs?per_page=100", "jobs")
                       busy += sum(1 for j in jobs if j["status"] == "in_progress")
                       w = sum(1 for j in jobs if j["status"] in ("queued", "waiting", "pending"))
-                      if w and r["name"] != "AI train":
+                      if w and r.get("path") not in (OWN, SCRATCH):
                           waiting_jobs += w
                           reasons.append(f"{r['name']} 有 {w} 個 job 在等（run {r['id']}）")
               if RUNNERS - busy - SEGMENT_JOBS < RESERVE:
@@ -466,7 +470,7 @@ jobs:
               why="時間到"
               k=0
               while [ $(( $(date +%s) + 120 )) -lt "$stop" ]; do
-                q=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?status=queued&per_page=50" -q '[.workflow_runs[] | select(.name != "AI train" and .name != "AI scratch") | select((.name == "Pages" and .event == "push" and .head_branch == "main") or ((now - (.created_at | fromdate)) >= 600)) | "\(.name) run \(.id)"] | first // empty' || echo "API 出錯")
+                q=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?status=queued&per_page=50" -q '[.workflow_runs[] | select(.path != ".github/workflows/ai-train.yml" and .path != ".github/workflows/ai-scratch.yml") | select((.name == "Pages" and .event == "push" and .head_branch == "main") or ((now - (.created_at | fromdate)) >= 600)) | "\(.name) run \(.id)"] | first // empty' || echo "API 出錯")
                 if [ -n "$q" ]; then why="讓位：$q 在等"; break; fi
                 node $T dryrun --out "$O/$k" > /dev/null
                 k=$((k + 1))
