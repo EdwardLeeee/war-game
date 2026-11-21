@@ -204,7 +204,8 @@ jobs:
     name: ${{ needs.plan.outputs.mode }} (${{ matrix.island }})
     runs-on: ubuntu-latest
     # D-147: a chain segment is ended within its hour whatever happens (chaintest, auto: the job stops itself before).
-    timeout-minutes: ${{ (needs.plan.outputs.mode == 'chaintest' || needs.plan.outputs.mode == 'auto') && 70 || 355 }}
+    # PR B's trial: chaintest --hang waits past a 3-minute limit, to see how GitHub reports a job it ends at its limit.
+    timeout-minutes: ${{ contains(needs.plan.outputs.args, '--hang') && 3 || ((needs.plan.outputs.mode == 'chaintest' || needs.plan.outputs.mode == 'auto') && 70 || 355) }}
     strategy:
       fail-fast: false
       max-parallel: 16
@@ -305,6 +306,7 @@ jobs:
               why="時間到"
               k=0
               case " $* " in *" --fail "*) echo "--fail（A2 試跑）" >&2; exit 1 ;; esac
+              case " $* " in *" --hang "*) echo "--hang（PR B 試跑）：等過 3 分鐘的時限"; sleep 600 ;; esac
               case " $* " in *" --short "*) stop=$(( t0 + 240 )); why="--short（A2 試跑）" ;; esac
               case " $* " in *" --yield "*) stop=0; why="讓位（A2 試跑 --yield）"; echo "yielded=true" >> "$GITHUB_OUTPUT" ;; esac
               while [ $(( $(date +%s) + 120 )) -lt "$stop" ]; do
