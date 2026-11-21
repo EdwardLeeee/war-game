@@ -17,7 +17,7 @@ import { createHash } from "node:crypto";
 import type { HardPlan } from "../ai.ts";
 import type { MapMode } from "../../protocol.ts";
 import type { Plan } from "../scripted-player.ts";
-import { decide, type Side, SPRT, zSign } from "./sprt.ts";
+import { addLook, decide, EFFECT_EX, llr, pathA, type Side, SPRT, zSign } from "./sprt.ts";
 import type { Job, JobResult } from "./worker.ts";
 
 export type HP = Partial<HardPlan>;
@@ -256,9 +256,14 @@ export function resOf(r: JobResult): Res {
 
 const has = (s: State, items: Item[]) => items.every((x) => s.results[x.key] !== undefined);
 
-/** Both paths over the first `looks` looks of candidate `c`; `same`: no examiner game of the first look differs at all. */
+/**
+ * Both paths over the first `looks` looks of candidate `c`, in order; `same`: no examiner game of the first look differs
+ * at all. `llrEx`: path A's ratio with each look's own H1 (sprt.ts addLook, the rule in use); `llrExFirst`: the first
+ * rule's (H1 from Q assumed), for comparing; `h1`: each look's H1.
+ */
 export function tally(s: State, c: string, looks: number) {
-  const ex: Side = { plus: 0, minus: 0, games: 0 };
+  const ex = pathA();
+  const h1: number[] = [];
   const vs: Side = { plus: 0, minus: 0, games: 0 };
   let identical = 0;
   let firstLook = 0;
@@ -266,14 +271,15 @@ export function tally(s: State, c: string, looks: number) {
   let champOpen = 0;
   let vsDraws = 0;
   for (let k = 0; k < looks; k++) {
+    const look = { plus: 0, minus: 0, games: 0 };
     for (const e of s.examiners) {
       for (let i = k * SPRT.exChunk; i < (k + 1) * SPRT.exChunk; i++) {
         const rc = s.results[exKey(c, e.id, SEEDS.ex + i)];
         const rh = s.results[exKey(s.champion, e.id, SEEDS.ex + i)];
-        ex.games++;
+        look.games++;
         // + when only the champion lost to the player (the examiner won), - when only the candidate did.
-        if (rh.w === 1 && rc.w !== 1) ex.plus++;
-        else if (rc.w === 1 && rh.w !== 1) ex.minus++;
+        if (rh.w === 1 && rc.w !== 1) look.plus++;
+        else if (rc.w === 1 && rh.w !== 1) look.minus++;
         if (rc.w === -1) exOpen++;
         if (rh.w === -1) champOpen++;
         if (k === 0) {
@@ -282,6 +288,7 @@ export function tally(s: State, c: string, looks: number) {
         }
       }
     }
+    h1.push(addLook(ex, look.plus, look.minus, look.games));
     const per = SPRT.vsChunk / 2;
     for (let j = k * per; j < (k + 1) * per; j++) {
       for (const swap of [false, true]) {
@@ -296,6 +303,9 @@ export function tally(s: State, c: string, looks: number) {
   return {
     ex,
     vs,
+    llrEx: ex.llr,
+    llrExFirst: llr(ex, EFFECT_EX),
+    h1,
     same: looks >= 1 && firstLook > 0 && identical === firstLook,
     q: ex.games === 0 ? 0 : (ex.plus + ex.minus) / ex.games,
     draws: vs.games === 0 ? 0 : vsDraws / vs.games,
@@ -460,7 +470,7 @@ export function step(s: State, pauseId: string, at: string): string[] {
       if (!has(s, lookItems(s, c.hash, c.looks))) return did;
       c.looks++;
       const t = tally(s, c.hash, c.looks);
-      const d = decide(t.ex, t.vs, t.same);
+      const d = decide(t.ex, t.vs, t.same, t.llrEx);
       if (d.verdict === "continue") continue;
       if (d.verdict === "reject") {
         finish(s, "reject", d.why, at);

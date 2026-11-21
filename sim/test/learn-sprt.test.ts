@@ -2,8 +2,8 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { bounds, decide, EFFECT_EX, EFFECT_VS, type Side, SPRT, zSign } from "../src/ai/learn/sprt.ts";
-import { rng } from "../src/ai/learn/exam-space.ts";
+import { addLook, bounds, decide, EFFECT_EX, EFFECT_VS, H1_MAX, H1_MIN, h1Ex, pathA, type Side, SPRT, zSign } from "../src/ai/learn/sprt.ts";
+import { simulate } from "../src/ai/learn/sprt-check.ts";
 
 const side = (plus: number, minus: number, games = plus + minus): Side => ({ plus, minus, games });
 
@@ -37,45 +37,40 @@ test("SPRT: promotes on one path only when the other is not worse; rejects when 
   assert.equal(decide(side(10, 10, 60), side(10, 10, 40)).verdict, "continue");
 });
 
-/** Candidates through the looks as the training plays them: Q of examiner seeds differ, DRAW of the head-to-head games. */
-function simulate(n: number, effEx: number, effVs: number, seed: number) {
-  const r = rng(seed);
-  const binom = (k: number, p: number) => {
-    let x = 0;
-    for (let i = 0; i < k; i++) if (r() < p) x++;
-    return x;
-  };
-  let promoted = 0;
-  for (let c = 0; c < n; c++) {
-    const ex = side(0, 0, 0);
-    const vs = side(0, 0, 0);
-    for (;;) {
-      if (ex.games < SPRT.exMax) {
-        const differ = binom(SPRT.exChunk * 3, 0.3);
-        const plus = binom(differ, 0.5 + effEx);
-        ex.plus += plus;
-        ex.minus += differ - plus;
-        ex.games += SPRT.exChunk * 3;
-      }
-      if (vs.games < SPRT.vsMax) {
-        const decided = binom(SPRT.vsChunk, 0.98);
-        const plus = binom(decided, 0.5 + effVs);
-        vs.plus += plus;
-        vs.minus += decided - plus;
-        vs.games += SPRT.vsChunk;
-      }
-      const d = decide(ex, vs);
-      if (d.verdict === "promote") promoted++;
-      if (d.verdict !== "continue") break;
-    }
-  }
-  return promoted / n;
-}
+test("SPRT path A: each look's H1 comes from how many seeds differ, never from which side won them", () => {
+  // The same looks with every result turned the other way round: the very same H1, look by look.
+  const looks = [
+    [3, 1, 60],
+    [0, 4, 60],
+    [2, 2, 60],
+    [7, 0, 60],
+    [0, 0, 60],
+  ];
+  const a = pathA();
+  const b = pathA();
+  const ha = looks.map(([p, m, g]) => addLook(a, p, m, g));
+  const hb = looks.map(([p, m, g]) => addLook(b, m, p, g));
+  assert.deepEqual(ha, hb);
+  // Q 0 (no seed differs yet), Q small, Q large: clamped to H1_MAX and H1_MIN; in between 0.5 + effect / (2 Q).
+  assert.equal(h1Ex(0, 0), H1_MAX);
+  assert.equal(h1Ex(0, 60), H1_MAX);
+  assert.equal(h1Ex(1, 60), H1_MAX);
+  assert.equal(h1Ex(60, 60), H1_MIN);
+  assert.equal(H1_MIN, 0.525);
+  assert.ok(Math.abs(h1Ex(18, 60) - (0.5 + 0.05 / 0.6)) < 1e-12);
+  assert.ok(ha.every((h) => h >= 0.5));
+});
 
-test("SPRT: equal candidates are hardly ever promoted; one 5 points better head to head mostly is", () => {
-  // 1e-4 at most (both paths): in 20,000 equal candidates about 2 at most; a few more would still be chance.
-  const equal = simulate(20_000, 0, 0, 7);
-  assert.ok(equal <= 3e-4, `equal promoted ${equal}`);
-  const better = simulate(400, 0, EFFECT_VS, 8);
-  assert.ok(better >= 0.75, `5 points better promoted only ${better}`);
+test("SPRT: with the exam's own code (sprt-check.ts), equal candidates are hardly ever promoted; stronger ones mostly are", () => {
+  // 1e-4 at most for both paths together (the full check: 1,000,000 candidates for each Q, in the PR). Here 20,000.
+  for (const q of [0.056, 0.3]) {
+    const equal = simulate(20_000, q, 0.002, 0, 0, 7);
+    assert.ok(equal.promoted <= 3e-4, `Q ${q}: equal promoted ${equal.promoted}`);
+  }
+  // A candidate playing nearly as hard (Q 5.6%, PR B trial) is rejected in about 14 looks, not the first rule's 49.
+  assert.ok(simulate(5_000, 0.056, 0.002, 0, 0, 8).looks < 20);
+  assert.ok(simulate(2_000, 0.056, 0.002, 0, 0, 8, true).looks > 40);
+  assert.ok(simulate(2_000, 0.056, 0.002, 0, 0.05, 9).promoted >= 0.8);
+  assert.ok(simulate(2_000, 0.056, 0.002, 0.05, 0, 10).promoted >= 0.95);
+  assert.ok(simulate(2_000, 0.3, 0.002, 0.05, 0, 11).promoted >= 0.85);
 });

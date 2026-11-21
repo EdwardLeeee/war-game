@@ -19,6 +19,7 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statS
 import { dirname, join } from "node:path";
 import { checkCanary, type Examiner, init, needed, prune, type Res, resOf, resume, type State, step } from "./auto.ts";
 import { Pool, threads } from "./pool.ts";
+import { SPRT } from "./sprt.ts";
 import { GiveWay } from "./yield.ts";
 
 const [mode] = process.argv.slice(2);
@@ -196,11 +197,13 @@ function report(s: State): string[] {
     "",
     `- ${statusLine(s)}`,
     `- 目前最強版：${s.champion}${s.champion === s.baseline ? "（還是基準）" : ""}；考了 ${s.tested} 個候選，升級 ${promoted.length} 次`,
+    // Each candidate no better than the champion is promoted at most 1e-4 of the time (sprt.ts): over N, at most N x 1e-4.
+    `- 誤升級機率的上限（累計）：考了 ${s.tested} 個，至少誤升級一次最多 ${(Math.min(1, s.tested * 2 * SPRT.alpha) * 100).toFixed(2)}%（每個 1e-4，兩條路合起來）`,
   ];
   const base = Object.entries(s.base);
   if (base.length > 0) lines.push(`- 對基準：${base.map(([h, b]) => `${h} ${pct(b.score * b.games, b.games)}（±${Math.round(b.se * 100)}%）`).join("、")}`);
-  lines.push("", "## 每個候選", "", "| 候選 | 結果 | 原因 | 看了幾次 | 考官 +/- | 對最強版 +/- | Q（考官的局不同的比例） | 平手 |", "|---|---|---|---|---|---|---|---|");
-  for (const d of s.decided) lines.push(`| ${d.id} | ${d.verdict === "promote" ? "升級" : "不升級"} | ${d.why} | ${d.looks} | +${d.ex.plus}/-${d.ex.minus}（${d.ex.games} 局） | +${d.vs.plus}/-${d.vs.minus}（${d.vs.games} 局） | ${pct(d.q * 1000, 1000)} | ${pct(d.draws * 1000, 1000)} |`);
+  lines.push("", "## 每個候選", "", "| 候選 | 結果 | 原因 | Q（考官的局不同的比例） | 看了幾次 | 局數（候選的） | 考官 +/- | 對最強版 +/- | 平手 |", "|---|---|---|---|---|---|---|---|---|");
+  for (const d of s.decided) lines.push(`| ${d.id} | ${d.verdict === "promote" ? "升級" : "不升級"} | ${d.why} | ${(d.q * 100).toFixed(1)}% | ${d.looks} | ${d.ex.games + d.vs.games} | +${d.ex.plus}/-${d.ex.minus}（${d.ex.games} 局） | +${d.vs.plus}/-${d.vs.minus}（${d.vs.games} 局） | ${(d.draws * 100).toFixed(1)}% |`);
   const qs = s.decided.filter((d) => d.ex.games > 0);
   const vsGames = s.decided.reduce((a, d) => a + d.vs.games, 0);
   const vsDraws = s.decided.reduce((a, d) => a + d.draws * d.vs.games, 0);
