@@ -413,52 +413,54 @@ export async function resetAll(page: Page): Promise<void> {
  * it was (繼續 pressed if it was running).
  */
 export async function tapOwnBuilding(page: Page, which: number | { x: number; y: number }, scale?: number): Promise<number> {
+  // Few round trips to the page (each is long on CI's slowest machines: #548's run 44838086316 ran out of time).
+  const quick = { intervals: [50, 100, 250] };
   const paused = () => page.evaluate(() => window.__proto?.game?.header().paused ?? false);
   const was = await paused();
   if (!was) {
     await page.evaluate(() => window.__proto?.game?.pause());
-    await expect.poll(paused).toBe(true);
+    await expect.poll(paused, quick).toBe(true);
   }
-  const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
-  const all = await page.evaluate(() => window.__proto?.game?.buildings() ?? []);
-  const b = typeof which === "number" ? all.find((v) => v.id === which) : all.find((v) => v.owner === me && which.x >= v.cx && which.x < v.cx + v.size && which.y >= v.cy && which.y < v.cy + v.size);
-  if (b === undefined) throw new Error(`no building of ours ${JSON.stringify(which)}`);
-  // Each half cell of it, from its middle out: the first the picker takes as it, where nothing of the interface is over it.
-  // The camera on it; with a panel over the middle of the screen (軍團畫面 on a phone), moved until it shows clear of it.
-  const look = () => page.evaluate(([id, cx, cy, n]) => {
-    const g = window.__proto?.game;
-    const spots: [number, number][] = [];
-    for (let y = 0; y < n * 2; y++) for (let x = 0; x < n * 2; x++) spots.push([cx + (x + 0.5) / 2, cy + (y + 0.5) / 2]);
-    const mid = [cx + n / 2, cy + n / 2];
-    spots.sort((a, c) => Math.hypot(a[0] - mid[0], a[1] - mid[1]) - Math.hypot(c[0] - mid[0], c[1] - mid[1]));
-    const seen: string[] = [];
-    for (const [x, y] of spots) {
-      const s = g?.cellToScreen(x, y);
-      if (s === undefined) continue;
-      const hit = g?.pickIdAt(s.x, s.y);
-      const top = document.elementFromPoint(s.x, s.y);
-      if (hit?.kind === "building" && hit.id === id && top?.tagName === "CANVAS") return { at: s, seen };
-      seen.push(`${x},${y}: ${hit === null || hit === undefined ? "nothing" : `${hit.kind} ${hit.id}`} under ${top === null ? "none" : `${top.tagName.toLowerCase()}.${top.className}`}`);
-    }
-    return { at: null, seen };
-  }, [b.id, b.cx, b.cy, b.size] as const);
-  let found: Awaited<ReturnType<typeof look>> = { at: null, seen: [] };
-  for (const [dx, dy] of [[0, 0], [3, 3], [5, 5], [3, -3], [-3, 3], [-3, -3], [0, 6], [6, 0]] as const) {
-    await page.evaluate(([x, y, s]) => window.__proto?.game?.centerOn(x, y, s ?? undefined), [b.cx + b.size / 2 + dx, b.cy + b.size / 2 + dy, scale ?? null] as const);
-    found = await look();
-    if (found.at !== null) break;
-  }
+  // In one look in the page: the building; the camera on it (with a panel over the middle of the screen, 軍團畫面 on a
+  // phone, moved until it shows clear of it); each half cell of it from its middle out, the first the picker takes as it
+  // where nothing of the interface is over it.
+  const found = await page.evaluate(
+    ([w, s]) => {
+      const g = window.__proto?.game;
+      if (g === undefined) return { id: -1, at: null, seen: ["no game"] };
+      const me = g.me();
+      const b = g.buildings().find((v) => (typeof w === "number" ? v.id === w : v.owner === me && w.x >= v.cx && w.x < v.cx + v.size && w.y >= v.cy && w.y < v.cy + v.size));
+      if (b === undefined) return { id: -1, at: null, seen: [`no building of ours ${JSON.stringify(w)}`] };
+      const n = b.size;
+      const mid = [b.cx + n / 2, b.cy + n / 2];
+      const spots: [number, number][] = [];
+      for (let y = 0; y < n * 2; y++) for (let x = 0; x < n * 2; x++) spots.push([b.cx + (x + 0.5) / 2, b.cy + (y + 0.5) / 2]);
+      spots.sort((a, c) => Math.hypot(a[0] - mid[0], a[1] - mid[1]) - Math.hypot(c[0] - mid[0], c[1] - mid[1]));
+      const seen: string[] = [];
+      for (const [dx, dy] of [[0, 0], [3, 3], [5, 5], [3, -3], [-3, 3], [-3, -3], [0, 6], [6, 0]]) {
+        g.centerOn(mid[0] + dx, mid[1] + dy, s ?? undefined);
+        for (const [x, y] of spots) {
+          const at = g.cellToScreen(x, y);
+          const hit = g.pickIdAt(at.x, at.y);
+          const top = document.elementFromPoint(at.x, at.y);
+          if (hit?.kind === "building" && hit.id === b.id && top?.tagName === "CANVAS") return { id: b.id, at, seen };
+          if (seen.length < 8) seen.push(`${x},${y}: ${hit === null ? "nothing" : `${hit.kind} ${hit.id}`} under ${top === null ? "none" : `${top.tagName.toLowerCase()}.${top.className}`}`);
+        }
+      }
+      return { id: b.id, at: null, seen };
+    },
+    [which, scale ?? null] as const,
+  );
   // None: what each point had (in the test's message).
-  if (found.at === null) throw new Error(`no point of building ${b.id} the tap would take: ${found.seen.slice(0, 8).join("; ")}`);
-  const p = found.at;
+  if (found.at === null) throw new Error(`no point of building ${JSON.stringify(which)} the tap would take: ${found.seen.join("; ")}`);
   const touch = await page.evaluate(() => navigator.maxTouchPoints > 0);
-  if (touch) await tap(page, p);
-  else await page.mouse.click(p.x, p.y);
-  await expect.poll(() => page.evaluate(() => window.__proto?.game?.selection().building ?? null)).toBe(b.id);
+  if (touch) await tap(page, found.at);
+  else await page.mouse.click(found.at.x, found.at.y);
+  await expect.poll(() => page.evaluate(() => window.__proto?.game?.selection().building ?? null), quick).toBe(found.id);
   if (!was) {
     const go = page.getByRole("button", { name: "繼續", exact: true });
     await (touch ? go.tap() : go.click());
-    await expect.poll(paused).toBe(false);
+    await expect.poll(paused, quick).toBe(false);
   }
-  return b.id;
+  return found.id;
 }

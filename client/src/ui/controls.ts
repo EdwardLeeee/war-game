@@ -51,6 +51,8 @@ export class Controls {
     this.pauseBtn.type = "button";
     if (formal) this.pauseBtn.className = "b pri";
     this.pauseBtn.addEventListener("click", () => h.togglePause());
+    // 快捷鍵 (R26 02 B): Space.
+    this.pauseBtn.dataset.hotkey = "pause";
     this.bar.append(this.speedBtn, this.pauseBtn);
     this.banner = document.createElement("div");
     this.banner.className = formal ? "paused-banner panel" : "paused-banner";

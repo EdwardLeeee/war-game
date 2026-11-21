@@ -44,6 +44,7 @@ import { formalUi } from "../formal.ts";
 import { dress, icon, type IconName } from "../icons.ts";
 import { ORDER_TONE } from "../overlays.ts";
 import { ACTION_NAME, BUILDABLE, BUILDING_NAME, buildingName, CALL_WORD, clock, costText, NODE_NAME, resourceLine, TOWN_STATE_NAME, UNIT_NAME } from "./names.ts";
+import { keyOn, placeCellKeys, pressByKey, reachable } from "./keys.ts";
 
 
 /** What the bottom panels ask of the game. */
@@ -534,6 +535,21 @@ export class SelectionInfo {
     const rows = this.frame.querySelector<HTMLElement>(":scope > .sel-pinned");
     if (pinned === null && (foot.parentElement !== this.frame || (rows !== null && foot.nextElementSibling !== rows))) this.frame.insertBefore(foot, rows);
     if (pinned !== null && foot.parentElement !== null) foot.remove();
+  }
+
+  /** Esc's second step (R26 02): ？'s explanation shut, or 軍團畫面 folded; true when one was. */
+  shutOne(): boolean {
+    if (this.help !== null && this.helpOpen && !this.help.hidden) {
+      this.helpOpen = false;
+      this.showPops();
+      return true;
+    }
+    if (this.host.groupView() !== null && !this.host.collapsed() && !this.frame.hidden) {
+      this.host.foldGroup();
+      this.showPops();
+      return true;
+    }
+    return false;
   }
 
   update(): void {
@@ -1631,6 +1647,7 @@ export class CommandArea {
     const key = `${ident}|${this.keyFor(view)}|${this.page}|${this.host.mode()}|${needs}`;
     if (key === this.key) {
       if (this.page === "build" && `${innerWidth}x${innerHeight}` !== this.fitSize) this.fitBuildPage();
+      this.placeKeys();
       return;
     }
     this.key = key;
@@ -1639,8 +1656,47 @@ export class CommandArea {
     this.el.classList.remove("cols5", "build-page");
     this.build(view);
     this.fitBuildPage();
+    this.keysAt = "";
+    this.placeKeys();
     // Which selection these buttons act on (tests wait for it after selecting by hand).
     this.el.dataset.selection = view.selection.units.join(",");
+  }
+
+  /** The screen size the letters were placed at (placeKeys); "" to place them again. */
+  private keysAt = "";
+
+  /**
+   * 快捷鍵 (R26 02 B): each button's letter by the cell it is drawn in (Q W E R the first row…), but for the soldiers'
+   * row and 更多's, which name theirs (soldierRow). Again when the screen's size changes; until drawn, each update.
+   */
+  private placeKeys(): void {
+    const size = `${innerWidth}x${innerHeight}`;
+    if (this.keysAt === size) return;
+    if (placeCellKeys(this.el, (b) => b.dataset.nokey !== undefined)) this.keysAt = size;
+  }
+
+  /**
+   * Key `key` pressed (R26 02 B): its button, as a click would; 更多's row while it is shut too (ceo 2026-11-20: when
+   * the button is one a click could press once it is open, 更多 there to be clicked). False: none pressed.
+   */
+  pressKey(key: string, blocked: () => void): boolean {
+    const b = [...this.el.querySelectorAll<HTMLButtonElement>("button[data-hotkey]")].find((e) => e.dataset.hotkey === key) ?? null;
+    if (b === null || b.disabled) return false;
+    if (this.morePop?.contains(b) === true && !this.moreOpen) return this.moreBtn !== null && pressByKey(b, this.moreBtn, blocked);
+    return reachable(b) && pressByKey(b, b, blocked);
+  }
+
+  /** Esc's second step (R26 02): 更多 shut, or 建造's page back to the first; true when one was. */
+  shutOne(): boolean {
+    if (this.moreOpen && this.morePop !== null) {
+      this.openMore(false);
+      return true;
+    }
+    if (this.page === "build") {
+      this.setPage("main");
+      return true;
+    }
+    return false;
   }
 
   private keyFor(view: GameView): string {
@@ -1817,6 +1873,8 @@ export class CommandArea {
       "red",
     );
     if (advancing) advance.classList.add("active");
+    // 快捷鍵 (R26 02 B): Q W E R, each its own whatever is left out (no 進駐: E does nothing, 更多 stays R).
+    keyOn(advance, "Q", true);
     const retreat = this.look(
       retreating
         ? button(this.el, "取消移動", "停下堅守", () => this.host.cancelToHold(), ORDER_TONE.retreat)
@@ -1825,6 +1883,7 @@ export class CommandArea {
       "blue",
     );
     if (retreating) retreat.classList.add("active");
+    keyOn(retreat, "W", true);
     if (enterOn(view.rules)) {
       const picking = mode === "enter";
       const enter = this.look(
@@ -1832,9 +1891,11 @@ export class CommandArea {
         "enter",
       );
       if (picking) enter.classList.add("active");
+      keyOn(enter, "E", true);
     }
     const holding = mode === "normal" && allIn(view, sel.units, "hold");
     this.moreBtn = this.look(button(this.el, "更多", "隊形等", () => this.openMore(!this.moreOpen), "secondary more-btn"), "more");
+    keyOn(this.moreBtn, "R", true);
     const pop = el("div", this.el, "cmds-more panel");
     this.morePop = pop;
     pop.setAttribute("role", "group");
@@ -1858,6 +1919,7 @@ export class CommandArea {
         "formation",
       );
       f.setAttribute("aria-label", `隊形：${now}，按一下${to}`);
+      keyOn(f, "A", true);
     }
     const hold = this.look(
       button(pop, "堅守", "原地不動", shut(() => {
@@ -1869,8 +1931,9 @@ export class CommandArea {
       "gold",
     );
     if (holding) hold.classList.add("active");
-    if (soldiers.length > 1) this.look(button(pop, "整理隊形", "槍兵在前", shut(() => this.host.reform()), "secondary"), "reform");
-    this.look(button(pop, "停止", "", shut(() => this.host.command({ c: "stop", u: sel.units })), "secondary"), "stop");
+    keyOn(hold, "S", true);
+    if (soldiers.length > 1) keyOn(this.look(button(pop, "整理隊形", "槍兵在前", shut(() => this.host.reform()), "secondary"), "reform"), "D", true);
+    keyOn(this.look(button(pop, "停止", "", shut(() => this.host.command({ c: "stop", u: sel.units })), "secondary"), "stop"), "F", true);
   }
 
   private buildMenu(view: GameView): void {
@@ -1896,7 +1959,8 @@ export class CommandArea {
       );
       b.disabled = missing.length > 0;
     }
-    button(this.el, "返回", "", () => this.setPage("main"), "secondary");
+    // 返回 takes no letter: Esc goes back (R26 02).
+    button(this.el, "返回", "", () => this.setPage("main"), "secondary").dataset.nokey = "";
   }
 
   /** 重設: back to the first page (leaves the 建造 list). */
