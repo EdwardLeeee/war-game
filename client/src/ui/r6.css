@@ -274,6 +274,39 @@
     visibility 0s linear 150ms;
 }
 
+/* 小地圖常開 (R26 04, design/r26/spec.md 04; board R26-04-小地圖常開-desktop): with a mouse on a large window (hud.ts
+   dockMinimap) open from the start, at the bottom left, 176 × 176 (before the zoom) in a gold rim; 地圖 right of it, 閒置
+   over it, the bar, 軍團畫面, ？'s explanation and the selection's panel right of it. Put away, all as they were. */
+:root[data-ui="r6"] #hud.mm-docked {
+  --bar-left: calc(var(--safe-l) + 252px);
+}
+
+:root[data-ui="r6"] #hud.mm-docked .minimap {
+  bottom: calc(var(--safe-b) + 4px);
+  width: 176px;
+  height: 176px;
+  box-shadow:
+    0 0 0 1px #b98d4c,
+    0 0 0 2px rgba(30, 18, 10, 0.9);
+}
+
+:root[data-ui="r6"] #hud.mm-docked .side-left .map-btn {
+  left: calc(var(--safe-l) + 186px);
+}
+
+:root[data-ui="r6"] #hud.mm-docked .side-left .idle-btn {
+  bottom: calc(var(--safe-b) + 188px);
+}
+
+/* 全體回城 8 over 閒置, as it was (閒置 44 high): at 224 the two met (not on the board, which has no 全體回城). */
+:root[data-ui="r6"] #hud.mm-docked .side-left .recall-btn {
+  bottom: calc(var(--safe-b) + 240px);
+}
+
+:root[data-ui="r6"] #hud.mm-docked .sel-info:not(.legion-pop) {
+  left: calc(var(--safe-l) + 252px);
+}
+
 @media (prefers-reduced-motion: reduce) {
   :root[data-ui="r6"] #hud .side-left .recall-btn,
   :root[data-ui="r6"] #hud .side-left .recall-btn:not(.shown),

@@ -163,8 +163,9 @@ test("進駐的標籤在它的建築旁邊；警示箭頭在畫面邊上、不�
       .map(({ e }) => e.getAttribute("aria-label") || e.textContent || "");
   });
   expect(covered, "the arrow over no button").toEqual([]);
-  // The minimap's middle: the camera to the map's middle.
-  await page.getByRole("button", { name: /地圖/ }).first().click();
+  // The minimap's middle: the camera to the map's middle. Open from the start with a mouse on a large window (R26 04).
+  await expect(page.locator("canvas.minimap")).toBeVisible();
+  await page.waitForTimeout(200);
   const mm = await rect(page, "canvas.minimap");
   await page.mouse.click(mm.x + mm.w / 2, mm.y + mm.h / 2);
   const size = await page.evaluate(() => (window.__proto?.game?.init() as { map?: { size?: number } } | null)?.map?.size ?? null);

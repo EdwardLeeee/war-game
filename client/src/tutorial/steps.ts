@@ -129,10 +129,12 @@ export const PHASES: readonly Phase[] = [
     step: 1,
     title: "看地圖",
     // With a mouse (R26 06 B): the view moved by the wheel held, the arrow keys or the window's edge, any of them; the
-    // wheel zooms. 「地圖」 first until the minimap is open from the start on a computer (R26 04, the next PRs).
+    // wheel zooms. 「地圖」 only while the minimap is behind it: open from the start with a mouse on a large window (R26
+    // 04, docked at the bottom left), not said (ceo 2026-11-21); a phone's words as they were.
     body: (c) => {
       if (c.flags.panned && c.flags.pinched) return "點<b>小地圖</b>上任何地方，畫面就跳過去。";
-      return usesMouse() ? "按住滾輪<b>拖動</b>畫面（或用方向鍵），轉滾輪<b>縮放</b>，再按左下的「地圖」、點小地圖<b>跳過去</b>。" : "用一根手指<b>拖動</b>畫面、兩根手指<b>縮放</b>，再按左下的「地圖」、點小地圖<b>跳過去</b>。";
+      const then = c.el(".mm-docked .minimap") !== null ? "再點小地圖<b>跳過去</b>" : "再按左下的「地圖」、點小地圖<b>跳過去</b>";
+      return usesMouse() ? `按住滾輪<b>拖動</b>畫面（或用方向鍵），轉滾輪<b>縮放</b>，${then}。` : `用一根手指<b>拖動</b>畫面、兩根手指<b>縮放</b>，${then}。`;
     },
     list: (c) => [
       [usesMouse() ? "移動畫面" : "拖動畫面", c.flags.panned],
