@@ -50,6 +50,7 @@ import { armyText, buildingName, clock, GAME_OVER_REASON, UNIT_NAME } from "./na
 import { CommandArea, PLUNDERED_TEXT, ResourceBar, SelectionInfo } from "./panels.ts";
 import type { HotKey } from "../../input/hotkeys.ts";
 import { hasMouse, keyOn, paintBadges, pressByKey, reachable } from "./keys.ts";
+import { Tips } from "./tips.ts";
 import { statsModel } from "../stats/model.ts";
 import { StatsPage } from "../stats/page.ts";
 
@@ -153,6 +154,8 @@ export class Hud {
   private recallLook = "";
   private readonly groupBtns: HTMLButtonElement[] = [];
   private readonly retreatAllBtn: HTMLButtonElement;
+  /** 滑鼠說明 (R26 03 A), with a mouse. */
+  private readonly tips: Tips;
   /** When each group's key was last pressed (two within GROUP_KEY_TWICE_MS: the camera to it). */
   private readonly groupKeyAt = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
   /** 「退1」–「退4」 (D-081): beside each group button while that group advances. */
@@ -222,6 +225,9 @@ export class Hud {
       if (this.formal) el("span", b, "n", `${i + 1}`);
       b.type = "button";
       b.setAttribute("aria-label", `編隊 ${i + 1}：點一下選取並打開軍團畫面，點兩下跳過去`);
+      // 滑鼠說明 (R26 03 A): its name and key (no badge: its number is the key).
+      b.dataset.tipName = `編隊 ${i + 1}`;
+      b.dataset.tipKey = `${i + 1}`;
       // 軍團畫面 (D-054): the tap opens it; the long press that saved the selection is gone
       // (改成剛才選的 N 名 in the panel does that). Folded each time, with soldiers to order (the user
       // 2026-10-31: 「我希望選編隊彈出的那個選單默認是是收起的，因為大部分時候我只是要點地板而已」);
@@ -253,6 +259,8 @@ export class Hud {
     if (this.formal) dress(retreatAll, { ic: "retreat", label: "全軍撤退" });
     keyOn(retreatAll, "retreatAll");
     this.retreatAllBtn = retreatAll;
+    this.tips = new Tips(root);
+    this.cleanups.push(() => this.tips.destroy());
 
     const host = {
       view: () => game.view,
@@ -324,7 +332,7 @@ export class Hud {
       beforeGroupCount: () => game.beforeGroupCount(),
       saveBeforeIntoGroup: (i: number) => {
         const n = game.saveBeforeIntoGroup(i);
-        if (n > 0) game.toast(`已存成編隊 ${i + 1}（${n} 個）`);
+        if (n > 0) game.toast(`已存成編隊 ${i + 1}（${n} 名）`);
       },
       collapsed: () => (game.groupView !== null ? this.groupCollapsed : this.collapsed),
       toggleCollapsed: () => {
@@ -463,6 +471,7 @@ export class Hud {
     const mouse = hasMouse();
     paintBadges(this.root, mouse);
     if (!this.root.contains(this.controlsBar)) paintBadges(this.controlsBar, mouse);
+    this.tips.update();
     this.warnPopulationFull();
     // The message strip sits above the selection info, which grows with what is selected
     // (the stance lines, the group panel; D-026, D-054), so that neither covers the other; and
@@ -1022,7 +1031,7 @@ export class Hud {
       return false;
     }
     const n = this.game.saveSelectionIntoGroup(i);
-    if (n > 0) this.game.toast(`已存成編隊 ${i + 1}（${n} 個）`);
+    if (n > 0) this.game.toast(`已存成編隊 ${i + 1}（${n} 名）`);
     return n > 0;
   }
 

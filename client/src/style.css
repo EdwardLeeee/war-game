@@ -1767,3 +1767,53 @@ b.seat-label {
     display: none;
   }
 }
+
+/* 滑鼠說明 (R26 03 A, design/r26/spec.md section 03; tips.ts): over the button, 240 wide, its name and key, its price
+   in gold, a line or two; it takes no pointer. The interface's panel look under 正式介面 (.panel), a plain dark one
+   otherwise. */
+.tip {
+  position: absolute;
+  z-index: 45;
+  width: 240px;
+  box-sizing: border-box;
+  padding: 8px 10px 9px;
+  pointer-events: none;
+  background: rgba(24, 16, 8, 0.94);
+  color: #f3e7cf;
+  border: 1px solid rgba(242, 200, 98, 0.6);
+  border-radius: 6px;
+}
+
+.tip[hidden] {
+  display: none;
+}
+
+.tip .tip-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.tip .tip-key {
+  margin-left: auto;
+  padding: 0 5px;
+  border-radius: 4px;
+  border: 1px solid rgba(242, 200, 98, 0.75);
+  color: #f2c862;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.tip .tip-cost {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #f2c862;
+}
+
+.tip p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+}

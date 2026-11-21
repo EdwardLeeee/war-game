@@ -1421,7 +1421,7 @@ test("軍團畫面：點編隊按鈕就選取並打開；設定每種兵要幾�
   await expect(panel.getByRole("button", { name: "改成剛才選的 3 名" })).toBeVisible();
   await shot(page, info, "group-panel-from-selection");
   await panel.getByRole("button", { name: "改成剛才選的 3 名" }).tap();
-  await expectSaid(page, "已存成編隊 1（3 個）");
+  await expectSaid(page, "已存成編隊 1（3 名）");
   expect((await groupInfo(page))[0]).toMatchObject({ ids: spear.slice(0, 3), want: { 1: 3 }, saved: 3 });
   // The group is selected and still shown; another selection closes the panel.
   await expect.poll(async () => (await selection(page))?.units).toEqual(spear.slice(0, 3));

@@ -45,6 +45,7 @@ import { dress, icon, type IconName } from "../icons.ts";
 import { ORDER_TONE } from "../overlays.ts";
 import { ACTION_NAME, BUILDABLE, BUILDING_NAME, buildingName, CALL_WORD, clock, costText, NODE_NAME, resourceLine, TOWN_STATE_NAME, UNIT_NAME } from "./names.ts";
 import { keyOn, placeCellKeys, pressByKey, reachable } from "./keys.ts";
+import { buildingTip, orderTip, unitTip } from "./tip-text.ts";
 
 
 /** What the bottom panels ask of the game. */
@@ -279,6 +280,14 @@ function button(parent: HTMLElement, label: string, sub: string, onTap: () => vo
   el("span", b, "label", label);
   if (sub !== "") el("span", b, "sub", sub);
   b.addEventListener("click", onTap);
+  return b;
+}
+
+/** 滑鼠說明 (R26 03 A, tips.ts): what button `b`'s tip says under its name and key; its price. */
+function tipOn(b: HTMLElement, lines: readonly string[], cost = ""): HTMLElement {
+  const text = lines.filter((l) => l !== "").join("\n");
+  if (text !== "") b.dataset.tip = text;
+  if (cost !== "") b.dataset.tipCost = cost;
   return b;
 }
 
@@ -1624,6 +1633,11 @@ export class CommandArea {
     this.moreBtn?.setAttribute("aria-expanded", `${open}`);
   }
 
+  /** The orders' lines as ？ says them (正式介面's words, else the prototype's). */
+  private get orderWords(): { advance: string; retreat: string; hold: string } {
+    return this.formal ? FORMAL_ORDER_TEXT : ORDER_TEXT;
+  }
+
   /** 正式介面 (R6-18): the icon over the words and the colour (攻擊 red, 移動 blue, 堅守 gold, 建造 and 訓練 gold); else as it is. */
   private look(b: HTMLButtonElement, ic: IconName | null, tone: "" | "red" | "blue" | "gold" | "pri" = ""): HTMLButtonElement {
     if (!this.formal) return b;
@@ -1751,6 +1765,7 @@ export class CommandArea {
           "red",
         );
         if (advancing) advance.classList.add("active");
+        else tipOn(advance, [orderTip(this.orderWords.advance)]);
       }
       const retreat = this.look(
         retreating
@@ -1760,6 +1775,7 @@ export class CommandArea {
         "blue",
       );
       if (retreating) retreat.classList.add("active");
+      else tipOn(retreat, [orderTip(this.orderWords.retreat)]);
       if (counts !== null) {
         const hold = button(this.el, "堅守", "原地不動", () => {
           this.host.command({ c: "stop", u: soldiers });
@@ -1767,6 +1783,7 @@ export class CommandArea {
           this.host.notify(ORDER_TEXT.hold);
         });
         this.look(hold, "hold", "gold");
+        tipOn(hold, [orderTip(this.orderWords.hold)]);
         if (mode === "normal" && allIn(view, sel.units, "hold")) hold.classList.add("active");
       }
       this.look(button(this.el, "停止", "", () => this.host.command({ c: "stop", u: sel.units }), "secondary"), "stop");
@@ -1776,12 +1793,15 @@ export class CommandArea {
         const loose = formation !== true;
         const now = formation === "mixed" ? "混合" : formation ? "散開" : "密集";
         const to = `${formation === "mixed" ? "全部" : ""}改成${loose ? "散開" : "密集"}`;
-        this.look(
-          button(this.el, `隊形：${now}`, `按一下${to}`, () => {
-            this.host.command({ c: "formation", u: soldiers, loose });
-            this.host.notify(`已${to}。${FORMATION_TEXT[loose ? "loose" : "close"][0]}`);
-          }, "wide"),
-          "formation",
+        tipOn(
+          this.look(
+            button(this.el, `隊形：${now}`, `按一下${to}`, () => {
+              this.host.command({ c: "formation", u: soldiers, loose });
+              this.host.notify(`已${to}。${FORMATION_TEXT[loose ? "loose" : "close"][0]}`);
+            }, "wide"),
+            "formation",
+          ),
+          FORMATION_TEXT[loose ? "loose" : "close"],
         );
       }
       // 整理隊形 (D-095, the user: 「常常跑一跑法師就跑到前排」): the soldiers re-form where they
@@ -1798,6 +1818,7 @@ export class CommandArea {
           "enter",
         );
         if (picking) enter.classList.add("active");
+        else tipOn(enter, [orderTip(FORMAL_ORDER_TEXT.enter)]);
       }
       return;
     }
@@ -1817,6 +1838,7 @@ export class CommandArea {
           const counters = isSoldier(unit) ? counterShort(view.rules, unit, true) : "";
           const train = this.look(button(this.el, `訓練${UNIT_NAME[unit] ?? ""}`, u === undefined ? "" : costText(u.cost), () => this.host.command({ c: "train", building: id, type: unit, n: 1 }), counters === "" ? "" : "wide"), "build", "pri");
           if (counters !== "") el("span", train, "sub counter-sub", counters);
+          tipOn(train, [counters, unitTip(unit)], u === undefined ? "" : costText(u.cost));
         }
         if (info.trains.length > 0) {
           // 正式介面 (R6-18 INV-97): 取消 over 集結點, five words do not fit across 56 pt.
@@ -1873,6 +1895,7 @@ export class CommandArea {
       "red",
     );
     if (advancing) advance.classList.add("active");
+    else tipOn(advance, [orderTip(this.orderWords.advance)]);
     // 快捷鍵 (R26 02 B): Q W E R, each its own whatever is left out (no 進駐: E does nothing, 更多 stays R).
     keyOn(advance, "Q", true);
     const retreat = this.look(
@@ -1883,6 +1906,7 @@ export class CommandArea {
       "blue",
     );
     if (retreating) retreat.classList.add("active");
+    else tipOn(retreat, [orderTip(this.orderWords.retreat)]);
     keyOn(retreat, "W", true);
     if (enterOn(view.rules)) {
       const picking = mode === "enter";
@@ -1891,6 +1915,7 @@ export class CommandArea {
         "enter",
       );
       if (picking) enter.classList.add("active");
+      else tipOn(enter, [orderTip(FORMAL_ORDER_TEXT.enter)]);
       keyOn(enter, "E", true);
     }
     const holding = mode === "normal" && allIn(view, sel.units, "hold");
@@ -1919,6 +1944,7 @@ export class CommandArea {
         "formation",
       );
       f.setAttribute("aria-label", `隊形：${now}，按一下${to}`);
+      tipOn(f, FORMATION_TEXT[loose ? "loose" : "close"]);
       keyOn(f, "A", true);
     }
     const hold = this.look(
@@ -1931,6 +1957,7 @@ export class CommandArea {
       "gold",
     );
     if (holding) hold.classList.add("active");
+    tipOn(hold, [orderTip(this.orderWords.hold)]);
     keyOn(hold, "S", true);
     if (soldiers.length > 1) keyOn(this.look(button(pop, "整理隊形", "槍兵在前", shut(() => this.host.reform()), "secondary"), "reform"), "D", true);
     keyOn(this.look(button(pop, "停止", "", shut(() => this.host.command({ c: "stop", u: sel.units })), "secondary"), "stop"), "F", true);
@@ -1958,6 +1985,7 @@ export class CommandArea {
         "pri",
       );
       b.disabled = missing.length > 0;
+      tipOn(b, [buildingTip(view.rules, type), missing.length > 0 ? `要先蓋${missing.map((t) => BUILDING_NAME[t] ?? "").join("、")}` : ""], costText(info.cost));
     }
     // 返回 takes no letter: Esc goes back (R26 02).
     button(this.el, "返回", "", () => this.setPage("main"), "secondary").dataset.nokey = "";
