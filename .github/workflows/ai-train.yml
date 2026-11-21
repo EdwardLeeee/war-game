@@ -481,7 +481,7 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: train-${{ needs.plan.outputs.mode }}${{ (needs.plan.outputs.mode == 'es' || needs.plan.outputs.mode == 'exam' || needs.plan.outputs.mode == 'examcheck' || needs.plan.outputs.nets != '[]') && format('-{0}', matrix.island) || '' }}
+          name: train-${{ needs.plan.outputs.mode }}${{ (needs.plan.outputs.mode == 'es' || needs.plan.outputs.mode == 'exam' || needs.plan.outputs.mode == 'examcheck' || needs.plan.outputs.mode == 'chaintest' || needs.plan.outputs.nets != '[]') && format('-{0}', matrix.island) || '' }}
           path: out/
           # D-147 (ceo 2026-11-21): kept 90 days.
           retention-days: 90
