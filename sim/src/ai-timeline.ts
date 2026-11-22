@@ -12,6 +12,7 @@ import type { GameMap } from "./core/map.ts";
 import type { RandomMap } from "./core/random-map.ts";
 import { AI_DIFFICULTIES, type AiDifficulty, BuildingType, MAP_MODES, type MapMode, TownSize, UnitType } from "./protocol.ts";
 import { Runner } from "./runner.ts";
+import { refuseExamSeeds } from "./ai/learn/seeds.ts";
 
 function arg(name: string, fallback: string): string {
   const i = process.argv.indexOf(`--${name}`);
@@ -30,6 +31,7 @@ function seedList(text: string): number[] {
 }
 
 const seeds = arg("seeds", "") !== "" ? seedList(arg("seeds", "")) : [Number(arg("seed", "4"))];
+refuseExamSeeds(seeds, "ai-timeline --seed(s)");
 const difficulty = arg("difficulty", "normal") as AiDifficulty;
 if (!(AI_DIFFICULTIES as readonly string[]).includes(difficulty)) throw new Error(`bad --difficulty ${difficulty}`);
 const firstTownMin = Number(arg("first-town-min", "0"));

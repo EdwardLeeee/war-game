@@ -4,51 +4,71 @@
 // the simulation Worker.
 //
 // A candidate is a hard plan (Partial<HardPlan> over HARD, "{}" being hard itself); the champion starts as the
-// baseline, hard as the training's code has it with every new switch off (selftrain-plan 4.4). For each candidate:
+// baseline, hard as the training's code has it with every new switch off (selftrain-plan 4.4).
+//
+// The seeds come in blocks (ceo 2026-11-23; why: sprt.ts condition 1, and sprt-check.ts "kept" for what goes wrong
+// without): a block is opened for one champion, recorded with it (State.blocks), and nothing else plays in it. A new
+// block when a candidate is promoted, and, when the program or settings that make candidates changed (State.source),
+// before the next candidate is taken (the one under exam was made before the change and ends in its block). Playing or
+// counting with a champion that is not its block's throws (blockOf). For each candidate:
 //   exam   looks of SPRT.exChunk games per examiner and SPRT.vsChunk head to head (sprt.ts decide after every look, in
 //          order). Up to AUTO.lookAhead looks are listed at once, so a segment's jobs have work; a decision drops the rest.
 //   final  only for a candidate about to be promoted: the "not worse" checks (FINAL), then promoted or rejected.
-// Once per champion: the champion against itself (A/A, |z| > AUTO.aaZ: the measuring is wrong, pause), and after a
-// promotion the new champion against the baseline (a score AUTO.baseDrop standard errors under the best so far: pause).
+// Once per block: the champion against itself (A/A: on SEEDS.mirrorCount seeds from both spawns, which must be the very
+// same game with the opposite result, else the measuring is wrong: pause; it is no statistical test. SEEDS.aaCount
+// seeds from one spawn give its draws, for the finalist's check). After a promotion, once per champion, the new
+// champion against the baseline (a score AUTO.baseDrop standard errors under the best so far: pause).
 // Pauses too: AUTO.candidatesMax candidates tested, AUTO.roundsWithout rounds in a row with no promotion, the canary
-// games' hashes changed (the rules or the code changed under the training), and the queue run out.
+// games' hashes changed (the rules or the code changed under the training), the blocks run out, and the queue run out.
 
 import { createHash } from "node:crypto";
 import type { HardPlan } from "../ai.ts";
 import type { MapMode } from "../../protocol.ts";
 import type { Plan } from "../scripted-player.ts";
-import { addLook, decide, EFFECT_EX, llr, pathA, type Side, SPRT, zSign } from "./sprt.ts";
+import { blockBase, EXAM_SEEDS } from "./seeds.ts";
+import { addA, addB, decide, noPairs, pairOf, pathA, pathB, type Side, SPRT } from "./sprt.ts";
 import type { Job, JobResult } from "./worker.ts";
 
 export type HP = Partial<HardPlan>;
 
 /**
- * The seeds (ceo 2026-11-21: exam seeds never those of training; reused only across candidates on the same path). None
- * overlap, nor touch CI's (1-100, 2,000,001-, 3,000,001-), the examiner search's and its checks' (5,000,001-8,999,999)
- * or the training data's (PR C: 20,000,001 on).
+ * The seeds (seeds.ts has the ranges). `block`: where each use starts within a champion's block, no seed used for two
+ * things or by two examiners. `fixed`: for the whole training, never changed, as neither can promote.
  */
 export const SEEDS = {
-  /** Examiner games: EX + i is the i-th game of every examiner, for every candidate and the champion alike. */
-  ex: 9_000_001,
+  block: {
+    /** Examiner games: the e-th examiner's i-th game is ex + e * exCount + i, the candidate and the champion alike. */
+    ex: 0,
+    /** Head to head: vs + j, from both spawns. */
+    vs: 6000,
+    /** The finalist against normal, fixed and random maps, from both spawns. */
+    normalFixed: 8000,
+    normalRandom: 8100,
+    /** The champion against itself: every seed from one spawn, the first mirrorCount from both. */
+    aa: 8200,
+  },
+  examiners: 3,
   exCount: SPRT.exMax / 3,
-  /** Head to head: VS + j, from both spawns. */
-  vs: 9_100_001,
   vsCount: SPRT.vsMax / 2,
-  /** The champion against itself (A/A), from both spawns. */
-  aa: 9_150_001,
   aaCount: 100,
-  /** The finalist against normal, fixed and random maps, from both spawns. */
-  normalFixed: 9_200_001,
-  normalRandom: 9_210_001,
+  mirrorCount: 10,
   normalCount: 50,
-  /** A new champion against the baseline, from both spawns. */
-  base: 9_300_001,
+  fixed: {
+    /** The canary: three games whose hashes must not change during a training. */
+    canary: EXAM_SEEDS.fixed,
+    /** A new champion against the baseline, from both spawns (the same seeds for each, to compare them). */
+    base: EXAM_SEEDS.fixed + 1000,
+  },
   baseCount: 200,
-  /** The canary: three games whose hashes must not change during a training. */
-  canary: 9_900_001,
   canaryCount: 3,
-  training: 20_000_001,
 } as const;
+
+/** Each use's first seed in block `n`. */
+function seedsOf(n: number) {
+  const b = blockBase(n);
+  const at = SEEDS.block;
+  return { base: b, ex: (e: number, i: number) => b + at.ex + e * SEEDS.exCount + i, vs: b + at.vs, normalFixed: b + at.normalFixed, normalRandom: b + at.normalRandom, aa: b + at.aa };
+}
 
 /** The finalist's "not worse" checks (selftrain-plan 4.4; ceo 2026-11-21: constants, listed in the PR). */
 export const FINAL = {
@@ -64,10 +84,10 @@ export const FINAL = {
 } as const;
 
 export const AUTO = {
+  /** Looks listed at once, at most; a training's config can set fewer. */
   lookAhead: 12,
   candidatesMax: SPRT.candidatesMax,
   roundsWithout: 10,
-  aaZ: 2,
   baseDrop: 2,
   /** Minutes of a game at most (then a draw: the scripted player's "open"). */
   capMinutes: 90,
@@ -104,7 +124,7 @@ export interface Pause {
   /** P-<run id of the segment that paused>: what AI_TRAIN_RESUME is set to (the dispatcher's pauses are named alike). */
   id: string;
   /** Which check paused it: what resuming resets (resume). */
-  kind: "max" | "rounds" | "aa" | "base" | "canary";
+  kind: "max" | "rounds" | "aa" | "base" | "canary" | "blocks";
   reason: string;
   numbers: string[];
   at: string;
@@ -115,23 +135,53 @@ export interface Decided {
   verdict: "promote" | "reject";
   why: string;
   looks: number;
+  /** The block it was examined in. */
+  block: number;
   ex: Side;
   vs: Side;
-  /** Measured: the share of examiner seeds where candidate and champion differ; draws of the head-to-head games. */
+  /** Measured: the share of examiner games where candidate and champion differ; Qb (sprt.ts); draws head to head. */
   q: number;
+  qb: number;
   draws: number;
   final?: Record<string, number>;
   at: string;
 }
+/** A block of seeds as opened. */
+export interface Block {
+  n: number;
+  /** The champion it was opened for: the only one that may play in it. */
+  champion: string;
+  /** What made the candidates when it was opened (State.source). */
+  source: string;
+  /** The candidates waiting when it was opened: what the bound adds up (listedSum). */
+  listed: number;
+  opened: string;
+  why: string;
+}
+/** A training: its name, its own blocks (exam-blocks.json), what makes its candidates (a hash), its look-ahead. */
+export interface Training {
+  name: string;
+  first: number;
+  last: number;
+  source: string;
+  lookAhead?: number;
+}
+export const STATE_VERSION = 2;
 export interface State {
-  version: 1;
+  version: typeof STATE_VERSION;
+  training: { name: string; first: number; last: number };
+  /** The hash of the program and settings that make candidates, as they are now (setSource). */
+  source: string;
+  lookAhead: number;
+  /** Every block opened, the last the one playing. */
+  blocks: Block[];
   examiners: Examiner[];
   /** Every plan by its hash. */
   plans: Record<string, HP>;
   baseline: string;
   champion: string;
   queue: Candidate[];
-  current: { id: string; hash: string; round: number; stage: "exam" | "final"; looks: number } | null;
+  current: { id: string; hash: string; round: number; stage: "exam" | "final"; looks: number; block: number } | null;
   results: Record<string, Res>;
   tested: number;
   /** `tested` when a "max" pause was last resumed: AUTO.candidatesMax counts from there. */
@@ -139,7 +189,8 @@ export interface State {
   lastRound: number;
   promotedInRound: boolean;
   roundsWithout: number;
-  aa: Record<string, { plus: number; minus: number; draws: number; games: number; z: number }>;
+  /** By block: the mirrored pairs that were not the same game, and the draws of the games from one spawn. */
+  aa: Record<string, { pairs: number; differ: number; draws: number; games: number }>;
   base: Record<string, { score: number; se: number; games: number }>;
   canary: { hashes: string[]; tree: string; commit: string } | null;
   paused: Pause | null;
@@ -155,10 +206,21 @@ export function planHash(p: HP): string {
   return createHash("sha256").update(JSON.stringify(sorted(p))).digest("hex").slice(0, 12);
 }
 
-export function init(examiners: Examiner[], candidates: Candidate[], baseline: HP = {}, at = ""): State {
+export function init(examiners: Examiner[], candidates: Candidate[], training: Training, baseline: HP = {}, at = ""): State {
+  const { name, first, last, source } = training;
+  if (examiners.length !== SEEDS.examiners) throw new Error(`${examiners.length} examiners: a block has seeds for ${SEEDS.examiners}`);
+  blockBase(first);
+  blockBase(last);
+  if (last < first) throw new Error(`${name}: blocks ${first}-${last}`);
+  const lookAhead = training.lookAhead ?? AUTO.lookAhead;
+  if (!Number.isInteger(lookAhead) || lookAhead < 1 || lookAhead > AUTO.lookAhead) throw new Error(`${name}: lookAhead ${lookAhead}: 1-${AUTO.lookAhead}`);
   const b = planHash(baseline);
   const s: State = {
-    version: 1,
+    version: STATE_VERSION,
+    training: { name, first, last },
+    source,
+    lookAhead,
+    blocks: [{ n: first, champion: b, source, listed: candidates.length, opened: at, why: "開始" }],
     examiners,
     plans: { [b]: baseline },
     baseline: b,
@@ -177,10 +239,53 @@ export function init(examiners: Examiner[], candidates: Candidate[], baseline: H
     paused: null,
     done: false,
     decided: [],
-    log: [{ at, what: `開始：基準 ${b}，${candidates.length} 個候選，考官 ${examiners.map((e) => e.id).join("、")}` }],
+    log: [{ at, what: `開始 ${name}：基準 ${b}，${candidates.length} 個候選，考官 ${examiners.map((e) => e.id).join("、")}，種子第 ${first} 批（這次訓練有 ${first}-${last}）` }],
   };
   for (const c of candidates) s.plans[planHash(c.plan)] = c.plan;
   return s;
+}
+
+/** Throws on a state of another version (an older one's seeds and rule are not this one's). */
+export function checkState(s: State): void {
+  if (s.version !== STATE_VERSION) throw new Error(`exam state version ${s.version}: this program plays version ${STATE_VERSION}; start a training of a new name with blocks of its own (exam-blocks.json)`);
+}
+
+/**
+ * The block playing, checked (sprt.ts condition 1): opened for the champion there is now, after every one before it,
+ * and the candidate under exam began in it. Anything else throws: no game is listed or counted on another's seeds.
+ */
+export function blockOf(s: State): Block {
+  checkState(s);
+  const b = s.blocks.at(-1);
+  if (b === undefined) throw new Error("exam: no block of seeds is open");
+  if (b.champion !== s.champion) throw new Error(`exam: block ${b.n} was opened for champion ${b.champion}, not ${s.champion}: a new champion plays on new seeds (sprt.ts, condition 1)`);
+  if (s.blocks.slice(0, -1).some((x) => x.n >= b.n) || b.n < s.training.first || b.n > s.training.last) throw new Error(`exam: block ${b.n} is not a new one of ${s.training.name}'s ${s.training.first}-${s.training.last}`);
+  if (s.current !== null && s.current.block !== b.n) throw new Error(`exam: ${s.current.id} began in block ${s.current.block}, block ${b.n} is open`);
+  return b;
+}
+
+/** The candidates listed at each block's start, added up: a training promotes one no better at most this x 2 alpha. */
+export function listedSum(s: State): number {
+  return s.blocks.reduce((a, b) => a + b.listed, 0);
+}
+
+/** Opens the next block for the champion; pauses when the training has none left. */
+function openBlock(s: State, why: string, pauseId: string, at: string): void {
+  const n = Math.max(...s.blocks.map((b) => b.n)) + 1;
+  if (n > s.training.last) {
+    pause(s, pauseId, "blocks", `考試種子用完了（${s.training.name} 只有第 ${s.training.first}-${s.training.last} 批）：要用新的名字開一次訓練`, [], at);
+    return;
+  }
+  s.blocks.push({ n, champion: s.champion, source: s.source, listed: s.queue.length, opened: at, why });
+  s.log.push({ at, what: `換考試種子：第 ${n} 批（${why}；最強版 ${s.champion}，名單 ${s.queue.length} 個）` });
+}
+
+/** Notes what makes the candidates now; if it changed, the next candidate taken starts a new block (step). */
+export function setSource(s: State, source: string, at: string): void {
+  checkState(s);
+  if (s.source === source) return;
+  s.source = source;
+  s.log.push({ at, what: `產生候選的程式或設定改了（${source}）：下一個候選換一批考試種子` });
 }
 
 const exKey = (plan: string, e: string, seed: number) => `ex|${plan}|${e}|${seed}`;
@@ -197,44 +302,51 @@ const both = (n: number, from: number, f: (seed: number, swap: boolean) => Item)
 
 /** The games of look `k` of candidate `c` (its own and the champion's examiner games, and head to head). */
 export function lookItems(s: State, c: string, k: number): Item[] {
+  const at = seedsOf(blockOf(s).n);
   const items: Item[] = [];
-  for (const e of s.examiners) {
-    for (let i = k * SPRT.exChunk; i < (k + 1) * SPRT.exChunk; i++) {
-      items.push(exItem(s, c, e, SEEDS.ex + i), exItem(s, s.champion, e, SEEDS.ex + i));
-    }
-  }
+  s.examiners.forEach((e, j) => {
+    for (let i = k * SPRT.exChunk; i < (k + 1) * SPRT.exChunk; i++) items.push(exItem(s, c, e, at.ex(j, i)), exItem(s, s.champion, e, at.ex(j, i)));
+  });
   const per = SPRT.vsChunk / 2;
-  items.push(...both(per, SEEDS.vs + k * per, (seed, swap) => playItem(s, "vs", c, s.champion, seed, swap, "random")));
+  items.push(...both(per, at.vs + k * per, (seed, swap) => playItem(s, "vs", c, s.champion, seed, swap, "random")));
   return items;
 }
 export function finalItems(s: State, c: string): Item[] {
+  const at = seedsOf(blockOf(s).n);
   const items: Item[] = [];
   for (const p of [c, s.champion]) {
-    items.push(...both(SEEDS.normalCount, SEEDS.normalFixed, (seed, swap) => playItem(s, "nf", p, "normal", seed, swap, "fixed")));
-    items.push(...both(SEEDS.normalCount, SEEDS.normalRandom, (seed, swap) => playItem(s, "nr", p, "normal", seed, swap, "random")));
+    items.push(...both(SEEDS.normalCount, at.normalFixed, (seed, swap) => playItem(s, "nf", p, "normal", seed, swap, "fixed")));
+    items.push(...both(SEEDS.normalCount, at.normalRandom, (seed, swap) => playItem(s, "nr", p, "normal", seed, swap, "random")));
   }
   return items;
 }
-const aaItems = (s: State, h: string) => both(SEEDS.aaCount, SEEDS.aa, (seed, swap) => playItem(s, "aa", h, h, seed, swap, "random"));
-const baseItems = (s: State, h: string) => both(SEEDS.baseCount, SEEDS.base, (seed, swap) => playItem(s, "bl", h, s.baseline, seed, swap, "random"));
+/** The champion against itself: the mirrored pairs first, then the other seeds from one spawn. */
+export function aaItems(s: State): Item[] {
+  const from = seedsOf(blockOf(s).n).aa;
+  const item = (seed: number, swap: boolean) => playItem(s, "aa", s.champion, s.champion, seed, swap, "random");
+  return [...both(SEEDS.mirrorCount, from, item), ...Array.from({ length: SEEDS.aaCount - SEEDS.mirrorCount }, (_, j) => item(from + SEEDS.mirrorCount + j, false))];
+}
+export const baseItems = (s: State, h: string) => both(SEEDS.baseCount, SEEDS.fixed.base, (seed, swap) => playItem(s, "bl", h, s.baseline, seed, swap, "random"));
 /** The canary: the baseline against the first examiner, against itself and against normal; replayed every segment. */
 export function canaryItems(s: State): Item[] {
   return [
-    { ...exItem(s, s.baseline, s.examiners[0], SEEDS.canary), key: "canary|0" },
-    { ...playItem(s, "cn", s.baseline, s.baseline, SEEDS.canary + 1, false, "random"), key: "canary|1" },
-    { ...playItem(s, "cn", s.baseline, "normal", SEEDS.canary + 2, false, "fixed"), key: "canary|2" },
+    { ...exItem(s, s.baseline, s.examiners[0], SEEDS.fixed.canary), key: "canary|0" },
+    { ...playItem(s, "cn", s.baseline, s.baseline, SEEDS.fixed.canary + 1, false, "random"), key: "canary|1" },
+    { ...playItem(s, "cn", s.baseline, "normal", SEEDS.fixed.canary + 2, false, "fixed"), key: "canary|2" },
   ];
 }
 
-/** The games still to play, in order: the canary (always), the champion's A/A and base games, the candidate's. */
+/** The games still to play, in order: the canary (always), the block's A/A, the champion's base games, the candidate's. */
 export function needed(s: State): Item[] {
+  checkState(s);
   if (s.paused !== null || s.done) return [];
+  const block = blockOf(s);
   const items = [...canaryItems(s)];
-  if (s.aa[s.champion] === undefined) items.push(...aaItems(s, s.champion));
+  if (s.aa[block.n] === undefined) items.push(...aaItems(s));
   if (s.champion !== s.baseline && s.base[s.champion] === undefined) items.push(...baseItems(s, s.champion));
   const c = s.current;
   if (c !== null) {
-    if (c.stage === "exam") for (let k = c.looks; k < Math.min(c.looks + AUTO.lookAhead, MAX_LOOKS); k++) items.push(...lookItems(s, c.hash, k));
+    if (c.stage === "exam") for (let k = c.looks; k < Math.min(c.looks + s.lookAhead, MAX_LOOKS); k++) items.push(...lookItems(s, c.hash, k));
     else items.push(...finalItems(s, c.hash));
   }
   // The canary always; the rest once each, and only those not played yet.
@@ -257,29 +369,29 @@ export function resOf(r: JobResult): Res {
 const has = (s: State, items: Item[]) => items.every((x) => s.results[x.key] !== undefined);
 
 /**
- * Both paths over the first `looks` looks of candidate `c`, in order; `same`: no examiner game of the first look differs
- * at all. `llrEx`: path A's ratio with each look's own H1 (sprt.ts addLook, the rule in use); `llrExFirst`: the first
- * rule's (H1 from Q assumed), for comparing; `h1`: each look's H1.
+ * Both paths over the first `looks` looks of candidate `c`, in order, as sprt.ts adds them; `same`: no examiner game of
+ * the first look differs at all. `lambdas`: each look's two.
  */
 export function tally(s: State, c: string, looks: number) {
+  const at = seedsOf(blockOf(s).n);
   const ex = pathA();
-  const h1: number[] = [];
-  const vs: Side = { plus: 0, minus: 0, games: 0 };
+  const vs = pathB();
+  const lambdas: [number, number][] = [];
   let identical = 0;
   let firstLook = 0;
   let exOpen = 0;
   let champOpen = 0;
   let vsDraws = 0;
   for (let k = 0; k < looks; k++) {
-    const look = { plus: 0, minus: 0, games: 0 };
-    for (const e of s.examiners) {
+    const sides = s.examiners.map((e, j) => {
+      const side: Side = { plus: 0, minus: 0, games: 0 };
       for (let i = k * SPRT.exChunk; i < (k + 1) * SPRT.exChunk; i++) {
-        const rc = s.results[exKey(c, e.id, SEEDS.ex + i)];
-        const rh = s.results[exKey(s.champion, e.id, SEEDS.ex + i)];
-        look.games++;
+        const rc = s.results[exKey(c, e.id, at.ex(j, i))];
+        const rh = s.results[exKey(s.champion, e.id, at.ex(j, i))];
+        side.games++;
         // + when only the champion lost to the player (the examiner won), - when only the candidate did.
-        if (rh.w === 1 && rc.w !== 1) look.plus++;
-        else if (rc.w === 1 && rh.w !== 1) look.minus++;
+        if (rh.w === 1 && rc.w !== 1) side.plus++;
+        else if (rc.w === 1 && rh.w !== 1) side.minus++;
         if (rc.w === -1) exOpen++;
         if (rh.w === -1) champOpen++;
         if (k === 0) {
@@ -287,27 +399,24 @@ export function tally(s: State, c: string, looks: number) {
           if (rc.h === rh.h) identical++;
         }
       }
-    }
-    h1.push(addLook(ex, look.plus, look.minus, look.games));
+      return side;
+    });
+    const pairs = noPairs();
     const per = SPRT.vsChunk / 2;
     for (let j = k * per; j < (k + 1) * per; j++) {
-      for (const swap of [false, true]) {
-        const r = s.results[playKey("vs", c, s.champion, SEEDS.vs + j, swap)];
-        vs.games++;
-        if (r.w === 1) vs.plus++;
-        else if (r.w === 0) vs.minus++;
-        else vsDraws++;
-      }
+      const [w0, w1] = [false, true].map((swap) => s.results[playKey("vs", c, s.champion, at.vs + j, swap)].w);
+      pairs[pairOf(w0, w1)]++;
+      for (const w of [w0, w1]) if (w === -1) vsDraws++;
     }
+    lambdas.push([addA(ex, sides), addB(vs, pairs)]);
   }
   return {
     ex,
     vs,
-    llrEx: ex.llr,
-    llrExFirst: llr(ex, EFFECT_EX),
-    h1,
+    lambdas,
     same: looks >= 1 && firstLook > 0 && identical === firstLook,
     q: ex.games === 0 ? 0 : (ex.plus + ex.minus) / ex.games,
+    qb: vs.seeds === 0 ? 0 : vs.squares / (4 * vs.seeds),
     draws: vs.games === 0 ? 0 : vsDraws / vs.games,
     exOpenMore: ex.games === 0 ? 0 : (exOpen - champOpen) / ex.games,
   };
@@ -315,13 +424,15 @@ export function tally(s: State, c: string, looks: number) {
 
 /** The finalist's checks: its numbers, and what failed (empty: passed). */
 export function finalCheck(s: State, c: string): { numbers: Record<string, number>; failed: string[] } {
-  const games = (kind: string, p: string) => [false, true].flatMap((swap) => Array.from({ length: SEEDS.normalCount }, (_, i) => s.results[playKey(kind, p, "normal", (kind === "nf" ? SEEDS.normalFixed : SEEDS.normalRandom) + i, swap)]));
+  const block = blockOf(s);
+  const at = seedsOf(block.n);
+  const games = (kind: string, p: string) => [false, true].flatMap((swap) => Array.from({ length: SEEDS.normalCount }, (_, i) => s.results[playKey(kind, p, "normal", (kind === "nf" ? at.normalFixed : at.normalRandom) + i, swap)]));
   const share = (rs: Res[], f: (r: Res) => boolean) => rs.filter(f).length / rs.length;
   const mine = [...games("nf", c), ...games("nr", c)];
   const theirs = [...games("nf", s.champion), ...games("nr", s.champion)];
   const perThink = (rs: Res[]) => rs.reduce((a, r) => a + (r.ms ?? 0), 0) / Math.max(1, rs.reduce((a, r) => a + (r.thinks ?? 0), 0));
   const t = tally(s, c, s.current?.looks ?? 0);
-  const aa = s.aa[s.champion];
+  const aa = s.aa[block.n];
   const numbers = {
     normalFixed: share(games("nf", c), (r) => r.w === 1),
     normalRandom: share(games("nr", c), (r) => r.w === 1),
@@ -348,38 +459,49 @@ function pause(s: State, id: string, kind: Pause["kind"], reason: string, number
   s.log.push({ at, what: `暫停 ${id}：${reason}` });
 }
 
-function finish(s: State, verdict: "promote" | "reject", why: string, at: string, final?: Record<string, number>) {
+function finish(s: State, verdict: "promote" | "reject", why: string, pauseId: string, at: string, final?: Record<string, number>) {
   const c = s.current!;
   const t = tally(s, c.hash, c.looks);
-  s.decided.push({ id: c.id, hash: c.hash, verdict, why, looks: c.looks, ex: t.ex, vs: t.vs, q: t.q, draws: t.draws, final, at });
+  const side = ({ plus, minus, games }: Side): Side => ({ plus, minus, games });
+  s.decided.push({ id: c.id, hash: c.hash, verdict, why, looks: c.looks, block: c.block, ex: side(t.ex), vs: side(t.vs), q: t.q, qb: t.qb, draws: t.draws, final, at });
   s.tested++;
-  s.log.push({ at, what: `${verdict === "promote" ? "升級" : "不升級"} ${c.id}（${c.hash}）：${why}；${c.looks} 次、考官 +${t.ex.plus}/-${t.ex.minus}、對最強版 +${t.vs.plus}/-${t.vs.minus}` });
+  s.log.push({ at, what: `${verdict === "promote" ? "升級" : "不升級"} ${c.id}（${c.hash}）：${why}；第 ${c.block} 批、${c.looks} 次、考官 +${t.ex.plus}/-${t.ex.minus}、對最強版 +${t.vs.plus}/-${t.vs.minus}` });
+  s.current = null;
   if (verdict === "promote") {
     s.champion = c.hash;
     s.promotedInRound = true;
+    openBlock(s, `${c.id} 升級`, pauseId, at);
   }
-  s.current = null;
   prune(s);
 }
 
 /**
  * Drops the results no longer needed, so the state stays small (6,000 examiner games of every candidate tested would
- * not): only the games played by the champion are kept (its examiner and normal games are the next candidates'
- * comparison; its A/A and base games until measured). What was decided is kept in `decided`, `aa` and `base`.
+ * not): kept are the champion's and the current candidate's games on the open block's seeds (the champion's examiner
+ * and normal games are the next candidates' comparison) and the champion's against the baseline until measured.
+ * Nothing of a block closed is kept. What was decided is in `decided`, `aa` and `base`.
  */
 export function prune(s: State): void {
+  const b = s.blocks.at(-1);
+  if (b === undefined) return;
+  const from = blockBase(b.n);
   const keep = new Set([s.champion, s.current?.hash]);
-  for (const k of Object.keys(s.results)) if (!keep.has(k.split("|")[1])) delete s.results[k];
+  for (const k of Object.keys(s.results)) {
+    const [kind, me, , seedText] = k.split("|");
+    const seed = Number(seedText);
+    const here = kind === "bl" ? s.base[me] === undefined : seed >= from && seed < from + EXAM_SEEDS.blockSize;
+    if (!here || !keep.has(me)) delete s.results[k];
+  }
 }
 
 /**
  * Lifts the pause named `id` (AI_TRAIN_RESUME: the user said go on, the ceo told war-game-ai), resetting what made it,
  * so it does not pause again at once: the candidates' count, the rounds without a promotion, the canary (its new hashes
- * are kept: the training goes on with the code as it is now). A/A and base pauses are measured once a champion. Returns
- * whether it lifted one.
+ * are kept: the training goes on with the code as it is now). A/A and base pauses are measured once a block and once a
+ * champion. A training out of blocks cannot be resumed: it would play on a used one. Returns whether it lifted one.
  */
 export function resume(s: State, id: string, at: string): boolean {
-  if (s.paused === null || s.paused.id !== id) return false;
+  if (s.paused === null || s.paused.id !== id || s.paused.kind === "blocks") return false;
   const p = s.paused;
   if (p.kind === "max") s.testedAtResume = s.tested;
   if (p.kind === "rounds") s.roundsWithout = 0;
@@ -395,24 +517,27 @@ export function resume(s: State, id: string, at: string): boolean {
  */
 export function step(s: State, pauseId: string, at: string): string[] {
   const did: string[] = [];
+  checkState(s);
   for (let guard = 0; guard < 10_000; guard++) {
     if (s.paused !== null || s.done) return did;
+    const block = blockOf(s);
     const ch = s.champion;
     // The champion against itself.
-    const aa = aaItems(s, ch);
-    if (s.aa[ch] === undefined && has(s, aa)) {
-      const side = { plus: 0, minus: 0, draws: 0, games: aa.length, z: 0 };
-      for (const x of aa) {
-        const w = s.results[x.key].w;
-        if (w === 1) side.plus++;
-        else if (w === 0) side.minus++;
-        else side.draws++;
+    const aa = aaItems(s);
+    if (s.aa[block.n] === undefined && has(s, aa)) {
+      const m = { pairs: SEEDS.mirrorCount, differ: 0, draws: 0, games: SEEDS.aaCount };
+      for (let i = 0; i < SEEDS.mirrorCount * 2; i += 2) {
+        const a = s.results[aa[i].key];
+        const b = s.results[aa[i + 1].key];
+        // The same game seen from the other side: the same hash, and one won and one lost, or neither won in both.
+        const opposite = (a.w === 1 && b.w === 0) || (a.w === 0 && b.w === 1) || (a.w === -1 && b.w === -1);
+        if (a.h !== b.h || !opposite) m.differ++;
       }
-      side.z = zSign({ plus: side.plus, minus: side.minus, games: side.games });
-      s.aa[ch] = side;
-      did.push(`自己打自己（${ch}）：+${side.plus}/-${side.minus}、平手 ${side.draws}，z ${side.z.toFixed(2)}`);
-      if (Math.abs(side.z) > AUTO.aaZ) {
-        pause(s, pauseId, "aa", `自己打自己的對照偏了（z ${side.z.toFixed(2)}，超過 ${AUTO.aaZ}）：量法可能有問題`, [`+${side.plus}`, `-${side.minus}`, `平手 ${side.draws}`], at);
+      for (const x of aa) if (!x.key.endsWith("|1") && s.results[x.key].w === -1) m.draws++;
+      s.aa[block.n] = m;
+      did.push(`自己打自己（${ch}，第 ${block.n} 批）：${m.pairs - m.differ}/${m.pairs} 對是同一局、結果相反；平手 ${m.draws}/${m.games}`);
+      if (m.differ > 0) {
+        pause(s, pauseId, "aa", `自己打自己換邊不是同一局（${m.differ}/${m.pairs} 對）：換邊、決定性或量法壞了`, [`不符 ${m.differ}/${m.pairs} 對`], at);
         continue;
       }
     }
@@ -438,7 +563,12 @@ export function step(s: State, pauseId: string, at: string): string[] {
       }
       if (s.queue.length === 0) {
         // The last champion's own checks (A/A, against the baseline) first: they can still pause.
-        if (s.aa[ch] === undefined || (ch !== s.baseline && s.base[ch] === undefined)) return did;
+        if (s.aa[block.n] === undefined || (ch !== s.baseline && s.base[ch] === undefined)) return did;
+      }
+      if (s.queue.length > 0 && block.source !== s.source) {
+        openBlock(s, "產生候選的程式或設定改了", pauseId, at);
+        prune(s);
+        continue;
       }
       const c = s.queue.shift();
       if (c === undefined) {
@@ -457,10 +587,10 @@ export function step(s: State, pauseId: string, at: string): string[] {
           continue;
         }
       }
-      s.current = { id: c.id, hash: planHash(c.plan), round: c.round, stage: "exam", looks: 0 };
+      s.current = { id: c.id, hash: planHash(c.plan), round: c.round, stage: "exam", looks: 0, block: block.n };
       did.push(`開始考 ${c.id}（${s.current.hash}）`);
       if (s.current.hash === ch) {
-        finish(s, "reject", "和目前最強版一模一樣", at);
+        finish(s, "reject", "和目前最強版一模一樣", pauseId, at);
         did.push(`${c.id}：和目前最強版一模一樣，不考`);
       }
       continue;
@@ -470,10 +600,10 @@ export function step(s: State, pauseId: string, at: string): string[] {
       if (!has(s, lookItems(s, c.hash, c.looks))) return did;
       c.looks++;
       const t = tally(s, c.hash, c.looks);
-      const d = decide(t.ex, t.vs, t.same, t.llrEx);
+      const d = decide(t.ex, t.vs, t.same);
       if (d.verdict === "continue") continue;
       if (d.verdict === "reject") {
-        finish(s, "reject", d.why, at);
+        finish(s, "reject", d.why, pauseId, at);
         did.push(`${c.id}：不升級（${d.why}），第 ${c.looks} 次`);
         continue;
       }
@@ -483,13 +613,13 @@ export function step(s: State, pauseId: string, at: string): string[] {
       continue;
     }
     // final: needs the champion's A/A too (its draws).
-    if (!has(s, finalItems(s, c.hash)) || s.aa[ch] === undefined) return did;
+    if (!has(s, finalItems(s, c.hash)) || s.aa[block.n] === undefined) return did;
     const f = finalCheck(s, c.hash);
     if (f.failed.length === 0) {
-      finish(s, "promote", "過了考試和上線前檢查", at, f.numbers);
+      finish(s, "promote", "過了考試和上線前檢查", pauseId, at, f.numbers);
       did.push(`${c.id}：升級`);
     } else {
-      finish(s, "reject", `上線前檢查沒過：${f.failed.join("；")}`, at, f.numbers);
+      finish(s, "reject", `上線前檢查沒過：${f.failed.join("；")}`, pauseId, at, f.numbers);
       did.push(`${c.id}：不升級（${f.failed.join("；")}）`);
     }
   }

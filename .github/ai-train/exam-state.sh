@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # D-147 PR B: puts the exam state in OUT/state.json for ai-train.yml's auto mode: the latest trusted one (state.py), or,
-# when there is none yet, one started from CONFIG. Sets the step output `name` (the state's artifact). Run from sim/.
+# when there is none yet, one started from CONFIG. Sets the step outputs `name` (the state's artifact) and
+# `config` (CONFIG: work and merge hash what makes the candidates from it). Run from sim/.
 # GitHub not answering fails the step (state.py exits 1): the training never starts again from nothing for that.
 #   .github/ai-train/exam-state.sh CONFIG OUT
 set -euo pipefail
@@ -19,3 +20,4 @@ else
   echo "- 考試狀態：還沒有，從設定 $config 開始（$name）" >> "$GITHUB_STEP_SUMMARY"
 fi
 echo "name=$name" >> "$GITHUB_OUTPUT"
+echo "config=$config" >> "$GITHUB_OUTPUT"

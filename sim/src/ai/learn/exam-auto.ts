@@ -1,23 +1,30 @@
 // D-147 step 4 (PR B): the automatic exam's commands, as .github/workflows/ai-train.yml's auto mode runs them; auto.ts
 // decides, this plays and keeps. Never imported by the simulation Worker; never commits.
 //   node src/ai/learn/exam-auto.ts init  --config FILE --out STATE
-//       A state from a config: { "name": "...", "baseline": {...}, "candidates": [{ "id", "plan", "round" }] } (plans:
-//       Partial<HardPlan>), the examiners of examiners.json (next to this file).
-//   node src/ai/learn/exam-auto.ts work  --state STATE --island K --islands N --hours H --out DIR [--resume ID]
+//       A state from a config: { "name": "...", "baseline": {...}, "candidates": [{ "id", "plan", "round" }],
+//       "lookAhead"?: 1-12, "generator"?: [files under sim/ of the program that makes the candidates] } (plans:
+//       Partial<HardPlan>), the examiners of examiners.json (next to this file). The training's name must be in
+//       exam-blocks.json with blocks of its own and the hash of what makes its candidates (the config without its note,
+//       and the generator's files): a state that was lost is never started again on seeds already seen with other
+//       candidates.
+//   node src/ai/learn/exam-auto.ts source --config FILE      that hash
+//   node src/ai/learn/exam-auto.ts work  --state STATE --config FILE --island K --islands N --hours H --out DIR [--resume ID]
 //       Plays this job's share of the games the state still needs (every N-th from the K-th; the canary on job 0 only),
 //       until H hours or it gives way (D-123, yield.ts); writes DIR/results.json as it goes. --resume (AI_TRAIN_RESUME)
 //       lifts that pause first, as the merge will (else the first segment after a resume would play nothing).
-//   node src/ai/learn/exam-auto.ts merge --state STATE --results DIR[,DIR] --out STATE --pause-id P-<run id>
+//   node src/ai/learn/exam-auto.ts merge --state STATE --config FILE --results DIR[,DIR] --out STATE --pause-id P-<run id>
 //                                        [--tree T --commit C] [--resume ID]
 //       The only writer of the state: adds the jobs' results, checks the canary, lifts the pause named by --resume
 //       (AI_TRAIN_RESUME), moves the state on (auto.ts step) and writes it. Paused, it sets the step output paused=true.
+//       Both work and merge: the config's hash changed, the next candidate starts a new block of seeds.
 //   node src/ai/learn/exam-auto.ts status --state STATE      one line: running, paused (id and why) or done
 //   node src/ai/learn/exam-auto.ts report --state STATE      the weekly report (Markdown)
 // Every mode but status writes summary.md under --out's folder (merge: next to the new state).
 
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { checkCanary, type Examiner, init, needed, prune, type Res, resOf, resume, type State, step } from "./auto.ts";
+import { createHash } from "node:crypto";
+import { checkCanary, checkState, type Examiner, init, listedSum, needed, prune, type Res, resOf, resume, setSource, type State, step, type Training } from "./auto.ts";
 import { Pool, threads } from "./pool.ts";
 import { SPRT } from "./sprt.ts";
 import { GiveWay } from "./yield.ts";
@@ -54,10 +61,37 @@ function examiners(): Examiner[] {
   return (readJson<{ examiners: Examiner[] }>(f.pathname).examiners).map((e) => ({ id: e.id, plan: e.plan, map: e.map }));
 }
 
+interface Config {
+  name: string;
+  note?: string;
+  baseline?: State["plans"][string];
+  candidates: State["queue"];
+  lookAhead?: number;
+  generator?: string[];
+}
+function readConfig(): { config: Config; source: string } {
+  const file = arg("config", "");
+  if (file === "") throw new Error("--config FILE: the training's settings (what makes its candidates is hashed from it)");
+  const config = readJson<Config>(file);
+  // What makes the candidates: the settings, less the note, and the program's files.
+  const { note: _note, ...settings } = config;
+  const h = createHash("sha256").update(JSON.stringify(settings));
+  for (const f of config.generator ?? []) h.update(`\0${f}\0`).update(readFileSync(f));
+  return { config, source: h.digest("hex").slice(0, 12) };
+}
+function readState(): State {
+  const s = readJson<State>(arg("state", "state.json"));
+  checkState(s);
+  return s;
+}
+
 function cmdInit(): void {
-  const config = readJson<{ name: string; baseline?: State["plans"][string]; candidates: State["queue"] }>(arg("config", ""));
-  const s = init(examiners(), config.candidates, config.baseline ?? {}, now());
-  s.log[0].what += `（設定 ${config.name}）`;
+  const { config, source } = readConfig();
+  const registry = readJson<{ trainings: Record<string, Omit<Training, "name">> }>(new URL("./exam-blocks.json", import.meta.url).pathname).trainings;
+  if (!Object.hasOwn(registry, config.name)) throw new Error(`${config.name} is not in exam-blocks.json: give it a name and blocks no training had`);
+  const { first, last, source: registered } = registry[config.name];
+  if (registered !== source) throw new Error(`${config.name}: its settings (${source}) are not those registered (${registered}): other candidates take a new name and new blocks (exam-blocks.json)`);
+  const s = init(examiners(), config.candidates, { name: config.name, first, last, source, lookAhead: config.lookAhead }, config.baseline ?? {}, now());
   const out = arg("out", "state.json");
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, JSON.stringify(s));
@@ -65,9 +99,10 @@ function cmdInit(): void {
 }
 
 async function cmdWork(): Promise<void> {
-  const s = readJson<State>(arg("state", "state.json"));
+  const s = readState();
   const resumeId = arg("resume", "").trim();
   if (resumeId !== "") resume(s, resumeId, now());
+  setSource(s, readConfig().source, now());
   // Moved on as the merge will (not saved): a state just started from its config has no candidate taken yet, and its
   // first segment would play none of the candidate's games (PR B trial, run 44872573528).
   step(s, "P-work", now());
@@ -95,7 +130,8 @@ async function cmdWork(): Promise<void> {
     else if (giveWay.now()) done.stopped ||= `讓位：${giveWay.why}`;
     return done.stopped !== "";
   };
-  const pool = new Pool();
+  // The only opener of the exam's seeds (seeds.ts).
+  const pool = new Pool(threads(), { exam: true });
   try {
     const batch = threads() * 4;
     for (let i = 0; i < mine.length && done.stopped === ""; i += batch) {
@@ -137,7 +173,8 @@ function findResults(dirs: string[]): string[] {
 }
 
 function cmdMerge(): void {
-  const s = readJson<State>(arg("state", "state.json"));
+  const s = readState();
+  const { source } = readConfig();
   const out = arg("out", "state.json");
   mkdirSync(dirname(out), { recursive: true });
   summaryFile = join(dirname(out), "summary.md");
@@ -168,7 +205,10 @@ function cmdMerge(): void {
   // The weekly report counts the segments that gave way (ceo 2026-11-21).
   if (yielded > 0) s.log.push({ at, what: `讓位：這一段 ${yielded} 個 job 讓位（D-123）` });
   if (s.paused === null) summary(`- 固定的三局：${checkCanary(s, canary, arg("tree", ""), arg("commit", ""), pauseId, at)}`);
+  setSource(s, source, at);
+  const blocks = s.blocks.length;
   for (const line of step(s, pauseId, at)) summary(`- ${line}`);
+  for (const b of s.blocks.slice(blocks)) summary(`- 換考試種子：第 ${b.n} 批（${b.why}）`);
   prune(s);
   writeFileSync(out, JSON.stringify(s));
   summary("");
@@ -197,13 +237,15 @@ function report(s: State): string[] {
     "",
     `- ${statusLine(s)}`,
     `- 目前最強版：${s.champion}${s.champion === s.baseline ? "（還是基準）" : ""}；考了 ${s.tested} 個候選，升級 ${promoted.length} 次`,
-    // Each candidate no better than the champion is promoted at most 1e-4 of the time (sprt.ts): over N, at most N x 1e-4.
-    `- 誤升級機率的上限（累計）：考了 ${s.tested} 個，至少誤升級一次最多 ${(Math.min(1, s.tested * 2 * SPRT.alpha) * 100).toFixed(2)}%（每個 1e-4，兩條路合起來）`,
+    // A block's candidates share seeds: they add up (a union bound), by the candidates listed when it opened (sprt.ts).
+    `- 誤升級機率的上限（到目前開的各批）：各批開批時的名單共 ${listedSum(s)} 個 × 1e-4（兩條路合起來），至少誤升級一次最多 ${(Math.min(1, listedSum(s) * 2 * SPRT.alpha) * 100).toFixed(2)}%`,
+    "- 這個上限要成立：候選、最強版和產生候選的程式都沒看過那一批種子的結果；各考官各用種子、兩個出生點算一個單位；λ 只看之前各次；種子當作隨機抽的；同一場考試規則沒變（sprt.ts 的 1–7）",
+    `- 考試種子：第 ${s.blocks.at(-1)!.n} 批（這次訓練有第 ${s.training.first}-${s.training.last} 批）；開過的：${s.blocks.map((b) => `${b.n}（${b.why}，名單 ${b.listed}）`).join("、")}`,
   ];
   const base = Object.entries(s.base);
   if (base.length > 0) lines.push(`- 對基準：${base.map(([h, b]) => `${h} ${pct(b.score * b.games, b.games)}（±${Math.round(b.se * 100)}%）`).join("、")}`);
-  lines.push("", "## 每個候選", "", "| 候選 | 結果 | 原因 | Q（考官的局不同的比例） | 看了幾次 | 局數（候選的） | 考官 +/- | 對最強版 +/- | 平手 |", "|---|---|---|---|---|---|---|---|---|");
-  for (const d of s.decided) lines.push(`| ${d.id} | ${d.verdict === "promote" ? "升級" : "不升級"} | ${d.why} | ${(d.q * 100).toFixed(1)}% | ${d.looks} | ${d.ex.games + d.vs.games} | +${d.ex.plus}/-${d.ex.minus}（${d.ex.games} 局） | +${d.vs.plus}/-${d.vs.minus}（${d.vs.games} 局） | ${(d.draws * 100).toFixed(1)}% |`);
+  lines.push("", "## 每個候選", "", "| 候選 | 批 | 結果 | 原因 | Q（考官的局不同的比例） | Qb | 看了幾次 | 局數（候選的） | 考官 +/- | 對最強版 +/- | 平手 |", "|---|---|---|---|---|---|---|---|---|---|---|");
+  for (const d of s.decided) lines.push(`| ${d.id} | ${d.block} | ${d.verdict === "promote" ? "升級" : "不升級"} | ${d.why} | ${(d.q * 100).toFixed(1)}% | ${(d.qb * 100).toFixed(1)}% | ${d.looks} | ${d.ex.games + d.vs.games} | +${d.ex.plus}/-${d.ex.minus}（${d.ex.games} 局） | +${d.vs.plus}/-${d.vs.minus}（${d.vs.games} 局） | ${(d.draws * 100).toFixed(1)}% |`);
   const qs = s.decided.filter((d) => d.ex.games > 0);
   const vsGames = s.decided.reduce((a, d) => a + d.vs.games, 0);
   const vsDraws = s.decided.reduce((a, d) => a + d.draws * d.vs.games, 0);
@@ -213,7 +255,8 @@ function report(s: State): string[] {
     "",
     "| 假設 | 設定 | 實測 |",
     "|---|---|---|",
-    `| 考官的局，候選和最強版結果不同的比例（Q） | 30% | ${qs.length === 0 ? "-" : pct(qs.reduce((a, d) => a + d.q * d.ex.games, 0), qs.reduce((a, d) => a + d.ex.games, 0))} |`,
+    `| 考官的局，候選和最強版結果不同的比例（Q；只有第一次看用假設值） | ${SPRT.discordant * 100}% | ${qs.length === 0 ? "-" : pct(qs.reduce((a, d) => a + d.q * d.ex.games, 0), qs.reduce((a, d) => a + d.ex.games, 0))} |`,
+    `| 對最強版一個種子兩局同向的程度（Qb；只有第一次看用假設值；50% 是獨立） | ${SPRT.pairDiscordant * 100}% | ${pct(s.decided.reduce((a, d) => a + d.qb * d.vs.games, 0), vsGames)} |`,
     `| 困難對困難的平手 | 2% | ${pct(vsDraws, vsGames)} |`,
     "",
     "## 暫停和恢復",
@@ -235,15 +278,16 @@ function report(s: State): string[] {
 }
 
 if (mode === "init") cmdInit();
+else if (mode === "source") console.log(readConfig().source);
 else if (mode === "work") await cmdWork();
 else if (mode === "merge") cmdMerge();
-else if (mode === "status") console.log(statusLine(readJson<State>(arg("state", "state.json"))));
+else if (mode === "status") console.log(statusLine(readState()));
 else if (mode === "report") {
-  const lines = report(readJson<State>(arg("state", "state.json")));
+  const lines = report(readState());
   const out = arg("out", "");
   if (out !== "") writeFileSync(out, `${lines.join("\n")}\n`);
   console.log(lines.join("\n"));
 } else {
-  console.error("exam-auto.ts init|work|merge|status|report (see the top of the file)");
+  console.error("exam-auto.ts init|source|work|merge|status|report (see the top of the file)");
   process.exitCode = 2;
 }

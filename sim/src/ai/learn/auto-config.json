@@ -1,10 +1,7 @@
 {
-  "name": "trial-1",
-  "note": "D-147 PR B's trial (ceo 2026-11-21): candidates whose answer is known. identical: hard itself (rejected at once); equal: a setting that changes little (rejected, after many games: what an equal candidate costs); weak: fewer farmers and production (rejected quickly). PR C replaces this file with the training's candidates (a new name: a new state).",
-  "baseline": {},
-  "candidates": [
-    { "id": "identical", "plan": {}, "round": 0 },
-    { "id": "equal", "plan": { "townRest": 2 }, "round": 0 },
-    { "id": "weak", "plan": { "farmers": 14, "production": 1 }, "round": 0 }
-  ]
+  "name": "trial-3",
+  "note": "D-147 PR B's trial of the corrected rule (ceo 2026-11-23, D-162): as trial-2, the baseline weakened (fewer farmers and production) and the candidate hard itself, which should be promoted, on blocks of seeds of its own; 6 looks ahead, for the trial's hours. trial-1 and trial-2 played the first rules on seeds no longer used (their runs: 44872573528-44886418571). PR C replaces this file with the training's candidates (a new name, new blocks).",
+  "baseline": { "farmers": 14, "production": 1 },
+  "candidates": [{ "id": "hard", "plan": {}, "round": 0 }],
+  "lookAhead": 6
 }

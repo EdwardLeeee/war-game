@@ -236,6 +236,7 @@ jobs:
           for id in "${ids[@]}"; do gh run download "$id" --repo "$GITHUB_REPOSITORY" --dir "${GITHUB_WORKSPACE}/from/$id"; done
       # D-147 PR B: the exam state this segment plays for (the merge job reads the same one).
       - name: Exam state
+        id: es
         if: needs.plan.outputs.mode == 'auto'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -256,6 +257,7 @@ jobs:
           ARGS: ${{ needs.plan.outputs.args }}
           NETS: ${{ needs.plan.outputs.nets }}
           ISLANDS: ${{ needs.plan.outputs.islands }}
+          EXAM_CONFIG: ${{ steps.es.outputs.config }}
           # D-147 (exam.ts, ceo 2026-11-16): it gives way to Pages and to jobs long waiting (D-123), reading the runs.
           YIELD_REPO: ${{ (needs.plan.outputs.mode == 'exam' || needs.plan.outputs.mode == 'examcheck' || needs.plan.outputs.mode == 'auto') && github.repository || '' }}
           AI_TRAIN_RESUME: ${{ vars.AI_TRAIN_RESUME }}
@@ -292,7 +294,7 @@ jobs:
             # D-147: run.json "args" adds exam.ts's options (--map, --pool, --rounds, --cap, --top, --seed-from, --qualify).
             exam) node src/ai/learn/exam.ts search --seed $((ISLAND + 1)) --hours "$HOURS" --parents-from "$F" --out "$O" "$@" ;;
             # D-147 PR B: this job's share of the exam's games; giving way sets the output `yielded` (exam-auto.ts).
-            auto) node src/ai/learn/exam-auto.ts work --state "$GITHUB_WORKSPACE/state/state.json" --island "$ISLAND" --islands "$(echo "$ISLANDS" | jq length)" --hours "$HOURS" --out "$O" --resume "$AI_TRAIN_RESUME" ;;
+            auto) node src/ai/learn/exam-auto.ts work --state "$GITHUB_WORKSPACE/state/state.json" --config "$EXAM_CONFIG" --island "$ISLAND" --islands "$(echo "$ISLANDS" | jq length)" --hours "$HOURS" --out "$O" --resume "$AI_TRAIN_RESUME" ;;
             examcheck) node src/ai/learn/exam.ts check --from "$F" --games "$GAMES" --shard "$ISLAND" --shards "$(echo "$ISLANDS" | jq length)" --out "$O" "$@" ;;
             # D-147 PR A: a segment of the chain for its trial: dryrun again and again until `hours` (at most 1), giving way
             # (D-123, .github/ai-train/giveway.py): a deployment of the site waiting, or another job waiting 10 minutes or
@@ -368,9 +370,10 @@ jobs:
         id: m
         env:
           AI_TRAIN_RESUME: ${{ vars.AI_TRAIN_RESUME }}
+          EXAM_CONFIG: ${{ steps.s.outputs.config }}
         run: |
           W="$GITHUB_WORKSPACE"
-          node src/ai/learn/exam-auto.ts merge --state "$W/state/state.json" --results "$W/results" --out "$W/new/state.json" \
+          node src/ai/learn/exam-auto.ts merge --state "$W/state/state.json" --config "$EXAM_CONFIG" --results "$W/results" --out "$W/new/state.json" \
             --pause-id "P-${{ github.run_id }}" --tree "$(git rev-parse HEAD:sim/src)" --commit "$GITHUB_SHA" --resume "$AI_TRAIN_RESUME" > /dev/null
           cat "$W/new/summary.md" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7

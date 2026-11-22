@@ -3,11 +3,14 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { AUTO, checkCanary, type Examiner, FINAL, type HP, init, type Item, MAX_LOOKS, needed, type Pause, planHash, type Res, resume, SEEDS, type State, step } from "../src/ai/learn/auto.ts";
+import { aaItems, AUTO, baseItems, blockOf, canaryItems, checkCanary, type Examiner, FINAL, finalItems, type HP, init, type Item, listedSum, lookItems, MAX_LOOKS, needed, type Pause, planHash, prune, type Res, resume, SEEDS, setSource, type State, step, tally, type Training } from "../src/ai/learn/auto.ts";
 import { rng } from "../src/ai/learn/exam-space.ts";
+import { blockBase, EXAM_SEEDS, isExamSeed } from "../src/ai/learn/seeds.ts";
 import { SPRT } from "../src/ai/learn/sprt.ts";
 
 const EXAMINERS: Examiner[] = ["6-132", "2-89", "10-79"].map((id) => ({ id, plan: {} as Examiner["plan"], map: "random" }));
+
+const TRAINING: Training = { name: "test", first: 1, last: 40, source: "source-1" };
 
 /** A plan's made-up play: how often the examiners beat it, its edge head to head, whether it plays as hard does. */
 interface Fake {
@@ -44,15 +47,19 @@ function play(s: State, items: Item[], fakes: Record<string, Fake>) {
       const u = rng(hashOf(`${opp}|${seed}`))();
       res = { w: u < m.exWins ? 1 : u > 0.98 ? -1 : 0, h: `${group}-${opp}-${seed}` };
       if (m.as === undefined) res.h = `${me}-${opp}-${seed}`;
-    } else if (kind === "vs" || kind === "aa" || kind === "bl") {
-      const d = kind === "aa" ? 0 : f(me).edge - f(opp).edge;
+    } else if (kind === "aa") {
+      // A deterministic game: from the other spawn the same game, the result the other way round.
+      const u = rng(hashOf(`${me}|${seed}`))();
+      const w = u < 0.02 ? -1 : u < 0.51 ? 1 : 0;
+      res = { w: w === -1 || swap === "0" ? w : 1 - w, h: `${me}-${seed}` };
+    } else if (kind === "vs" || kind === "bl") {
+      const d = f(me).edge - f(opp).edge;
       const u = r();
       res = { w: u < 0.02 ? -1 : u < 0.02 + 0.98 * (0.5 + d) ? 1 : 0, h: `${x.key}` };
     } else {
       const m = f(me);
       res = { w: r() < (m.normal ?? 0.9) ? 1 : 0, h: x.key, reached: r() < (m.reached ?? 0.6), thinks: 100, ms: 100 * (m.think ?? 1) };
     }
-    void swap;
     s.results[x.key] = res;
   }
 }
@@ -68,20 +75,38 @@ function run(s: State, fakes: Record<string, Fake>, rounds = 2000): string[] {
   return lines;
 }
 
-test("auto: the seed ranges do not overlap, nor touch the search's and CI's", () => {
-  const ranges: [string, number, number][] = [
-    ["ex", SEEDS.ex, SEEDS.ex + SEEDS.exCount - 1],
-    ["vs", SEEDS.vs, SEEDS.vs + SEEDS.vsCount - 1],
-    ["aa", SEEDS.aa, SEEDS.aa + SEEDS.aaCount - 1],
-    ["normalFixed", SEEDS.normalFixed, SEEDS.normalFixed + SEEDS.normalCount - 1],
-    ["normalRandom", SEEDS.normalRandom, SEEDS.normalRandom + SEEDS.normalCount - 1],
-    ["base", SEEDS.base, SEEDS.base + SEEDS.baseCount - 1],
-    ["canary", SEEDS.canary, SEEDS.canary + SEEDS.canaryCount - 1],
-  ];
-  for (const [a, lo, hi] of ranges) {
-    assert.ok(lo >= 9_000_000 && hi < SEEDS.training, a);
-    for (const [b, lo2, hi2] of ranges) if (a !== b) assert.ok(hi < lo2 || hi2 < lo, `${a} and ${b}`);
+/** Every seed a block's champion and candidate play, by what it is for. */
+function usesOf(s: State): Map<number, Set<string>> {
+  const c = planHash({ farmers: 30 });
+  s.plans[c] = { farmers: 30 };
+  const items = [...Array.from({ length: MAX_LOOKS }, (_, k) => lookItems(s, c, k)).flat(), ...aaItems(s), ...finalItems(s, c)];
+  const uses = new Map<number, Set<string>>();
+  for (const x of items) {
+    const [kind, , opp, seed] = x.key.split("|");
+    const use = kind === "ex" ? `ex ${opp}` : kind;
+    uses.set(Number(seed), (uses.get(Number(seed)) ?? new Set()).add(use));
   }
+  return uses;
+}
+
+test("auto: no seed is used for two things, by two examiners or in two blocks, and all are the exam's", () => {
+  const all = new Map<number, string>();
+  for (const n of [1, 2, 3, EXAM_SEEDS.blocks]) {
+    const s = init(EXAMINERS, [], { ...TRAINING, first: n, last: n });
+    for (const [seed, uses] of usesOf(s)) {
+      assert.equal(uses.size, 1, `seed ${seed}: ${[...uses].join(", ")}`);
+      assert.equal(all.get(seed), undefined, `seed ${seed} in two blocks`);
+      assert.ok(seed >= blockBase(n) && seed < blockBase(n) + EXAM_SEEDS.blockSize && isExamSeed(seed));
+      all.set(seed, `${n}`);
+    }
+  }
+  // The canary and the games against the baseline: the same for a whole training, and in no block.
+  const s = init(EXAMINERS, [], TRAINING);
+  const fixed = [...canaryItems(s).map((x) => (x.job.kind === "scripted" ? x.job.seed : x.job.spec.seed)), ...baseItems(s, s.baseline).map((x) => Number(x.key.split("|")[3]))];
+  for (const seed of fixed) assert.ok(isExamSeed(seed) && seed < blockBase(1) && !all.has(seed), `fixed ${seed}`);
+  const t = init(EXAMINERS, [], { ...TRAINING, first: 7 });
+  assert.deepEqual(canaryItems(t), canaryItems(s));
+  assert.equal(new Set(fixed).size, SEEDS.canaryCount + SEEDS.baseCount);
   // Both paths run out of games at the same look.
   assert.equal(MAX_LOOKS * SPRT.exChunk * 3, SPRT.exMax);
   assert.equal(MAX_LOOKS * SPRT.vsChunk, SPRT.vsMax);
@@ -101,7 +126,7 @@ test("auto: the four known answers (identical, equal, weaker; and a stronger one
     { id: "equal", plan: equal, round: 0 },
     { id: "weak", plan: weak, round: 0 },
     { id: "strong", plan: strong, round: 1 },
-  ]);
+  ], TRAINING);
   const fakes: Record<string, Fake> = {
     [planHash(equal)]: { exWins: 0.3, edge: 0 },
     [planHash(weak)]: { exWins: 0.45, edge: -0.15 },
@@ -123,7 +148,7 @@ test("auto: the four known answers (identical, equal, weaker; and a stronger one
 
 test("auto: a candidate plays exactly as the champion though its plan differs: rejected after the first look", () => {
   const twin: HP = { townRest: 3 };
-  const s = init(EXAMINERS, [{ id: "twin", plan: twin, round: 0 }]);
+  const s = init(EXAMINERS, [{ id: "twin", plan: twin, round: 0 }], TRAINING);
   run(s, { [planHash(twin)]: { exWins: 0.3, edge: 0, as: planHash({}) } });
   assert.equal(s.decided[0].verdict, "reject");
   assert.equal(s.decided[0].looks, 1);
@@ -132,41 +157,64 @@ test("auto: a candidate plays exactly as the champion though its plan differs: r
 
 test("auto: the finalist's checks can stop a promotion", () => {
   const slow: HP = { pushArmy: 98 };
-  const s = init(EXAMINERS, [{ id: "slow", plan: slow, round: 0 }]);
+  const s = init(EXAMINERS, [{ id: "slow", plan: slow, round: 0 }], TRAINING);
   run(s, { [planHash(slow)]: { exWins: 0.3, edge: 0.1, think: FINAL.thinkRatio + 0.5 } });
   assert.equal(s.decided[0].verdict, "reject");
   assert.match(s.decided[0].why, /思考時間/);
   assert.equal(s.champion, s.baseline);
   const weakNormal: HP = { pushArmy: 97 };
-  const t = init(EXAMINERS, [{ id: "weak-normal", plan: weakNormal, round: 0 }]);
+  const t = init(EXAMINERS, [{ id: "weak-normal", plan: weakNormal, round: 0 }], TRAINING);
   run(t, { [planHash(weakNormal)]: { exWins: 0.3, edge: 0.1, normal: 0.6 } });
   assert.match(t.decided[0].why, /對普通/);
 });
 
 test("auto: needed lists the canary always, nothing twice, nothing once paused", () => {
-  const s = init(EXAMINERS, [{ id: "c", plan: { farmers: 30 }, round: 0 }]);
+  const s = init(EXAMINERS, [{ id: "c", plan: { farmers: 30 }, round: 0 }], TRAINING);
   step(s, "P-1", "t");
   const items = needed(s);
   assert.equal(items.filter((x) => x.key.startsWith("canary|")).length, SEEDS.canaryCount);
   assert.equal(new Set(items.map((x) => x.key)).size, items.length);
   // The champion's A/A and the candidate's first AUTO.lookAhead looks.
-  assert.equal(items.filter((x) => x.key.startsWith("aa|")).length, SEEDS.aaCount * 2);
+  assert.equal(items.filter((x) => x.key.startsWith("aa|")).length, SEEDS.aaCount + SEEDS.mirrorCount);
   assert.equal(items.filter((x) => x.key.startsWith("vs|")).length, AUTO.lookAhead * SPRT.vsChunk);
   s.paused = { id: "P-1", kind: "max", reason: "", numbers: [], at: "" };
   assert.deepEqual(needed(s), []);
 });
 
-test("auto: the A/A control pauses when it leans", () => {
-  const s = init(EXAMINERS, [{ id: "c", plan: { farmers: 30 }, round: 0 }]);
-  step(s, "P-1", "t");
-  for (const x of needed(s)) if (x.key.startsWith("aa|")) s.results[x.key] = { w: x.key.endsWith("|0") ? 1 : Number(x.key.split("|")[3]) % 3 === 0 ? 0 : 1, h: x.key };
-  step(s, "P-7", "t");
-  assert.equal(pausedOf(s)?.id, "P-7");
-  assert.match(pausedOf(s)!.reason, /自己打自己/);
+test("auto: the champion against itself must be the same game from both spawns, the result the other way round", () => {
+  const measured = (mirror: (w: number, seed: number) => Res) => {
+    const s = init(EXAMINERS, [{ id: "c", plan: { farmers: 30 }, round: 0 }], TRAINING);
+    for (const x of aaItems(s)) {
+      const [, , , seedText, swap] = x.key.split("|");
+      const seed = Number(seedText);
+      // Every fifth seed a game neither side won.
+      const w = seed % 5 === 0 ? -1 : seed % 2;
+      s.results[x.key] = swap === "0" ? { w, h: `g${seed}` } : mirror(w, seed);
+    }
+    step(s, "P-7", "t");
+    return s;
+  };
+  const other = (w: number) => (w === -1 ? -1 : 1 - w);
+  // Right, the drawn pairs too: no pause, and the draws of the games from one spawn kept for the finalist's check.
+  const fine = measured((w, seed) => ({ w: other(w), h: `g${seed}` }));
+  assert.equal(fine.paused, null);
+  assert.deepEqual(fine.aa[1], { pairs: SEEDS.mirrorCount, differ: 0, draws: 20, games: SEEDS.aaCount });
+  const first = blockBase(1) + SEEDS.block.aa;
+  // It can fail, three ways: another game, the same side winning, a draw from one spawn only.
+  for (const bad of [
+    (w: number, seed: number): Res => ({ w: other(w), h: seed === first + 3 ? "another" : `g${seed}` }),
+    (w: number, seed: number): Res => ({ w: seed === first + 3 ? w : other(w), h: `g${seed}` }),
+    (w: number, seed: number): Res => ({ w: seed === first ? 1 : other(w), h: `g${seed}` }),
+  ]) {
+    const s = measured(bad);
+    assert.equal(pausedOf(s)?.id, "P-7");
+    assert.equal(pausedOf(s)?.kind, "aa");
+    assert.match(pausedOf(s)!.reason, /自己打自己/);
+  }
 });
 
 test("auto: the canary's hashes changing pauses; only the code changing is noted", () => {
-  const s = init(EXAMINERS, [{ id: "c", plan: { farmers: 30 }, round: 0 }]);
+  const s = init(EXAMINERS, [{ id: "c", plan: { farmers: 30 }, round: 0 }], TRAINING);
   checkCanary(s, ["a", "b", "c"], "tree1", "c1", "P-1", "t");
   assert.match(checkCanary(s, ["a", "b", "c"], "tree2", "c2", "P-2", "t"), /程式改了/);
   assert.equal(s.paused, null);
@@ -182,7 +230,7 @@ test("auto: the canary's hashes changing pauses; only the code changing is noted
 });
 
 test("auto: resuming a pause resets what made it, so it does not pause again at once", () => {
-  const t = init(EXAMINERS, [{ id: "x", plan: { farmers: 99 }, round: 0 }]);
+  const t = init(EXAMINERS, [{ id: "x", plan: { farmers: 99 }, round: 0 }], TRAINING);
   t.tested = AUTO.candidatesMax;
   step(t, "P-1", "t");
   assert.equal(pausedOf(t)?.kind, "max");
@@ -194,13 +242,13 @@ test("auto: resuming a pause resets what made it, so it does not pause again at 
 
 test("auto: rounds with no promotion, and too many candidates, pause", () => {
   const plans = Array.from({ length: 12 }, (_, i): HP => ({ farmers: 30 + i }));
-  const s = init(EXAMINERS, plans.map((plan, i) => ({ id: `c${i}`, plan, round: i })));
+  const s = init(EXAMINERS, plans.map((plan, i) => ({ id: `c${i}`, plan, round: i })), TRAINING);
   run(s, Object.fromEntries(plans.map((p) => [planHash(p), { exWins: 0.3, edge: -0.2 } as Fake])));
   assert.match(s.paused?.reason ?? "", new RegExp(`連續 ${AUTO.roundsWithout} 輪`));
   assert.equal(s.tested, AUTO.roundsWithout);
   // The candidate that would start the eleventh round waits in the queue.
   assert.equal(s.queue[0].id, `c${AUTO.roundsWithout}`);
-  const t = init(EXAMINERS, []);
+  const t = init(EXAMINERS, [], TRAINING);
   t.tested = AUTO.candidatesMax;
   t.queue.push({ id: "x", plan: { farmers: 99 }, round: 0 });
   step(t, "P-9", "t");
@@ -213,7 +261,7 @@ test("auto: a new champion that drops against the baseline pauses", () => {
   const s = init(EXAMINERS, [
     { id: "a", plan: a, round: 0 },
     { id: "b", plan: b, round: 1 },
-  ]);
+  ], TRAINING);
   // b beats a head to head (edge over a) but is weaker than a against the baseline: its base games are made up below.
   const fakes: Record<string, Fake> = { [planHash(a)]: { exWins: 0.3, edge: 0.15 }, [planHash(b)]: { exWins: 0.3, edge: 0.3 } };
   for (let i = 0; i < 4000 && s.paused === null && !s.done; i++) {
@@ -242,7 +290,7 @@ test("auto: how many jobs a segment has does not change what is played or decide
       { id: "equal", plan: equal, round: 0 },
       { id: "weak", plan: weak, round: 0 },
       { id: "strong", plan: strong, round: 1 },
-    ]);
+    ], TRAINING);
     const r = rng(1000 + jobs);
     let played = 0;
     for (let seg = 0; seg < 5000 && s.paused === null && !s.done; seg++) {
@@ -265,4 +313,95 @@ test("auto: how many jobs a segment has does not change what is played or decide
   assert.deepEqual(sixteen.decided, three.decided);
   assert.deepEqual(one.decided, three.decided);
   assert.equal(sixteen.champion, three.champion);
+});
+
+/** A state whose first candidate, 'strong', was just promoted, with 'next' waiting. */
+function promoted(): { s: State; strong: string; next: HP; fakes: Record<string, Fake> } {
+  const strongPlan: HP = { pushArmy: 99 };
+  const next: HP = { pushArmy: 95 };
+  const strong = planHash(strongPlan);
+  const s = init(EXAMINERS, [
+    { id: "strong", plan: strongPlan, round: 0 },
+    { id: "next", plan: next, round: 0 },
+  ], TRAINING);
+  const fakes: Record<string, Fake> = { [strong]: { exWins: 0.3, edge: 0.15 }, [planHash(next)]: { exWins: 0.3, edge: 0.15 } };
+  for (let i = 0; i < 200 && s.champion === s.baseline; i++) {
+    play(s, needed(s), fakes);
+    step(s, `P-${i}`, "t");
+  }
+  assert.equal(s.champion, strong);
+  return { s, strong, next, fakes };
+}
+
+test("auto: a promotion opens a new block; its champion plays again there and nothing of the old one is used", () => {
+  const { s, strong } = promoted();
+  assert.deepEqual(s.blocks.map((b) => [b.n, b.champion]), [[1, s.baseline], [2, strong]]);
+  assert.equal(s.decided[0].block, 1);
+  assert.equal(s.current?.block, 2);
+  const seedOf = (key: string) => Number(key.split("|")[3]);
+  for (const key of Object.keys(s.results)) if (!key.startsWith("bl|")) assert.ok(seedOf(key) >= blockBase(2), `kept from the old block: ${key}`);
+  const items = needed(s).filter((x) => !x.key.startsWith("canary|") && !x.key.startsWith("bl|"));
+  for (const x of items) assert.ok(seedOf(x.key) >= blockBase(2) && seedOf(x.key) < blockBase(3), x.key);
+  const again = items.filter((x) => x.key.startsWith(`ex|${strong}|`));
+  assert.equal(again.length, AUTO.lookAhead * SPRT.exChunk * 3, "the new champion's examiner games, again");
+  // The bound: 2 listed at block 1, 1 at block 2.
+  assert.deepEqual(s.blocks.map((b) => b.listed), [2, 1]);
+  assert.equal(listedSum(s), 3);
+});
+
+test("auto: keeping the old block after a promotion fails, whichever way it is tried", () => {
+  const all = (s: State, c: string) => {
+    for (const f of [() => blockOf(s), () => needed(s), () => step(s, "P-x", "t"), () => lookItems(s, c, 0), () => finalItems(s, c), () => aaItems(s), () => tally(s, c, 1)]) assert.throws(f, /exam: /);
+  };
+  // The new champion left on the old block.
+  const a = promoted();
+  a.s.blocks.pop();
+  all(a.s, planHash(a.next));
+  // The old block opened again under the new champion's name.
+  const b = promoted();
+  b.s.blocks[1] = { ...b.s.blocks[1], n: 1 };
+  b.s.current!.block = 1;
+  all(b.s, planHash(b.next));
+  // The champion changed with no block opened.
+  const c = init(EXAMINERS, [{ id: "c", plan: { farmers: 30 }, round: 0 }], TRAINING);
+  c.champion = planHash({ farmers: 30 });
+  all(c, planHash({ farmers: 30 }));
+  // A candidate begun in another block.
+  const d = promoted();
+  d.s.current!.block = 1;
+  all(d.s, planHash(d.next));
+});
+
+test("auto: what makes candidates changed: the one under exam ends in its block, the next has a new one", () => {
+  const plans: HP[] = [{ farmers: 31 }, { farmers: 32 }, { farmers: 33 }];
+  const s = init(EXAMINERS, plans.map((plan, i) => ({ id: `c${i}`, plan, round: 0 })), TRAINING);
+  const fakes = Object.fromEntries(plans.map((p) => [planHash(p), { exWins: 0.5, edge: -0.2 } as Fake]));
+  step(s, "P-0", "t");
+  assert.equal(s.current?.id, "c0");
+  setSource(s, "source-2", "t");
+  assert.equal(blockOf(s).n, 1, "the one under exam goes on in its block");
+  run(s, fakes);
+  assert.deepEqual(s.decided.map((d) => [d.id, d.block]), [["c0", 1], ["c1", 2], ["c2", 2]]);
+  assert.deepEqual(s.blocks.map((b) => [b.n, b.source, b.listed]), [[1, "source-1", 3], [2, "source-2", 2]]);
+  assert.equal(listedSum(s), 5);
+});
+
+test("auto: out of blocks pauses, and is not resumed onto a used one", () => {
+  const s = init(EXAMINERS, [{ id: "strong", plan: { pushArmy: 99 }, round: 0 }, { id: "next", plan: { pushArmy: 95 }, round: 0 }], { ...TRAINING, last: 1 });
+  run(s, { [planHash({ pushArmy: 99 })]: { exWins: 0.3, edge: 0.15 } });
+  assert.equal(pausedOf(s)?.kind, "blocks");
+  assert.deepEqual(needed(s), []);
+  assert.equal(resume(s, pausedOf(s)!.id, "t"), false);
+  assert.notEqual(s.paused, null);
+  prune(s);
+});
+
+test("auto: the look-ahead is the training's setting; an older state is refused", () => {
+  const s = init(EXAMINERS, [{ id: "c", plan: { farmers: 30 }, round: 0 }], { ...TRAINING, lookAhead: 6 });
+  step(s, "P-1", "t");
+  assert.equal(needed(s).filter((x) => x.key.startsWith("vs|")).length, 6 * SPRT.vsChunk);
+  assert.throws(() => init(EXAMINERS, [], { ...TRAINING, lookAhead: 13 }), /lookAhead/);
+  const old = { ...s, version: 1 } as unknown as State;
+  assert.throws(() => needed(old), /version 1/);
+  assert.throws(() => step(old, "P-2", "t"), /version 1/);
 });

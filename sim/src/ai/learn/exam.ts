@@ -31,6 +31,7 @@ import { join } from "node:path";
 import type { MapMode } from "../../protocol.ts";
 import { drawPlan, type Drawn, mutate, rng } from "./exam-space.ts";
 import { Pool } from "./pool.ts";
+import { refuseExamSeeds } from "./seeds.ts";
 import { GiveWay } from "./yield.ts";
 import type { Job, JobResult, ScriptedOutcome } from "./worker.ts";
 
@@ -134,6 +135,7 @@ async function search(): Promise<void> {
   const r = rng(seed);
   // Seeds of this job's games: away from CI's (1-100, 2000001-, 3000001-) and from the checks' (6000001-).
   const seedBase = 5_000_000 + seed * 10_000;
+  refuseExamSeeds([seedBase, seedBase + 9_999], "exam.ts search (--seed, --seed-offset)");
   const mapFor = (): MapMode => (mapArg === "mix" ? (r() < 2 / 3 ? "random" : "fixed") : (mapArg as MapMode));
   const kept: Cand[] = [];
   let games = 0;
@@ -229,6 +231,7 @@ async function check(): Promise<void> {
   const dirs = arg("from", "").split(",").filter((x) => x !== "");
   const games = Number(arg("games", "200"));
   const seedFrom = Number(arg("seed-from", "6000001"));
+  refuseExamSeeds(Array.from({ length: games }, (_, i) => seedFrom + i), "exam.ts check (--seed-from)");
   const topN = Number(arg("top", "12"));
   const shard = Number(arg("shard", "0"));
   const shards = Number(arg("shards", "1"));
