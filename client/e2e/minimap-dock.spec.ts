@@ -280,13 +280,13 @@ test.describe("滑鼠 1366×768", () => {
     await page.waitForFunction(() => window.__proto?.ready === true && window.__proto.screen === "battle" && (window.__proto?.tutorial()?.step ?? 0) === 1, null, { timeout: 120_000 });
     const card = page.locator(".tut-card");
     await docked(page);
-    await expect(card).toContainText("轉滾輪縮放，再點小地圖跳過去。");
+    await expect(card).toContainText("按住滾輪拖動畫面（或用方向鍵），轉滾輪縮放，再點左下的小地圖跳過去。");
     await expect(card).not.toContainText("地圖」");
     await page.locator("#hud .map-btn").click();
     await expect(card).toContainText("再按左下的「地圖」、點小地圖跳過去。");
     await page.locator("#hud .map-btn").click();
     await docked(page);
-    await expect(card).toContainText("再點小地圖跳過去。");
+    await expect(card).toContainText("再點左下的小地圖跳過去。");
     // Step 1 done (moved, zoomed, the minimap tapped): it stays open.
     const mm = page.locator("#hud .minimap");
     await page.keyboard.down("ArrowRight");
