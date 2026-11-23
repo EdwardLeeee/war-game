@@ -1,7 +1,7 @@
 # client：第二階段原型的畫面、觸控與測試頁
 
 - 負責：war-game-client。brief：`docs/briefs/2026-10-client-prototype.md`。
-- 測試頁：<https://edwardleeee.github.io/war-game/proto/>（合併到 main 後由 `.github/workflows/pages.yml` 部署）。
+- 試玩網址：<https://edwardleeee.github.io/war-game/>（合併到 main 後由 `.github/workflows/pages.yml` 部署；舊網址 `/war-game/proto/` 會轉到這裡）。
 - 介面是臨時版（GDD 第 10 節的草稿），畫面角落標「原型介面（非正式設計）」。正式介面等 war-game-ui 的設計稿核准後才做。
 - 遊戲規則和 AI 在 `sim/`（war-game-core）。client 只透過 `sim/PROTOCOL.md` 的 Worker 訊息送指令、收快照，不改 `sim/`。
 

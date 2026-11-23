@@ -1,7 +1,8 @@
 // After a Pages deployment: open the published site in WebKit at iPhone size and check
-// every page is there and the prototype is this commit's build. GitHub Pages can serve the
-// previous version for a few minutes, so the prototype page is reloaded until it matches
-// before anything else is checked.
+// every page is there and the game (the site's home since the user 2026-11-24: 「網址可以拿掉proto了」) is this
+// commit's build; the old address proto/ goes to it with what it carried (?…, #…). GitHub Pages can serve the
+// previous version for a few minutes, so the game's page is reloaded until it matches before anything else is
+// checked.
 //   node scripts/live-check.ts <site url> <commit, 7 characters> <out dir>
 
 import { mkdirSync } from "node:fs";
@@ -55,23 +56,23 @@ const check = (ok: boolean, what: string): void => {
 };
 
 try {
-  // proto/ first: once it serves this commit, the rest of the site is this deployment too.
+  // The game first: once it serves this commit, the rest of the site is this deployment too.
   let seen = "";
   for (let i = 0; i < 40; i++) {
-    await page.goto(`${base}proto/?test=1`);
+    await page.goto(`${base}?test=1`);
     seen = (await page.evaluate(() => window.__proto?.commit ?? "")) || "";
     if (seen === commit) break;
-    console.log(`proto/ still serves ${seen || "(no page)"}, want ${commit}; retry in 15 s`);
+    console.log(`the game still serves ${seen || "(no page)"}, want ${commit}; retry in 15 s`);
     await page.waitForTimeout(15_000);
   }
-  check(seen === commit, `proto/ is commit ${commit} (saw ${seen || "nothing"})`);
+  check(seen === commit, `the game (${base}) is commit ${commit} (saw ${seen || "nothing"})`);
   // 加到主畫面 and 有新版本 (D-042): the manifest is there, and version.json names this commit
   // (read the way the page reads it, past every cache).
-  const version = await page.request.get(`${base}proto/version.json?t=${Date.now()}`);
+  const version = await page.request.get(`${base}version.json?t=${Date.now()}`);
   const deployed = version.ok() ? ((await version.json()) as { commit?: string }).commit : undefined;
-  check(deployed === commit, `proto/version.json is commit ${commit} (saw ${deployed ?? "nothing"})`);
-  const manifest = await page.request.get(`${base}proto/manifest.webmanifest`);
-  check(manifest.ok(), `proto/manifest.webmanifest -> ${manifest.status()}`);
+  check(deployed === commit, `version.json is commit ${commit} (saw ${deployed ?? "nothing"})`);
+  const manifest = await page.request.get(`${base}manifest.webmanifest`);
+  check(manifest.ok(), `manifest.webmanifest -> ${manifest.status()}`);
   await page.getByRole("button", { name: "開始" }).tap();
   // Ready within 30 s; past that, say where the start stands, and wait up to 60 s more before
   // failing (Pages run 39723212295: the first start after a deployment timed out once, its re-run
@@ -82,26 +83,33 @@ try {
     .then(() => true)
     .catch(() => false);
   if (!ready) {
-    console.log("proto/ not ready 30 s after 開始:");
+    console.log("the game not ready 30 s after 開始:");
     await startReport(tapped);
-    await page.screenshot({ path: `${out}/proto-start-slow.png` });
+    await page.screenshot({ path: `${out}/game-start-slow.png` });
     ready = await page
       .waitForFunction(() => window.__proto?.ready === true, undefined, { timeout: 60_000 })
       .then(() => true)
       .catch(() => false);
-    if (ready) console.log(`::warning::proto/ was ready only ${((Date.now() - tapped) / 1000).toFixed(1)} s after 開始 (see the report above)`);
+    if (ready) console.log(`::warning::the game was ready only ${((Date.now() - tapped) / 1000).toFixed(1)} s after 開始 (see the report above)`);
     else await startReport(tapped);
   }
-  check(ready, `proto/ battlefield drawn (${((Date.now() - tapped) / 1000).toFixed(1)} s after 開始)`);
-  if (!ready) throw new Error("proto/ never got ready");
-  await page.screenshot({ path: `${out}/proto-battle.png` });
+  check(ready, `the game's battlefield drawn (${((Date.now() - tapped) / 1000).toFixed(1)} s after 開始)`);
+  if (!ready) throw new Error("the game never got ready");
+  await page.screenshot({ path: `${out}/game-battle.png` });
 
-  let res = await page.goto(base);
-  check(res?.ok() === true, `home ${base} -> ${res?.status()}`);
-  check((await page.getByRole("link", { name: /原型/ }).count()) > 0, "home links to the prototype");
-  await page.screenshot({ path: `${out}/home.png` });
+  // The old address: proto/ (and what it carried) goes to the game.
+  let res = await page.goto(`${base}proto/?test=1&x=2#y`);
+  check(res?.ok() === true, `proto/ -> ${res?.status()}`);
+  await page.waitForURL((u) => !u.pathname.includes("/proto"), { timeout: 15_000 }).catch(() => {});
+  const to = new URL(page.url());
+  check(`${to.origin}${to.pathname}` === base && to.search === "?test=1&x=2" && to.hash === "#y", `proto/?test=1&x=2#y goes to ${base}?test=1&x=2#y (went to ${page.url()})`);
+  check((await page.evaluate(() => window.__proto?.commit ?? "")) === commit, "and that is the game of this commit");
+  for (const path of ["proto/sw.js", "proto/manifest.webmanifest"]) {
+    const r = await page.request.get(`${base}${path}`);
+    check(r.ok(), `${path} -> ${r.status()}`);
+  }
 
-  for (const path of ["web/", "godot/", "licenses.html"]) {
+  for (const path of ["spikes/web/", "spikes/godot/", "licenses.html", "licenses/pixi.js-LICENSE.txt"]) {
     res = await page.goto(`${base}${path}`, { waitUntil: "domcontentloaded" });
     check(res?.ok() === true, `${path} -> ${res?.status()}`);
   }

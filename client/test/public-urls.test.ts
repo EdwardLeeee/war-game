@@ -1,5 +1,5 @@
 // The build's check (scripts/check-public-urls.ts, ceo 2026-11-21): a URL from the site's root to a file of public/ is
-// not found under /war-game/proto/; relative ones and other sites' are fine.
+// not found under /war-game/ (the site the game is served in); relative ones and other sites' are fine.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";

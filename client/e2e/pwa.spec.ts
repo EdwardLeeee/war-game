@@ -47,7 +47,7 @@ test("加到主畫面：頁面連到 manifest；名稱、起始網址、範圍�
   expect(res.ok()).toBe(true);
   const m = (await res.json()) as Manifest;
   expect(m).toMatchObject({ name: "war-game", short_name: "war-game", start_url: "./", scope: "./", display: "fullscreen", orientation: "landscape" });
-  // Both resolve to the page's own folder (/war-game/proto/ on GitHub Pages, / here).
+  // Both resolve to the page's own folder (/war-game/ on GitHub Pages, / here).
   const folder = new URL("./", page.url()).pathname;
   expect(new URL(m.start_url, url).pathname).toBe(folder);
   expect(new URL(m.scope, url).pathname).toBe(folder);
