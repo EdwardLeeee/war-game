@@ -150,14 +150,16 @@ final class SmokeUITests: XCTestCase {
         log("launched again")
         let goOn = first(.button, "label BEGINSWITH %@", "繼續上一局")
         if !goOn.waitForExistence(timeout: 180) { throw stop("no 繼續上一局 after opening again") }
-        log("offered: \(goOn.label)")
+        // Read before the tap: the button is gone after it.
+        let offered = goOn.label
+        log("offered: \(offered)")
         shot("04-continue-offered")
-        let minute = Int(goOn.label.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()) ?? -1
-        if minute < 2 { throw stop("kept at minute \(minute): \(goOn.label)") }
+        let minute = Int(offered.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()) ?? -1
+        if minute < 2 { throw stop("kept at minute \(minute): \(offered)") }
 
         // 6. Going on: the simulation runs again up to where it was, then the battlefield, paused.
         goOn.tap()
-        log("tapped \(goOn.label)")
+        log("tapped \(offered)")
         let back = waitForGameTime(minute * 60, timeout: 300)
         if back < minute * 60 { throw stop("the battlefield did not come back at minute \(minute) (last seen \(back) s)") }
         if start.exists && start.isHittable { findings.append("開始 still on screen after going on") }
