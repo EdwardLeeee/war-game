@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import dispatch as D  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+WAIT_TITLE = "AI train: wait"  # ai-train-wait.yml's run-name
 REPO, REPO_ID = "o/war-game", 7
 REAL_CHAIN_START = D.CHAIN_START
 # The tests run as if the chain had started (CHAIN_START is far off until PR B sets the real date).
@@ -87,7 +88,7 @@ class Fake:
         if method == "POST" and "ai-train-wait.yml" in path:
             self.wait_posts.append(body)
             self.next_id += 1
-            self.add(self.next_id, D.iso(NOW), status="waiting", branch=body["ref"], path=D.WAIT_WORKFLOW, title=D.WAIT_TITLE)
+            self.add(self.next_id, D.iso(NOW), status="waiting", branch=body["ref"], path=D.WAIT_WORKFLOW, title=WAIT_TITLE)
             return None, None
         if method == "POST":
             self.posts.append(body)
@@ -506,10 +507,6 @@ def other_waiting(f, rid=8100002):
     f.add(rid, t(3), status="in_progress", path=".github/workflows/client.yml", actor="someone", jobs=[job("e2e", 2, 1, status="queued")])
 
 
-def waiter_env(own, **kw):
-    return env(EVENT="workflow_dispatch", MODE=D.WAIT_MODE, RUN_ID=str(own), ACTOR=D.BOT, TRIGGERING_ACTOR=D.BOT, **kw)
-
-
 class Wait(unittest.TestCase):
     """D-147 PR B (ceo 2026-11-24): the wait run, only with the environment there."""
 
@@ -559,7 +556,7 @@ class Wait(unittest.TestCase):
             lambda f: (other_waiting(f), {"ARGS": "--total-cap 0.001"}),
             # Another AI train run (a segment, or a wait run waiting) is on it already.
             lambda f: (other_waiting(f), f.add(8100005, t(5), status="in_progress", actor="someone"), {}),
-            lambda f: (other_waiting(f), f.add(8100006, t(5), status="waiting", path=D.WAIT_WORKFLOW, title=D.WAIT_TITLE), {}),
+            lambda f: (other_waiting(f), f.add(8100006, t(5), status="waiting", path=D.WAIT_WORKFLOW, title=WAIT_TITLE), {}),
         ]
         for i, case in enumerate(cases):
             f = Fake()
@@ -569,28 +566,48 @@ class Wait(unittest.TestCase):
             self.assertFalse(ok, i)
             self.assertEqual(f.wait_posts, [], f"{i}: {text}")
 
-    def test_the_wait_run_decides_again(self):
-        # The runners free again: it starts a segment; its own minutes are booked by the API, not as a dispatcher's.
+    def test_the_dispatcher_the_wait_run_started_decides(self):
+        # The wait run past its timer (in progress, starting the dispatcher) does not hold the dispatcher off.
         f = Fake()
         f.make_wait_env(10)
-        own = f.add(8100007, t(12), status="in_progress", path=D.WAIT_WORKFLOW, title=D.WAIT_TITLE, jobs=[job("wait", 1, 1, status="in_progress")])
-        ok, text, ledger = go(f, waiter_env(own["id"]))
+        f.add(8100007, t(12), status="in_progress", path=D.WAIT_WORKFLOW, title=WAIT_TITLE, jobs=[job("wait", 1, 1, status="in_progress")])
+        ok, text, ledger = go(f, env(EVENT="workflow_dispatch", MODE="dispatch", ACTOR=D.BOT, TRIGGERING_ACTOR=D.BOT))
         self.assertTrue(ok, text)
-        self.assertIn("角色：等待接回", text)
         self.assertEqual(len(f.posts), 1)
-        self.assertNotIn("2026-11-23", ledger["closed"])
-        # Still taken: another wait run.
+        # Still taken: it sends another wait run.
         f = Fake()
         f.make_wait_env(10)
-        own = f.add(8100007, t(12), status="in_progress", path=D.WAIT_WORKFLOW, title=D.WAIT_TITLE, jobs=[job("wait", 1, 1, status="in_progress")])
+        f.add(8100007, t(12), status="in_progress", path=D.WAIT_WORKFLOW, title=WAIT_TITLE, jobs=[job("wait", 1, 1, status="in_progress")])
         other_waiting(f)
-        self.assertFalse(go(f, waiter_env(own["id"]))[0])
+        self.assertFalse(go(f, env(EVENT="workflow_dispatch", MODE="dispatch", ACTOR=D.BOT, TRIGGERING_ACTOR=D.BOT))[0])
         self.assertEqual(len(f.wait_posts), 1)
+
+    def test_the_wait_workflow_only_starts_the_dispatcher(self):
+        # The ceo's three (2026-11-24): its permissions, its `if` as the dispatch job's, and what it starts.
+        try:
+            import yaml
+        except ImportError:
+            self.skipTest("no PyYAML")
+        with open(os.path.join(HERE, "..", "workflows", "ai-train-wait.yml")) as fh:
+            w = yaml.safe_load(fh)
+        on = w.get("on", w.get(True))
+        self.assertEqual(on, {"workflow_dispatch": None})  # no inputs, no other event
+        self.assertEqual(w["permissions"], {"contents": "read", "actions": "read"})
+        self.assertEqual(list(w["jobs"]), ["wait"])
+        j = w["jobs"]["wait"]
+        self.assertEqual(j["permissions"], {"actions": "write"})
+        self.assertEqual(j["environment"], {"name": D.WAIT_ENV, "deployment": False})
+        for cond in ("vars.AI_TRAIN == 'on'", "github.actor == 'github-actions[bot]'", "github.triggering_actor == 'github-actions[bot]'",
+                     "github.run_attempt == '1'", "github.ref == 'refs/heads/main'"):
+            self.assertIn(cond, j["if"])
+        self.assertEqual([s.get("run") for s in j["steps"]], ['gh workflow run ai-train.yml --repo "$GITHUB_REPOSITORY" --ref main -f mode=dispatch'])
+        self.assertFalse(any("uses" in s for s in j["steps"]))
+        self.assertEqual(w["run-name"], WAIT_TITLE)
 
     def test_a_cancelled_wait_run_pauses_and_its_minutes_are_booked(self):
         f = Fake()
-        f.add(8100008, t(30), conclusion="cancelled", path=D.WAIT_WORKFLOW, title=D.WAIT_TITLE, jobs=[job("wait", 29, 0)])
-        f.add(8100009, t(20), conclusion="success", path=D.WAIT_WORKFLOW, title=D.WAIT_TITLE, jobs=[job("wait", 19, 6)])
+        f.add(8100008, t(30), conclusion="cancelled", path=D.WAIT_WORKFLOW, title=WAIT_TITLE, jobs=[job("wait", 29, 0)])
+        f.add(8100009, t(20), conclusion="success", path=D.WAIT_WORKFLOW, title=WAIT_TITLE, jobs=[job("wait", 19, 6)])
         ok, text, ledger = go(f, env())
         self.assertFalse(ok)
         self.assertIn("暫停中：P-8100008", text)
@@ -604,7 +621,7 @@ class Wait(unittest.TestCase):
         f.make_wait_env(10)
         other_waiting(f)
         for i in range(D.WAITS_PER_DAY):
-            f.add(8200000 + i, t(1), conclusion="success", path=D.WAIT_WORKFLOW, title=D.WAIT_TITLE)
+            f.add(8200000 + i, t(1), conclusion="success", path=D.WAIT_WORKFLOW, title=WAIT_TITLE)
         ok, text, _ = go(f, env())
         self.assertEqual(f.wait_posts, [])
         self.assertIn(f"每天最多 {D.WAITS_PER_DAY} 個", text)
@@ -615,7 +632,7 @@ class Wait(unittest.TestCase):
         # Waiting on its timer the run is "waiting", which giveway does not list; listed as queued, it is still its own.
         for status in ("waiting", "queued"):
             f = Fake()
-            f.add(8100010, t(30), status=status, path=D.WAIT_WORKFLOW, title=D.WAIT_TITLE, jobs=[{"name": "wait", "status": "waiting", "created_at": t(30), "run_attempt": 1}])
+            f.add(8100010, t(30), status=status, path=D.WAIT_WORKFLOW, title=WAIT_TITLE, jobs=[{"name": "wait", "status": "waiting", "created_at": t(30), "run_attempt": 1}])
             self.assertEqual(giveway.why(f, REPO, NOW), "", status)
 
 

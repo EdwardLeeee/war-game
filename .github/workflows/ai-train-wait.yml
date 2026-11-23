@@ -2,8 +2,9 @@
 # stopped only because the runners were taken (another workflow's job waiting, none free, or the segment gave way). Started
 # only by .github/ai-train/dispatch.py, and only when the environment ai-train-wait is there with a wait timer (the user
 # decides whether to make it; without it no run of this workflow is ever started, so nothing names the environment: a run
-# naming a missing environment creates it). The job waits on that timer holding no runner, then decides again as the
-# dispatcher does: a segment, another wait run, or nothing (the switch, the caps and the pauses as always).
+# naming a missing environment creates it). The job waits on that timer holding no runner, then does one thing: it starts
+# AI train's dispatcher (mode=dispatch, on main), which decides as always (a segment, another wait run, or nothing; the
+# switch, the caps and the pauses). It never starts a segment itself, reads nothing and takes no input.
 # Cancelling a wait run pauses the chain until the user says to go on (AI_TRAIN_RESUME), as cancelling a segment does.
 name: AI train wait
 run-name: "AI train: wait"
@@ -22,39 +23,22 @@ concurrency:
 
 jobs:
   wait:
-    if: github.repository == 'EdwardLeeee/war-game' && vars.AI_TRAIN == 'on'
+    # As the dispatch job of ai-train.yml: this repository, the switch on, a run the dispatcher started (github-actions[bot],
+    # also as triggering actor: not by hand), its first attempt (a Re-run does nothing), on main.
+    if: >-
+      github.repository == 'EdwardLeeee/war-game' && vars.AI_TRAIN == 'on' &&
+      github.actor == 'github-actions[bot]' && github.triggering_actor == 'github-actions[bot]' &&
+      github.run_attempt == '1' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     environment:
       name: ai-train-wait
       deployment: false
+    # The only write: starting a workflow run (actions: write), as the dispatch job has; no secret, no checkout.
     permissions:
       actions: write
-      contents: read
     steps:
-      - uses: actions/checkout@v7
-        with:
-          sparse-checkout: .github/ai-train
-          persist-credentials: false
-      - name: Decide and dispatch
+      - name: Start the dispatcher
         env:
           GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          REPO_ID: ${{ github.repository_id }}
-          REF: ${{ github.ref_name }}
-          RUN_ID: ${{ github.run_id }}
-          EVENT: ${{ github.event_name }}
-          MODE: wait
-          ACTOR: ${{ github.actor }}
-          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-          AI_TRAIN: ${{ vars.AI_TRAIN }}
-          AI_TRAIN_RESUME: ${{ vars.AI_TRAIN_RESUME }}
-        run: python3 .github/ai-train/dispatch.py
-      - if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: ai-train-ledger
-          path: ledger/
-          retention-days: 90
-          if-no-files-found: ignore
+        run: gh workflow run ai-train.yml --repo "$GITHUB_REPOSITORY" --ref main -f mode=dispatch

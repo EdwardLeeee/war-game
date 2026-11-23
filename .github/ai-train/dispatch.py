@@ -52,12 +52,13 @@ import urllib.request
 WORKFLOW, SCRATCH = ".github/workflows/ai-train.yml", ".github/workflows/ai-scratch.yml"
 # D-147 PR B (ceo 2026-11-24; docs/research/2026-11-train-chain-handback.md, C): when the chain stops only because the
 # runners are taken (another workflow's job waits, none are free, or the segment gave way), a wait run waits on the timer
-# of the environment WAIT_ENV, holding no runner, then decides again as the dispatcher does. Only when that environment
-# is there with a timer of WAIT_MIN_MINUTES or more (the user decides whether to make it); without it nothing changes and
-# the schedule starts the chain again. A workflow of its own, so that no run names the environment before it exists (a
-# run naming a missing environment creates it). Cancelling a wait run pauses the chain, as cancelling a segment does;
-# its minutes are booked as any AI train run's.
-WAIT_WORKFLOW, WAIT_ENV, WAIT_TITLE, WAIT_MODE = ".github/workflows/ai-train-wait.yml", "ai-train-wait", "AI train: wait", "wait"
+# of the environment WAIT_ENV, holding no runner, and then only starts this dispatcher (mode=dispatch, on main), which
+# decides as always: it never starts a segment itself (ceo 2026-11-24). Only when that environment is there with a timer
+# of WAIT_MIN_MINUTES or more (the user decides whether to make it); without it nothing changes and the schedule starts
+# the chain again. A workflow of its own, so that no run names the environment before it exists (a run naming a missing
+# environment creates it). Cancelling a wait run pauses the chain, as cancelling a segment does; its minutes are booked
+# as any AI train run's.
+WAIT_WORKFLOW, WAIT_ENV = ".github/workflows/ai-train-wait.yml", "ai-train-wait"
 WAIT_MIN_MINUTES = 5
 WAITS_PER_DAY = 24 * 60 // WAIT_MIN_MINUTES  # a brake: one every WAIT_MIN_MINUTES at most
 # The training's own workflows: never given way to, never "another workflow's job waiting".
@@ -310,8 +311,6 @@ def run(env, api, now, sleep=time.sleep):
         tail_ok = actor == BOT and trig == BOT and attempt == "1" and ref == "main"
         if not tail_ok:
             reasons.append(f"這個 run 不是派工派出去、第一次跑、在 main 的段（actor {actor}、triggering {trig}、attempt {attempt}、ref {ref}）")
-    elif event == "workflow_dispatch" and mode == WAIT_MODE:
-        role = "waiter"
     else:
         role = "?"
         reasons.append(f"不認得的啟動方式（{event}、mode {mode}）")
@@ -328,10 +327,9 @@ def run(env, api, now, sleep=time.sleep):
             if a.get("expired") or wr.get("repository_id") != repo_id or wr.get("head_repository_id") != repo_id or wr.get("head_branch") != ref:
                 continue
             r = api.get(f"repos/{repo}/actions/runs/{wr['id']}")
-            if r.get("path") not in (WORKFLOW, WAIT_WORKFLOW):
+            if r.get("path") != WORKFLOW:
                 continue
-            by_dispatcher = (r.get("path") == WORKFLOW and r.get("event") in ("schedule", "workflow_dispatch") and r.get("display_title", "").startswith("AI train: dispatch")) or (
-                r.get("path") == WAIT_WORKFLOW and r.get("event") == "workflow_dispatch" and r.get("display_title", "").startswith(WAIT_TITLE))
+            by_dispatcher = r.get("event") in ("schedule", "workflow_dispatch") and r.get("display_title", "").startswith("AI train: dispatch")
             by_tail = False
             if not by_dispatcher and is_segment(r) and r.get("triggering_actor", {}).get("login") == BOT and r.get("run_attempt") == 1:
                 jobs = api.get(f"repos/{repo}/actions/runs/{r['id']}/attempts/1/jobs?per_page=100")["jobs"]
@@ -470,6 +468,9 @@ def run(env, api, now, sleep=time.sleep):
             for r in api.every(f"repos/{repo}/actions/runs?status={status}&per_page=100", "workflow_runs"):
                 if r["id"] == run_id:
                     continue  # only this run itself is left out
+                # A wait run past its timer (in progress) only starts the dispatcher, maybe this very one, and ends.
+                if r.get("path") == WAIT_WORKFLOW and status == "in_progress":
+                    continue
                 if r.get("path") in (WORKFLOW, WAIT_WORKFLOW):
                     reasons.append(f"AI train 已經有別的 run 是 {status}（run {r['id']}，{r.get('display_title', '')}）")
                 jobs = api.every(f"repos/{repo}/actions/runs/{r['id']}/jobs?per_page=100", "jobs")
@@ -556,7 +557,7 @@ def run(env, api, now, sleep=time.sleep):
         else:
             try:
                 api.call(f"repos/{repo}/actions/workflows/ai-train-wait.yml/dispatches", "POST", {"ref": ref})
-                waited = f"派了等待接回的 run：等 {minutes} 分鐘（不佔 runner）再看一次"
+                waited = f"派了等待接回的 run：等 {minutes} 分鐘（不佔 runner）再叫派工看一次"
             except Exception as e:
                 notes.append(f"派等待接回的 run 時出錯（{type(e).__name__}: {e}）；等定時或手動派工接回")
 
@@ -564,7 +565,7 @@ def run(env, api, now, sleep=time.sleep):
     day_text = "不設每天上限" if o["day_cap"] >= DAY_CAP else f"試跑的每天上限 {o['day_cap']:g}"
     lines = [
         "## 派工（D-147）", "",
-        f"- 時間：{now.astimezone(TPE):%Y-%m-%d %H:%M}（台北）；角色：{'段的結尾' if role == 'tail' else '派工' if role == 'dispatcher' else '等待接回' if role == 'waiter' else role}",
+        f"- 時間：{now.astimezone(TPE):%Y-%m-%d %H:%M}（台北）；角色：{'段的結尾' if role == 'tail' else '派工' if role == 'dispatcher' else role}",
         f"- 這個 run：event {event}、mode {mode or '-'}、actor {actor}、triggering_actor {trig}、run_attempt {attempt}、ref {ref}",
         f"- 今天（台北 {today}）已用：{fmt(day_hours)} 小時（{day_text}）；已派 {seg_today} 段，上限 {o['day_segments']}",
         f"- 總共（從 {LEDGER_START} 起）已用：{fmt(total_hours)} 小時，上限 {o['total_cap']:g}",

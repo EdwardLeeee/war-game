@@ -48,12 +48,18 @@
 - 等待 run 是一個獨立的 workflow：`.github/workflows/ai-train-wait.yml`（run 名稱「AI train: wait」）。
   - 獨立的原因：官方文件說「Running a workflow that references an environment that does not exist will create an environment with the referenced name.」，但沒說被跳過的 job 會不會也建出來。放在 ai-train.yml 裡，每個訓練 run 都可能幫使用者建出空的 environment；獨立的 workflow 在 environment 存在以前一次都不會跑。
   - 只有 dispatch.py 會派它，而且要先確認 environment `ai-train-wait` 存在、等待計時器至少 5 分鐘（讀 `GET repos/{repo}/environments/ai-train-wait` 的 `protection_rules`）。沒有這個 environment、計時器不到 5 分鐘、或 API 讀不到，都照現在：不派，等排程或手動派工。
-  - job 先等計時器（不佔 runner），然後跑一次 dispatch.py（角色「等待接回」），照常判斷：可以就派段；還是只因 runner 被佔就再派一個等待 run；其他原因（開關、上限、暫停）就停。
+  - job 先等計時器（不佔 runner），然後只做一件事：啟動 AI train 的派工（`mode=dispatch`、main）。由派工照常判斷：可以就派段；還是只因 runner 被佔就再派一個等待 run；其他原因（開關、上限、暫停）就停。等待 run 自己不派段（ceo 2026-11-24）。
+  - 它的三個限制（ceo 審 PR B 時看的）：
+    - 權限：workflow 層只有 read；job 層只有 `actions: write`（啟動 workflow 要的，和派工 job 一樣），沒有 contents 寫入、不 checkout、不用任何 secret，也沒有輸入。
+    - `if` 和派工 job 一樣：這個 repository、開關 on、由派工派出（github-actions[bot]，triggering actor 也是）、第一次跑（Re-run 不做事）、在 main。被取消的 run 不會到這一步。
+    - 唯一的一步是 `gh workflow run ai-train.yml --ref main -f mode=dispatch`：只能叫醒派工。
+    - test_dispatch.py 讀這個檔案檢查上面三點，改壞任何一點都有測試失敗。
+  - 派工看到等待 run 還在等（waiting、queued）就不派，交給它；等待 run 過了計時器在跑（in progress）時，就是它正在叫醒派工，派工不把它算成「別的 run」。
 - 什麼時候派等待 run：不派段的原因「全部」只是 runner 被佔：別的 workflow 有 job 在等、留 4 台後沒有空的、或段的結尾而這一段讓位了。只要多一個別的原因就不派。另一個 AI train run（段或等待 run）還在，也不派，交給它。
 - 取消等待 run 算暫停（P-<run id>），和取消段一樣，要 AI_TRAIN_RESUME 才恢復。等待 run 一次只有一個（concurrency group `ai-train-wait`，有 AI train run 在時派工不派），所以不會被新的 pending 取代；它的取消一定是有人按的。
 - 等待 run 的 job 時數照一般 AI train run 記進帳；派工自己不再另外記。每天最多 288 個（每 5 分鐘一個），超過就不派。
 - 段讓位的判斷（giveway.py、yield.ts）不會讓給等待 run。
-- 測試：test_dispatch.py 的 Wait（8 項）；每一條保護故意改壞都有測試失敗。
+- 測試：test_dispatch.py 的 Wait（9 項，共 36 項）；每一條保護故意改壞都有測試失敗。
 - 還沒驗（要 environment 存在才能驗）：
   - 等待中的 run 在 API 上的狀態（應該是 waiting），和計時器結束到 job 拿到 runner 多久。
   - `GITHUB_TOKEN` 讀不讀得到 environment：文件只寫「Anyone with read access to the repository can use this endpoint.」，沒寫 GitHub App 權限；讀不到就照現在，不會出錯。
