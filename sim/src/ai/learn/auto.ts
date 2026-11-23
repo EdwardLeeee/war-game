@@ -18,7 +18,8 @@
 // same game with the opposite result, else the measuring is wrong: pause; it is no statistical test. SEEDS.aaCount
 // seeds from one spawn give its draws, for the finalist's check). After a promotion, once per champion, the new
 // champion against the baseline (a score AUTO.baseDrop standard errors under the best so far: pause).
-// Pauses too: AUTO.candidatesMax candidates tested, AUTO.roundsWithout rounds in a row with no promotion, the canary
+// Pauses too: a block that would take the candidates listed past AUTO.candidatesMax since the last resume (listedSum:
+// what the bound adds up; ceo 2026-11-24), AUTO.roundsWithout rounds in a row with no promotion, the canary
 // games' hashes changed (the rules or the code changed under the training), the blocks run out, and the queue run out.
 
 import { createHash } from "node:crypto";
@@ -184,8 +185,10 @@ export interface State {
   current: { id: string; hash: string; round: number; stage: "exam" | "final"; looks: number; block: number } | null;
   results: Record<string, Res>;
   tested: number;
-  /** `tested` when a "max" pause was last resumed: AUTO.candidatesMax counts from there. */
-  testedAtResume: number;
+  /** listedSum when a "max" pause was last resumed: AUTO.candidatesMax counts from there. */
+  listedAtResume: number;
+  /** A block due but not opened (a pause stopped it: over AUTO.candidatesMax, or none left): why it is due. */
+  blockDue: string | null;
   lastRound: number;
   promotedInRound: boolean;
   roundsWithout: number;
@@ -212,6 +215,7 @@ export function init(examiners: Examiner[], candidates: Candidate[], training: T
   blockBase(first);
   blockBase(last);
   if (last < first) throw new Error(`${name}: blocks ${first}-${last}`);
+  if (candidates.length > AUTO.candidatesMax) throw new Error(`${name}: ${candidates.length} candidates listed, at most ${AUTO.candidatesMax} at once (each listed one adds to the bound)`);
   const lookAhead = training.lookAhead ?? AUTO.lookAhead;
   if (!Number.isInteger(lookAhead) || lookAhead < 1 || lookAhead > AUTO.lookAhead) throw new Error(`${name}: lookAhead ${lookAhead}: 1-${AUTO.lookAhead}`);
   const b = planHash(baseline);
@@ -229,7 +233,8 @@ export function init(examiners: Examiner[], candidates: Candidate[], training: T
     current: null,
     results: {},
     tested: 0,
-    testedAtResume: 0,
+    listedAtResume: 0,
+    blockDue: null,
     lastRound: -1,
     promotedInRound: false,
     roundsWithout: 0,
@@ -269,13 +274,24 @@ export function listedSum(s: State): number {
   return s.blocks.reduce((a, b) => a + b.listed, 0);
 }
 
-/** Opens the next block for the champion; pauses when the training has none left. */
+/**
+ * Opens the next block for the champion, the candidates waiting its list. Pauses instead (the block due, opened once
+ * resumed) when the training has none left, or when the list would take listedSum past AUTO.candidatesMax since the
+ * last resume (ceo 2026-11-24: the bound, not the candidates tested, is what is capped).
+ */
 function openBlock(s: State, why: string, pauseId: string, at: string): void {
   const n = Math.max(...s.blocks.map((b) => b.n)) + 1;
+  s.blockDue = why;
   if (n > s.training.last) {
     pause(s, pauseId, "blocks", `考試種子用完了（${s.training.name} 只有第 ${s.training.first}-${s.training.last} 批）：要用新的名字開一次訓練`, [], at);
     return;
   }
+  const since = listedSum(s) - s.listedAtResume;
+  if (since + s.queue.length > AUTO.candidatesMax) {
+    pause(s, pauseId, "max", `考試的名單上次恢復以後已經 ${since} 個（各批開批時的名單加總），再開一批（${s.queue.length} 個）會超過 ${AUTO.candidatesMax} 個`, [`名單加總 ${listedSum(s)}`, `上限 ${(Math.min(1, (listedSum(s) + s.queue.length) * 2 * SPRT.alpha) * 100).toFixed(2)}%`], at);
+    return;
+  }
+  s.blockDue = null;
   s.blocks.push({ n, champion: s.champion, source: s.source, listed: s.queue.length, opened: at, why });
   s.log.push({ at, what: `換考試種子：第 ${n} 批（${why}；最強版 ${s.champion}，名單 ${s.queue.length} 個）` });
 }
@@ -503,7 +519,7 @@ export function prune(s: State): void {
 export function resume(s: State, id: string, at: string): boolean {
   if (s.paused === null || s.paused.id !== id || s.paused.kind === "blocks") return false;
   const p = s.paused;
-  if (p.kind === "max") s.testedAtResume = s.tested;
+  if (p.kind === "max") s.listedAtResume = listedSum(s);
   if (p.kind === "rounds") s.roundsWithout = 0;
   if (p.kind === "canary") s.canary = null;
   s.paused = null;
@@ -520,6 +536,11 @@ export function step(s: State, pauseId: string, at: string): string[] {
   checkState(s);
   for (let guard = 0; guard < 10_000; guard++) {
     if (s.paused !== null || s.done) return did;
+    if (s.blockDue !== null) {
+      openBlock(s, s.blockDue, pauseId, at);
+      prune(s);
+      continue;
+    }
     const block = blockOf(s);
     const ch = s.champion;
     // The champion against itself.
@@ -557,10 +578,6 @@ export function step(s: State, pauseId: string, at: string): string[] {
     }
     // The next candidate.
     if (s.current === null) {
-      if (s.tested - s.testedAtResume >= AUTO.candidatesMax) {
-        pause(s, pauseId, "max", `已經考了 ${s.tested - s.testedAtResume} 個候選（一次訓練最多 ${AUTO.candidatesMax} 個）`, [], at);
-        continue;
-      }
       if (s.queue.length === 0) {
         // The last champion's own checks (A/A, against the baseline) first: they can still pause.
         if (s.aa[block.n] === undefined || (ch !== s.baseline && s.base[ch] === undefined)) return did;

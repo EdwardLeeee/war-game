@@ -229,18 +229,37 @@ test("auto: the canary's hashes changing pauses; only the code changing is noted
   assert.equal(s.paused, null);
 });
 
-test("auto: resuming a pause resets what made it, so it does not pause again at once", () => {
-  const t = init(EXAMINERS, [{ id: "x", plan: { farmers: 99 }, round: 0 }], TRAINING);
-  t.tested = AUTO.candidatesMax;
-  step(t, "P-1", "t");
-  assert.equal(pausedOf(t)?.kind, "max");
-  assert.ok(resume(t, "P-1", "t"));
-  step(t, "P-2", "t");
-  assert.equal(t.paused, null);
-  assert.equal(t.current?.id, "x");
+test("auto: a block that would list more than the cap pauses unopened; resumed, it opens and the count starts again", () => {
+  const strongPlan: HP = { pushArmy: 99 };
+  const s = init(EXAMINERS, [
+    { id: "strong", plan: strongPlan, round: 0 },
+    { id: "next", plan: { pushArmy: 95 }, round: 0 },
+  ], TRAINING);
+  // As if the first block had listed the cap: a promotion would open a block of 1 more.
+  s.blocks[0].listed = AUTO.candidatesMax;
+  const fakes: Record<string, Fake> = { [planHash(strongPlan)]: { exWins: 0.3, edge: 0.15 } };
+  for (let i = 0; i < 200 && s.paused === null; i++) {
+    play(s, needed(s), fakes);
+    step(s, `P-${i}`, "t");
+  }
+  assert.equal(s.champion, planHash(strongPlan));
+  assert.equal(pausedOf(s)?.kind, "max");
+  assert.equal(s.blocks.length, 1, "not opened");
+  assert.deepEqual(needed(s), []);
+  const id = pausedOf(s)!.id;
+  assert.ok(resume(s, id, "t"));
+  assert.equal(s.listedAtResume, AUTO.candidatesMax);
+  step(s, "P-x", "t");
+  assert.equal(s.paused, null);
+  assert.deepEqual(s.blocks.map((b) => [b.n, b.listed]), [[1, AUTO.candidatesMax], [2, 1]]);
+  assert.equal(s.current?.id, "next");
+  assert.equal(s.current?.block, 2);
+  assert.ok(needed(s).length > 0);
+  // More than the cap at once is refused at the start.
+  assert.throws(() => init(EXAMINERS, Array.from({ length: AUTO.candidatesMax + 1 }, (_, i) => ({ id: `c${i}`, plan: { farmers: i }, round: 0 })), TRAINING), /at most/);
 });
 
-test("auto: rounds with no promotion, and too many candidates, pause", () => {
+test("auto: rounds with no promotion pause", () => {
   const plans = Array.from({ length: 12 }, (_, i): HP => ({ farmers: 30 + i }));
   const s = init(EXAMINERS, plans.map((plan, i) => ({ id: `c${i}`, plan, round: i })), TRAINING);
   run(s, Object.fromEntries(plans.map((p) => [planHash(p), { exWins: 0.3, edge: -0.2 } as Fake])));
@@ -248,11 +267,6 @@ test("auto: rounds with no promotion, and too many candidates, pause", () => {
   assert.equal(s.tested, AUTO.roundsWithout);
   // The candidate that would start the eleventh round waits in the queue.
   assert.equal(s.queue[0].id, `c${AUTO.roundsWithout}`);
-  const t = init(EXAMINERS, [], TRAINING);
-  t.tested = AUTO.candidatesMax;
-  t.queue.push({ id: "x", plan: { farmers: 99 }, round: 0 });
-  step(t, "P-9", "t");
-  assert.match(t.paused?.reason ?? "", /最多/);
 });
 
 test("auto: a new champion that drops against the baseline pauses", () => {

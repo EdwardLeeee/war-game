@@ -54,7 +54,7 @@ export const SPRT = {
   vsMax: 4000,
   /** The other path, not worse: its z at least this. */
   notWorse: -1,
-  /** Candidates in one training at most; then it pauses. */
+  /** Candidates listed (auto.ts listedSum) at most, then it pauses: the bound at most 400 x 1e-4 = 4% till resumed. */
   candidatesMax: 400,
 } as const;
 

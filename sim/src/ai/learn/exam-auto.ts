@@ -238,7 +238,7 @@ function report(s: State): string[] {
     `- ${statusLine(s)}`,
     `- 目前最強版：${s.champion}${s.champion === s.baseline ? "（還是基準）" : ""}；考了 ${s.tested} 個候選，升級 ${promoted.length} 次`,
     // A block's candidates share seeds: they add up (a union bound), by the candidates listed when it opened (sprt.ts).
-    `- 誤升級機率的上限（到目前開的各批）：各批開批時的名單共 ${listedSum(s)} 個 × 1e-4（兩條路合起來），至少誤升級一次最多 ${(Math.min(1, listedSum(s) * 2 * SPRT.alpha) * 100).toFixed(2)}%`,
+    `- 誤升級機率的上限（到目前開的各批）：各批開批時的名單共 ${listedSum(s)} 個 × 1e-4（兩條路合起來），至少誤升級一次最多 ${(Math.min(1, listedSum(s) * 2 * SPRT.alpha) * 100).toFixed(2)}%；上次恢復以後 ${listedSum(s) - s.listedAtResume} 個，滿 ${SPRT.candidatesMax} 個就暫停`,
     "- 這個上限要成立：候選、最強版和產生候選的程式都沒看過那一批種子的結果；各考官各用種子、兩個出生點算一個單位；λ 只看之前各次；種子當作隨機抽的；同一場考試規則沒變（sprt.ts 的 1–7）",
     `- 考試種子：第 ${s.blocks.at(-1)!.n} 批（這次訓練有第 ${s.training.first}-${s.training.last} 批）；開過的：${s.blocks.map((b) => `${b.n}（${b.why}，名單 ${b.listed}）`).join("、")}`,
   ];
