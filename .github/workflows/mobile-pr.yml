@@ -1,0 +1,140 @@
+name: Mobile PR
+
+# The iOS app (D-163, mobile/; brief docs/briefs/2026-11-ios-app.md): checked on pull requests that
+# change mobile/ or this file. Not a required check: the path filter would leave other pull requests
+# waiting. A client change does not run it; the release workflow runs the smoke test before every
+# upload instead.
+#   checks (ubuntu): Capacitor's versions agree (scripts/check-versions.ts), the icon, the plists.
+#   ios (macOS): the game built as pages.yml builds it, atlases included; the app as it ships, built
+#     unsigned for a device and checked (ci/check-app.sh); then the smoke copy on a fresh iPhone
+#     simulator (ci/smoke.sh): start a game, past 2 minutes, Home, killed, opened, 繼續上一局.
+# Artifacts: screenshots and logs only, never the .app (hundreds of MB; ceo 2026-11-24).
+on:
+  pull_request:
+    paths:
+      - "mobile/**"
+      - ".github/workflows/mobile-pr.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-pr-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Capacitor's versions agree
+        working-directory: mobile
+        run: |
+          npm ci
+          node scripts/check-versions.ts
+      - name: The icon is 1024 × 1024 and opaque; the plists parse
+        run: |
+          python3 - <<'EOF'
+          import plistlib, struct
+          icon = "mobile/ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png"
+          with open(icon, "rb") as f:
+              head = f.read(33)
+          assert head[:8] == b"\x89PNG\r\n\x1a\n" and head[12:16] == b"IHDR", "not a PNG"
+          w, h, depth, color = struct.unpack(">IIBB", head[16:26])
+          assert (w, h) == (1024, 1024), f"icon {w}x{h}"
+          assert color in (0, 2), f"icon colour type {color}: has alpha or a palette"
+          print(f"icon {w}x{h}, colour type {color} (no alpha)")
+          for p in ["mobile/ios/App/App/Info.plist", "mobile/ios/App/App/PrivacyInfo.xcprivacy"]:
+              plistlib.load(open(p, "rb"))
+              print(f"{p}: parses")
+          EOF
+
+  ios:
+    needs: checks
+    runs-on: macos-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            client/package-lock.json
+            mobile/package-lock.json
+      - name: Xcode
+        run: |
+          xcodebuild -version
+          sw_vers
+      # The units' atlases (D-085) art.lock.json pins, as pages.yml has them (not art-lab's).
+      - name: Atlases from cache
+        uses: actions/cache@v6
+        with:
+          path: client/.art-cache
+          key: art-macos-${{ hashFiles('client/art.lock.json') }}
+      - name: The game, built as pages.yml builds it
+        working-directory: client
+        run: |
+          set -euo pipefail
+          npm ci
+          node scripts/fetch-art.ts
+          npm run build
+      - name: The app as it ships, for a device, unsigned
+        working-directory: mobile
+        run: |
+          set -euo pipefail
+          npm ci
+          node scripts/web.ts
+          npx cap sync ios
+          cd ios/App
+          start=$SECONDS
+          xcodebuild -project App.xcodeproj -scheme App -configuration Release \
+            -sdk iphoneos -destination "generic/platform=iOS" \
+            -derivedDataPath "${RUNNER_TEMP}/dd-device" CODE_SIGNING_ALLOWED=NO build > "${RUNNER_TEMP}/device-build.log" 2>&1 \
+            || { tail -n 60 "${RUNNER_TEMP}/device-build.log"; exit 1; }
+          tail -n 3 "${RUNNER_TEMP}/device-build.log"
+          echo "device build: $((SECONDS - start)) s" | tee -a "${GITHUB_STEP_SUMMARY}"
+          bash ../../ci/check-app.sh "${RUNNER_TEMP}/dd-device/Build/Products/Release-iphoneos/App.app" ship
+      - name: The smoke copy, and the test target added (never committed)
+        working-directory: mobile
+        run: |
+          set -euo pipefail
+          node scripts/web.ts --smoke
+          npx cap sync ios
+          ruby -v
+          gem install --user-install --no-document xcodeproj -v 1.28.1
+          ruby ci/add-ui-tests.rb ios/App/App.xcodeproj ci/SmokeUITests.swift
+      - name: Smoke test on a fresh iPhone simulator
+        run: bash mobile/ci/smoke.sh smoke-out
+      # Stage 3's signing (D-163): does a .p12 made by OpenSSL 3 with its defaults, as on the user's
+      # Linux machine, go into a macOS keychain? A throwaway self-signed key made here, no secret.
+      - name: OpenSSL 3 .p12 into a keychain (stage 3 check)
+        if: always()
+        run: |
+          set -uo pipefail
+          ossl="$(brew --prefix openssl@3)/bin/openssl"
+          d="${RUNNER_TEMP}/p12check"; mkdir -p "${d}"; cd "${d}"
+          "${ossl}" version | tee -a "${GITHUB_STEP_SUMMARY}"
+          "${ossl}" req -x509 -newkey rsa:2048 -nodes -keyout k.pem -out c.pem -days 1 -subj "/CN=war-game p12 check" 2>/dev/null
+          "${ossl}" pkcs12 -export -inkey k.pem -in c.pem -out default.p12 -passout pass:check
+          "${ossl}" pkcs12 -export -legacy -inkey k.pem -in c.pem -out legacy.p12 -passout pass:check
+          for p in default legacy; do
+            security create-keychain -p check "${d}/${p}.keychain-db"
+            if security import "${p}.p12" -k "${d}/${p}.keychain-db" -P check -T /usr/bin/codesign >/dev/null 2>&1; then r=imported; else r=FAILED; fi
+            echo "- OpenSSL 3 .p12 (${p}): ${r}" | tee -a "${GITHUB_STEP_SUMMARY}"
+            security delete-keychain "${d}/${p}.keychain-db"
+          done
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mobile-smoke
+          path: smoke-out/
+          retention-days: 14
+          if-no-files-found: warn

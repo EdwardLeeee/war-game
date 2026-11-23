@@ -1,0 +1,23 @@
+{
+  "name": "war-game-mobile",
+  "private": true,
+  "version": "0.0.0",
+  "description": "iOS app (D-163): Capacitor wrapping the client build, carried inside the app",
+  "type": "module",
+  "scripts": {
+    "check-versions": "node scripts/check-versions.ts",
+    "web": "node scripts/web.ts",
+    "web:smoke": "node scripts/web.ts --smoke",
+    "sync": "cap sync ios"
+  },
+  "dependencies": {
+    "@capacitor/core": "8.6.2",
+    "@capacitor/ios": "8.6.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.6.2"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}
