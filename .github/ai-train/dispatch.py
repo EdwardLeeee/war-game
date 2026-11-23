@@ -46,9 +46,22 @@ import os
 import re
 import subprocess
 import time
+import urllib.error
 import urllib.request
 
 WORKFLOW, SCRATCH = ".github/workflows/ai-train.yml", ".github/workflows/ai-scratch.yml"
+# D-147 PR B (ceo 2026-11-24; docs/research/2026-11-train-chain-handback.md, C): when the chain stops only because the
+# runners are taken (another workflow's job waits, none are free, or the segment gave way), a wait run waits on the timer
+# of the environment WAIT_ENV, holding no runner, then decides again as the dispatcher does. Only when that environment
+# is there with a timer of WAIT_MIN_MINUTES or more (the user decides whether to make it); without it nothing changes and
+# the schedule starts the chain again. A workflow of its own, so that no run names the environment before it exists (a
+# run naming a missing environment creates it). Cancelling a wait run pauses the chain, as cancelling a segment does;
+# its minutes are booked as any AI train run's.
+WAIT_WORKFLOW, WAIT_ENV, WAIT_TITLE, WAIT_MODE = ".github/workflows/ai-train-wait.yml", "ai-train-wait", "AI train: wait", "wait"
+WAIT_MIN_MINUTES = 5
+WAITS_PER_DAY = 24 * 60 // WAIT_MIN_MINUTES  # a brake: one every WAIT_MIN_MINUTES at most
+# The training's own workflows: never given way to, never "another workflow's job waiting".
+OWN = (WORKFLOW, SCRATCH, WAIT_WORKFLOW)
 BOT = "github-actions[bot]"
 SEGMENT_MODE = "auto"  # the mode a segment runs: the exams (PR B; A2's trial ran chaintest)
 # The caps (D-147, ceo 2026-11-21): written here; AI_TRAIN and a trial's options can only lower them.
@@ -262,6 +275,21 @@ class Api:
             return json.load(f)
 
 
+def wait_timer(api, repo):
+    """The wait environment's timer in minutes and "", or None and why it is not used (not there, no timer or a short
+    one: an environment made by hand without one; the API failing: as without it)."""
+    try:
+        e = api.get(f"repos/{repo}/environments/{WAIT_ENV}")
+    except urllib.error.HTTPError as err:
+        return None, (f"沒有 environment {WAIT_ENV}" if err.code == 404 else f"讀不到 environment {WAIT_ENV}（HTTP {err.code}）")
+    except Exception as err:
+        return None, f"讀不到 environment {WAIT_ENV}（{type(err).__name__}）"
+    m = max([p.get("wait_timer") or 0 for p in (e or {}).get("protection_rules") or [] if p.get("type") == "wait_timer"], default=0)
+    if m < WAIT_MIN_MINUTES:
+        return None, f"environment {WAIT_ENV} 的等待計時器 {m} 分鐘，不到 {WAIT_MIN_MINUTES} 分鐘"
+    return m, ""
+
+
 def run(env, api, now, sleep=time.sleep):
     """Decide, dispatch if so, and return (summary lines, the ledger to save or None)."""
     repo, ref, run_id, repo_id = env["REPO"], env["REF"], int(env["RUN_ID"]), int(env["REPO_ID"])
@@ -271,6 +299,8 @@ def run(env, api, now, sleep=time.sleep):
     o = options(env.get("ARGS", "").split())
     today = now.astimezone(TPE).date().isoformat()
     reasons, notes = [], []
+    # Reasons that only say the runners are taken: on these alone a wait run takes over (WAIT_WORKFLOW).
+    soft = []
 
     if event == "schedule" or (event == "workflow_dispatch" and mode == "dispatch"):
         role = "dispatcher"
@@ -280,6 +310,8 @@ def run(env, api, now, sleep=time.sleep):
         tail_ok = actor == BOT and trig == BOT and attempt == "1" and ref == "main"
         if not tail_ok:
             reasons.append(f"這個 run 不是派工派出去、第一次跑、在 main 的段（actor {actor}、triggering {trig}、attempt {attempt}、ref {ref}）")
+    elif event == "workflow_dispatch" and mode == WAIT_MODE:
+        role = "waiter"
     else:
         role = "?"
         reasons.append(f"不認得的啟動方式（{event}、mode {mode}）")
@@ -296,9 +328,10 @@ def run(env, api, now, sleep=time.sleep):
             if a.get("expired") or wr.get("repository_id") != repo_id or wr.get("head_repository_id") != repo_id or wr.get("head_branch") != ref:
                 continue
             r = api.get(f"repos/{repo}/actions/runs/{wr['id']}")
-            if r.get("path") != WORKFLOW:
+            if r.get("path") not in (WORKFLOW, WAIT_WORKFLOW):
                 continue
-            by_dispatcher = r.get("event") in ("schedule", "workflow_dispatch") and r.get("display_title", "").startswith("AI train: dispatch")
+            by_dispatcher = (r.get("path") == WORKFLOW and r.get("event") in ("schedule", "workflow_dispatch") and r.get("display_title", "").startswith("AI train: dispatch")) or (
+                r.get("path") == WAIT_WORKFLOW and r.get("event") == "workflow_dispatch" and r.get("display_title", "").startswith(WAIT_TITLE))
             by_tail = False
             if not by_dispatcher and is_segment(r) and r.get("triggering_actor", {}).get("login") == BOT and r.get("run_attempt") == 1:
                 jobs = api.get(f"repos/{repo}/actions/runs/{r['id']}/attempts/1/jobs?per_page=100")["jobs"]
@@ -322,17 +355,27 @@ def run(env, api, now, sleep=time.sleep):
         ledger, keep = fresh(), False
 
     day_hours = total_hours = state = None
-    seg_today = 0
+    seg_today = waits_today = 0
     own_cls = None
     try:
         # Training runs are started by hand dispatch (the dispatcher's segments too) or by a push; the schedule's ticks
         # are not listed (each dispatcher books its own time). Listed a day at a time: GitHub lists at most 1,000 runs.
         listed, seen_ids = [], set()
         start = when(ledger["checkpoint"])
+        wait_file = True  # False: the wait workflow is not on this ref (404): none of its runs
         while start <= now:
             end = start + dt.timedelta(days=1)
-            for ev in ("workflow_dispatch", "push"):
-                for r in api.every(f"repos/{repo}/actions/workflows/ai-train.yml/runs?created={iso(start)}..{iso(end)}&event={ev}&per_page=100", "workflow_runs"):
+            for file, ev in (("ai-train.yml", "workflow_dispatch"), ("ai-train.yml", "push"), ("ai-train-wait.yml", "workflow_dispatch")):
+                if file == "ai-train-wait.yml" and not wait_file:
+                    continue
+                try:
+                    found_runs = api.every(f"repos/{repo}/actions/workflows/{file}/runs?created={iso(start)}..{iso(end)}&event={ev}&per_page=100", "workflow_runs")
+                except urllib.error.HTTPError as err:
+                    if file != "ai-train-wait.yml" or err.code != 404:
+                        raise
+                    wait_file = False
+                    continue
+                for r in found_runs:
                     if r["id"] not in seen_ids:
                         seen_ids.add(r["id"])
                         listed.append(r)
@@ -369,7 +412,20 @@ def run(env, api, now, sleep=time.sleep):
                     earliest_open = r["created_at"]
             for d, h in known["days"].items():
                 sums[d] = sums.get(d, 0.0) + h
-            if is_segment(r):
+            if r.get("path") == WAIT_WORKFLOW:
+                if day_of(r["created_at"]) == today:
+                    waits_today += 1
+                # A wait run cancelled (by hand: one at a time, it is never replaced) or timed out pauses the chain.
+                if r["status"] == "completed" and key not in ledger["segs"]:
+                    concl = r.get("conclusion") if r.get("run_attempt", 1) == 1 else api.get(f"repos/{repo}/actions/runs/{r['id']}/attempts/1").get("conclusion")
+                    if concl in STOP:
+                        cls, why = "stop", f"等待接回的 run 被取消或逾時（{concl}）"
+                    elif concl in ("success", "skipped"):
+                        cls, why = "none", f"等待接回（{concl}）"
+                    else:
+                        cls, why = "bad", f"等待接回的 run 是 {concl}"
+                    ledger["segs"][key] = {"cls": cls, "why": why, "created": r["created_at"], "branch": r.get("head_branch")}
+            elif is_segment(r):
                 if day_of(r["created_at"]) == today:
                     seg_today += 1
                 # Segments are judged by their first attempt: kept once done.
@@ -414,17 +470,19 @@ def run(env, api, now, sleep=time.sleep):
             for r in api.every(f"repos/{repo}/actions/runs?status={status}&per_page=100", "workflow_runs"):
                 if r["id"] == run_id:
                     continue  # only this run itself is left out
-                if r.get("path") == WORKFLOW:
+                if r.get("path") in (WORKFLOW, WAIT_WORKFLOW):
                     reasons.append(f"AI train 已經有別的 run 是 {status}（run {r['id']}，{r.get('display_title', '')}）")
                 jobs = api.every(f"repos/{repo}/actions/runs/{r['id']}/jobs?per_page=100", "jobs")
                 busy += sum(1 for j in jobs if j["status"] == "in_progress")
                 w = sum(1 for j in jobs if j["status"] in ("queued", "waiting", "pending", "requested"))
-                if w and r.get("path") not in (WORKFLOW, SCRATCH):
+                if w and r.get("path") not in OWN:
                     reasons.append(f"{r.get('name')} 有 {w} 個 job 在等（run {r['id']}）")
+                    soft.append(reasons[-1])
         # What is free with RESERVE kept, at most the segment's: none is no segment (never one squeezed in).
         jobs = min(o["segment_jobs"], RUNNERS - busy - RESERVE)
         if jobs < 1:
             reasons.append(f"在跑的 job 有 {busy} 個，留 {RESERVE} 個空位之後沒有可以用的")
+            soft.append(reasons[-1])
     except Exception as e:
         reasons.append(f"看不到別的工作（{type(e).__name__}: {e}）")
     planned = o["segment_hours"] * max(jobs, 0)
@@ -445,6 +503,8 @@ def run(env, api, now, sleep=time.sleep):
         reasons.append(f"暫停中（{state['pause']['id']}）：{state['pause']['reason']}")
     if role == "tail" and own_cls is not None and own_cls[0] != "ok":
         reasons.append(f"這一段沒有正常做完（{own_cls[1]}），不接；等定時或手動派工接回")
+        if own_cls[0] == "yield":
+            soft.append(reasons[-1])
     if role == "tail" and tail_ok and own_cls is None and state is not None:
         reasons.append("在 run 的清單裡找不到這一段自己")
     if ledger.get("unseen") and (now - when(ledger["unseen"])).total_seconds() < UNSEEN_HOLD:
@@ -485,11 +545,26 @@ def run(env, api, now, sleep=time.sleep):
             go, started = False, f"派的時候出錯（{type(e).__name__}: {e}）"
             ledger["unseen"] = iso(now)
 
+    # Only the runners taken: a wait run takes over, if the environment is there (WAIT_WORKFLOW).
+    waited = ""
+    if not go and reasons and all(x in soft for x in reasons):
+        minutes, why = wait_timer(api, repo)
+        if minutes is None:
+            notes.append(f"沒有派等待接回的 run：{why}；等定時或手動派工接回")
+        elif waits_today + 1 > WAITS_PER_DAY:
+            notes.append(f"沒有派等待接回的 run：今天已經派了 {waits_today} 個，每天最多 {WAITS_PER_DAY} 個")
+        else:
+            try:
+                api.call(f"repos/{repo}/actions/workflows/ai-train-wait.yml/dispatches", "POST", {"ref": ref})
+                waited = f"派了等待接回的 run：等 {minutes} 分鐘（不佔 runner）再看一次"
+            except Exception as e:
+                notes.append(f"派等待接回的 run 時出錯（{type(e).__name__}: {e}）；等定時或手動派工接回")
+
     fmt = lambda h: "?" if h is None else f"{h:.2f}"
     day_text = "不設每天上限" if o["day_cap"] >= DAY_CAP else f"試跑的每天上限 {o['day_cap']:g}"
     lines = [
         "## 派工（D-147）", "",
-        f"- 時間：{now.astimezone(TPE):%Y-%m-%d %H:%M}（台北）；角色：{'段的結尾' if role == 'tail' else '派工' if role == 'dispatcher' else role}",
+        f"- 時間：{now.astimezone(TPE):%Y-%m-%d %H:%M}（台北）；角色：{'段的結尾' if role == 'tail' else '派工' if role == 'dispatcher' else '等待接回' if role == 'waiter' else role}",
         f"- 這個 run：event {event}、mode {mode or '-'}、actor {actor}、triggering_actor {trig}、run_attempt {attempt}、ref {ref}",
         f"- 今天（台北 {today}）已用：{fmt(day_hours)} 小時（{day_text}）；已派 {seg_today} 段，上限 {o['day_segments']}",
         f"- 總共（從 {LEDGER_START} 起）已用：{fmt(total_hours)} 小時，上限 {o['total_cap']:g}",
@@ -502,6 +577,7 @@ def run(env, api, now, sleep=time.sleep):
         lines.append(f"- 連續失敗或太短：{state['bad']} 段（{BAD_IN_A_ROW} 段暫停）；連續讓位又太短：{state['yields']} 段（{YIELDS_IN_A_ROW} 段暫停）")
     lines.append(f"- 決定：{'派' if go else '不派'}")
     lines += [f"- {started}"] if started else []
+    lines += [f"- {waited}"] if waited else []
     lines += [f"- 不派的原因：{x}" for x in reasons]
     if state is not None and state["pause"]:
         p = state["pause"]

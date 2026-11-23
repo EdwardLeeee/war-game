@@ -14,7 +14,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from dispatch import SCRATCH, WORKFLOW, Api, when  # noqa: E402
+from dispatch import OWN, Api, when  # noqa: E402
 
 YIELD_WAIT = 600  # seconds
 
@@ -22,7 +22,7 @@ YIELD_WAIT = 600  # seconds
 def why(api, repo, now):
     for status in ("queued", "in_progress"):
         for r in api.every(f"repos/{repo}/actions/runs?status={status}&per_page=100", "workflow_runs"):
-            if r.get("path") in (WORKFLOW, SCRATCH):
+            if r.get("path") in OWN:
                 continue
             deploy = r.get("path") == ".github/workflows/pages.yml" and r.get("event") == "push" and r.get("head_branch") == "main"
             jobs = api.every(f"repos/{repo}/actions/runs/{r['id']}/jobs?per_page=100", "jobs")

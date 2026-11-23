@@ -11,7 +11,7 @@ import { execFileSync } from "node:child_process";
 export const YIELD_EVERY = 6 * 60_000;
 export const YIELD_WAIT = 10 * 60_000;
 /** The training's own workflows: never given way to. */
-const OWN = [".github/workflows/ai-train.yml", ".github/workflows/ai-scratch.yml"];
+const OWN = [".github/workflows/ai-train.yml", ".github/workflows/ai-scratch.yml", ".github/workflows/ai-train-wait.yml"];
 
 const ghJson = (path: string, jq: string): unknown => JSON.parse(execFileSync("gh", ["api", path, "--jq", jq], { encoding: "utf8", timeout: 60_000 }) || "null");
 

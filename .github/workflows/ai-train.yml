@@ -30,6 +30,8 @@
 #   all from the API; the chain is not paused; no other AI train run is running or waiting, no job of another workflow
 #   waits (D-123); a segment takes the runners free with 4 of the 20 kept, at most 16 (none free: no segment); on a
 #   segment's tail, that segment trained properly.
+#   Taken over (PR B, docs/research/2026-11-train-chain-handback.md): when only the runners are taken, a wait run of
+#   ai-train-wait.yml waits on the environment ai-train-wait's timer and decides again; without that environment, the schedule.
 #   To stop: set AI_TRAIN to "off" (no next segment; the one running ends within its hour), or cancel the run in the
 #   Actions tab: that stops at once and pauses the chain until the user says to go on (AI_TRAIN_RESUME).
 #   Any other AI train run started while a segment waits in the ai-train group cancels the waiting one (GitHub keeps one

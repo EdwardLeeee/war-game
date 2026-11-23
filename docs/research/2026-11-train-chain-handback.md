@@ -43,8 +43,19 @@
 - dispatch.py：角色「派工」多一種事件；別的判斷全部不變。
 - test_dispatch.py：名單等於 .github/workflows 裡的全部名稱（ai-train 除外）；新事件只當派工、不當段的結尾。
 
-## 要改的地方（選 C 時）
+## C 怎麼做的（PR B；ceo 2026-11-24：environment 現在不建，有就用、沒有就照現在）
 
-- 使用者在 repository 設定建 environment（名稱、等待計時器 10 分鐘、沒有審核者）。
-- ai-train.yml：mode wait 的 run（自己的 concurrency group，`environment: { name: ai-train-wait, deployment: false }`），job 只跑派工的判斷；可以派就派段，還是不行、而且原因是讓位或佇列在忙就再派一個等待 run，原因是開關、上限、暫停就停。
-- dispatch.py：段的結尾和派工在「沒接下去、原因是讓位或佇列在忙」時派等待 run；等待 run 被取消（不是被新的 pending 換掉：一次只有一個）算暫停，和段被取消一樣；等待 run 的 job 時數照段記進帳。
+- 等待 run 是一個獨立的 workflow：`.github/workflows/ai-train-wait.yml`（run 名稱「AI train: wait」）。
+  - 獨立的原因：官方文件說「Running a workflow that references an environment that does not exist will create an environment with the referenced name.」，但沒說被跳過的 job 會不會也建出來。放在 ai-train.yml 裡，每個訓練 run 都可能幫使用者建出空的 environment；獨立的 workflow 在 environment 存在以前一次都不會跑。
+  - 只有 dispatch.py 會派它，而且要先確認 environment `ai-train-wait` 存在、等待計時器至少 5 分鐘（讀 `GET repos/{repo}/environments/ai-train-wait` 的 `protection_rules`）。沒有這個 environment、計時器不到 5 分鐘、或 API 讀不到，都照現在：不派，等排程或手動派工。
+  - job 先等計時器（不佔 runner），然後跑一次 dispatch.py（角色「等待接回」），照常判斷：可以就派段；還是只因 runner 被佔就再派一個等待 run；其他原因（開關、上限、暫停）就停。
+- 什麼時候派等待 run：不派段的原因「全部」只是 runner 被佔：別的 workflow 有 job 在等、留 4 台後沒有空的、或段的結尾而這一段讓位了。只要多一個別的原因就不派。另一個 AI train run（段或等待 run）還在，也不派，交給它。
+- 取消等待 run 算暫停（P-<run id>），和取消段一樣，要 AI_TRAIN_RESUME 才恢復。等待 run 一次只有一個（concurrency group `ai-train-wait`，有 AI train run 在時派工不派），所以不會被新的 pending 取代；它的取消一定是有人按的。
+- 等待 run 的 job 時數照一般 AI train run 記進帳；派工自己不再另外記。每天最多 288 個（每 5 分鐘一個），超過就不派。
+- 段讓位的判斷（giveway.py、yield.ts）不會讓給等待 run。
+- 測試：test_dispatch.py 的 Wait（8 項）；每一條保護故意改壞都有測試失敗。
+- 還沒驗（要 environment 存在才能驗）：
+  - 等待中的 run 在 API 上的狀態（應該是 waiting），和計時器結束到 job 拿到 runner 多久。
+  - `GITHUB_TOKEN` 讀不讀得到 environment：文件只寫「Anyone with read access to the repository can use this endpoint.」，沒寫 GitHub App 權限；讀不到就照現在，不會出錯。
+  - `protection_rules` 裡計時器那一項的 `type` 是不是字串 `wait_timer`：文件只寫是 string。不是的話一樣照現在。
+- 要用的時候：使用者在 repository 的 Settings → Environments 建 `ai-train-wait`，Wait timer 填 10，不設審核者。建好之後第一次讓位就會用到；第一次用時看一次上面三點。
