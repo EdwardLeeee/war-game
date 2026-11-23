@@ -4099,3 +4099,28 @@
   - #562（main 06043110，上線 0604311）：新手教學第 1 步補上「左下的」；CI 的 WebKit 分成 3 片（最長 16.2 分）。只改 client，不斷存檔。
   - #563（main f3e12b83，只改文件）：ui 把 D-161 定的細節補進 `design/r26/spec.md`（04、05、07、第 35–47 條）。
   - ui 清硬碟約 4.4 GB，是使用者本人在 ui 的視窗同意的（遞迴刪除被安全檢查擋下，ceo 和別的 session 不能代答）。
+
+### D-163 免費、不加授權、只做 iOS app、網址拿掉 proto（使用者）；200 名兵卡頓開始查（ceo）
+- **使用者**（2026-11-24）原話：「這就開源小遊戲 不用賺錢，網址可以拿掉proto了，app 化會在手機上跑得比較順暢嗎？我用網頁到200兵時畫面會卡卡的」
+- **免費、不賺錢**：沒有內購、沒有廣告。GDD 第 15、16 節的商業模式改成定案。
+- **授權**：ceo 用選擇欄位問要不要加開源授權（推薦程式 MIT、美術 CC BY 4.0；查過出貨圖用到的外部素材全是 CC0，沒有衝突）。使用者選「只公開，不加授權（現況）」。repo 照舊公開、保留所有權利，不加 LICENSE（AGENTS.md 那條不變）。
+- **app 會不會比較順**：不會。ceo 的回答：iOS 上 Capacitor 用 WKWebView，和 Safari 同一套網頁引擎。卡頓要從遊戲本身修。
+- **iOS app**：
+  - ceo 問要不要做 app（推薦先不做：不會比較順，上架每年 99 美元）。使用者打字：「IOS的就好，我有開發者帳號」。只做 iOS，不做 Android。
+  - 做法：使用者選「同意：遊戲帶在 app 裡（推薦）」，沒選「先不做 app」。不做連到網站的殼：Capacitor 官方文件寫 `server.url` 不是給正式版用的，只包網站的殼容易被 App Store 審核 4.2 退件。代價（使用者知道）：網頁版修好的東西，app 要重新建置、上傳才會更新。先上 TestFlight 給使用者自己裝；要不要公開上架等他玩過再決定。
+  - bundle ID：使用者選 `com.edwardleeee.wargame`，沒選 `io.github.edwardleeee.wargame`（ceo 推薦的）。上傳後永遠不能改。
+  - 誰做：使用者選「開新視窗同時做」，沒選「修完卡頓再做（推薦）」。新角色 `war-game-mobile` 負責 `mobile/`、`.github/workflows/mobile*.yml`；brief 在 `docs/briefs/2026-11-ios-app.md`；AGENTS.md 已加。
+  - 遊戲裡的「關於／授權」入口：之後和 app 的設定一起由 ui 出稿給使用者看再做。網站上的 licenses.html 照舊。
+- **網址拿掉 proto**：遊戲從 `https://edwardleeee.github.io/war-game/proto/` 搬到 `https://edwardleeee.github.io/war-game/`（client 做，計畫 ceo 核准）。
+  - 原本根目錄的「測試頁」首頁拿掉，遊戲就是首頁；兩個引擎 spike 移到 `/war-game/spikes/web/`、`/spikes/godot/`；licenses.html 留在根目錄。
+  - `/war-game/proto/` 留轉址頁（帶著網址參數）、自毀的 service worker 和 manifest。舊的 service worker 只快取美術，不會留住舊頁。
+  - 對局紀錄的 Worker 只檢查網域（不含路徑），上傳不受影響。
+  - 存檔和設定：同一個網域，Safari 裡接得上。主畫面圖示要重新加一次；主畫面的 web app 和 Safari 的資料是否分開，client 查官方文件，查不到就照實寫不確定。
+- **200 名兵卡頓**（使用者用選擇欄位補充：「兩邊大軍打起來的時候」和「兵多就卡，沒在打也卡」，沒選「拖動畫面的時候」）：
+  - 裝置是 iPhone 14 Pro Max：他最新一局的紀錄（a862ce13，2026-11-18，b9c1e3e，困難，贏，118,337 tick）是 x3 ASTC、正式介面，ASTC 只有 iPhone 有。
+  - 以前的基準（D-133）：iPhone 上 360 人、鏡頭不動、沒在打的 fps 中位數 58.82，通過；之後加了 #536、#538、R26 等，也沒量過打仗的特效。
+  - client 量畫面：用那一局在 b9c1e3e 的 sim 重播到兵最多、打最兇的時間點，把一張畫面的時間拆成各塊，兵 100／200／300、打和不打各一組；再加一個「大軍交戰」的量測頁給使用者在 iPhone 上量。core 量同一局的每 tick 模擬時間。第一份回報只量、不改。
+- **電腦訓練**（ai）：PR B 的新升級規則改完（D-162 列的條件），ceo 自己照 `sprt.ts` 逐行改寫成 python 複算對最強版那條路：一樣強的候選各 100 萬個，兩局連動 0.098／0.25／0.4／0.5 時到上限的比例 3.0e-5／3.8e-5／3.6e-5／2.5e-5，都在每條路 5e-5 以內，和 ai 的正式程式模擬一致。
+  - 自動暫停改成數「各批開批時名單長度的加總」，滿 400 就停。
+  - 讓位以後自己接回：用 GitHub 環境的等待計時器（等的時候不佔 runner）。要使用者在 repo 設定建一個 environment；正式訓練開始前（正式版的規則凍結後）ceo 再問，不建就改用「別的 workflow 結束就接回」。
+  - trial-3（新規則、新種子）ceo 准了，合計仍不超過 40 機器小時。

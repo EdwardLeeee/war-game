@@ -1,6 +1,6 @@
 # war-game 專案指南
 
-東西並存、群雄割據的中古魔法亂世，手機即時戰略遊戲（iOS／Android）。第一版是單機對電腦 AI（1 對 1，或最多 4 方混戰）。
+東西並存、群雄割據的中古魔法亂世，手機即時戰略遊戲：iOS app 和網頁版（D-163）。正式版（第一版）是單機 1 對 1 對電腦 AI（D-162）；免費、不賺錢，repo 公開但保留所有權利（D-163）。
 設計以 `docs/design/gdd.md` 為準，世界觀以 `docs/world/bible.md` 為準，決策與使用者原話記在 `docs/decisions/log.md`。
 
 ## 角色與負責路徑
@@ -12,8 +12,9 @@
 | `war-game-core` | `sim/`（遊戲規則、地圖、協定、量測工具與腳本玩家；電腦對手除外）、`.github/workflows/sim.yml`、`spikes/`、`docs/research/` 裡自己的研究筆記 |
 | `war-game-ai` | 電腦對手：`sim/src/ai/ai.ts`、之後新增的 `sim/src/ai/` 電腦檔案（`scripted-player.ts` 除外；含類神經網路的訓練程式 `sim/src/ai/learn/` 和權重，D-086）、`sim/test/ai.test.ts`、`.github/workflows/ai-train.yml`、`docs/research/` 裡自己的研究筆記 |
 | `war-game-client` | `client/`（畫面、觸控、介面、測試頁）、`services/game-logs/`（收對局紀錄的小程式，D-056）、`.github/workflows/client.yml`、`.github/workflows/pages.yml` |
+| `war-game-mobile` | `mobile/`（iOS app：Capacitor 專案、圖示與啟動畫面、之後的商店資料）、`.github/workflows/mobile*.yml` |
 
-`war-game-ai` 從 2026-10-03 起負責電腦對手（D-052）。之後再加 `war-game-mobile`（打包與上架）。
+`war-game-ai` 從 2026-10-03 起負責電腦對手（D-052）。`war-game-mobile` 從 2026-11-24 起負責 iOS app（D-163，brief `docs/briefs/2026-11-ios-app.md`）。
 協定（`sim/src/protocol.ts`）屬於 core：電腦需要新欄位或新難度時，war-game-ai 回報 ceo，由 core 加。引擎是 TypeScript + PixiJS + Capacitor（D-013）。
 一條路徑只屬於一個角色。要改別人的路徑，先回報 ceo。
 
