@@ -86,23 +86,33 @@ jobs:
           npm ci
           node scripts/fetch-art.ts
           npm run build
+      - name: Capacitor
+        working-directory: mobile
+        run: npm ci
+      # Each step below runs even when one before it failed (not when cancelled), so one run
+      # reports every problem.
       - name: The app as it ships, for a device, unsigned
+        id: device
         working-directory: mobile
         run: |
           set -euo pipefail
-          npm ci
           node scripts/web.ts
           npx cap sync ios
           cd ios/App
           start=$SECONDS
+          mkdir -p "${GITHUB_WORKSPACE}/smoke-out"
+          log="${GITHUB_WORKSPACE}/smoke-out/device-build.log"
           xcodebuild -project App.xcodeproj -scheme App -configuration Release \
             -sdk iphoneos -destination "generic/platform=iOS" \
-            -derivedDataPath "${RUNNER_TEMP}/dd-device" CODE_SIGNING_ALLOWED=NO build > "${RUNNER_TEMP}/device-build.log" 2>&1 \
-            || { tail -n 60 "${RUNNER_TEMP}/device-build.log"; exit 1; }
-          tail -n 3 "${RUNNER_TEMP}/device-build.log"
-          echo "device build: $((SECONDS - start)) s" | tee -a "${GITHUB_STEP_SUMMARY}"
-          bash ../../ci/check-app.sh "${RUNNER_TEMP}/dd-device/Build/Products/Release-iphoneos/App.app" ship
+            -derivedDataPath "${RUNNER_TEMP}/dd-device" CODE_SIGNING_ALLOWED=NO build > "${log}" 2>&1 \
+            || { tail -n 60 "${log}"; exit 1; }
+          tail -n 3 "${log}"
+          echo "- device build (Release, unsigned): $((SECONDS - start)) s" | tee -a "${GITHUB_STEP_SUMMARY}"
+      - name: Its checks
+        if: ${{ !cancelled() && steps.device.outcome == 'success' }}
+        run: bash mobile/ci/check-app.sh "${RUNNER_TEMP}/dd-device/Build/Products/Release-iphoneos/App.app" ship
       - name: The smoke copy, and the test target added (never committed)
+        if: ${{ !cancelled() }}
         working-directory: mobile
         run: |
           set -euo pipefail
@@ -112,11 +122,12 @@ jobs:
           gem install --user-install --no-document xcodeproj -v 1.28.1
           ruby ci/add-ui-tests.rb ios/App/App.xcodeproj ci/SmokeUITests.swift
       - name: Smoke test on a fresh iPhone simulator
+        if: ${{ !cancelled() }}
         run: bash mobile/ci/smoke.sh smoke-out
       # Stage 3's signing (D-163): does a .p12 made by OpenSSL 3 with its defaults, as on the user's
       # Linux machine, go into a macOS keychain? A throwaway self-signed key made here, no secret.
       - name: OpenSSL 3 .p12 into a keychain (stage 3 check)
-        if: always()
+        if: ${{ !cancelled() }}
         run: |
           set -uo pipefail
           ossl="$(brew --prefix openssl@3)/bin/openssl"
@@ -131,7 +142,7 @@ jobs:
             echo "- OpenSSL 3 .p12 (${p}): ${r}" | tee -a "${GITHUB_STEP_SUMMARY}"
             security delete-keychain "${d}/${p}.keychain-db"
           done
-      - if: always()
+      - if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
           name: mobile-smoke

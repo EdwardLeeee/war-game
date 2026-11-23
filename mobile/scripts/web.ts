@@ -113,8 +113,9 @@ if (smoke) {
 const allowed = new Map(Object.entries(NEVER_FETCHED));
 allowed.set(smoke ? new URL(OFFLINE_LOGS).host : new URL(worker).host, smoke ? "the smoke copy's dead address" : "the game records' Worker (D-056)");
 const found = new Map<string, Set<string>>();
+// licenses/ is read by people, never by the game: its notices may link to their sources.
 for (const f of files(WWW)) {
-  if (!TEXT.has(extname(f)) || statSync(f).size > 32 * 1024 * 1024) continue;
+  if (!TEXT.has(extname(f)) || statSync(f).size > 32 * 1024 * 1024 || relative(WWW, f).startsWith("licenses/")) continue;
   for (const m of readFileSync(f, "utf8").matchAll(/\bhttps?:\/\/([A-Za-z0-9.-]+(?::\d+)?)/g)) {
     const host = m[1];
     if (!found.has(host)) found.set(host, new Set());
