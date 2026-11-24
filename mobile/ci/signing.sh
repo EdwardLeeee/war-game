@@ -34,7 +34,14 @@ case "${1:-}" in
         rm -f "${tmp}/dist.p12"
         identity="$(security find-identity -v -p codesigning "${kc}" | grep -m1 'Apple Distribution' || true)"
         [ -n "${identity}" ] || { echo "::error::no Apple Distribution identity in the .p12"; exit 1; }
-        echo "identity: $(echo "${identity}" | sed -E 's/^ *[0-9]+\) [0-9A-F]{40} //')"
+        # An individual account's certificate is "Apple Distribution: <legal name> (<team>)": the name
+        # must never reach this public repository's logs (AGENTS.md). Masked from here on in the job
+        # log (not in artifacts: the archive and export logs stay out of them), never printed.
+        cn="$(echo "${identity}" | sed -E 's/^ *[0-9]+\) [0-9A-F]{40} "(.*)"$/\1/')"
+        holder="$(echo "${cn}" | sed -E 's/^Apple Distribution: (.*) \([A-Z0-9]{10}\)$/\1/')"
+        echo "::add-mask::${cn}"
+        echo "::add-mask::${holder}"
+        echo "an Apple Distribution identity is in the keychain"
 
         printf '%s' "${PROFILE}" | base64 --decode >"${tmp}/profile.mobileprovision"
         security cms -D -i "${tmp}/profile.mobileprovision" >"${tmp}/profile.plist"

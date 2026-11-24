@@ -67,6 +67,12 @@ PY
 else
     echo "::warning::xcresulttool export attachments failed; the screenshots are only in the result bundle"
 fi
+# The Home Screen, the app closed: the name under the icon (an English simulator: "Divide & Crown",
+# the user 2026-11-24): whole, or cut short?
+mkdir -p "${out}/screenshots"
+xcrun simctl terminate "${udid}" com.edwardleeee.wargame >/dev/null 2>&1 || true
+sleep 3
+xcrun simctl io "${udid}" screenshot "${out}/screenshots/06-home-screen.png" >/dev/null 2>&1 || echo "::warning::no Home Screen screenshot"
 ls "${out}/screenshots" "${out}/attachments" 2>/dev/null
 
 app="${dd}/Build/Products/Debug-iphonesimulator/App.app"

@@ -11,16 +11,24 @@ name: Mobile release
 # number this workflow's run number; the web commit goes in the run's Summary.
 # Signing (secrets set by the user with mobile/scripts/ios-signing.sh): any missing, the run still
 # builds and smoke-tests, then skips signing and upload and lists what is missing.
-# Artifacts: screenshots and logs only, never the .ipa.
+# Artifacts: screenshots and logs only, never the .ipa, and nothing that names the signer (an
+# individual account's certificate carries the account holder's legal name): the archive and export
+# logs stay out of them, and the name is masked in the job log (ci/signing.sh).
+# A pull request that changes this file or ci/signing.sh runs it as a dry run: everything but
+# signing and upload, on the live web commit.
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/mobile-release.yml"
+      - "mobile/ci/signing.sh"
 
 permissions:
   contents: read
 
 concurrency:
-  group: mobile-release
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'workflow_dispatch' && 'mobile-release' || format('mobile-release-pr-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 env:
   # Where the live site says which commit it is: the game's new place (ceo 2026-11-24: off /proto/);
@@ -73,7 +81,10 @@ jobs:
             var="${n%%:*}"
             [ -n "${!var}" ] || missing="${missing} ${n#*:}"
           done
-          if [ -z "${missing}" ]; then
+          if [ "${GITHUB_EVENT_NAME}" != workflow_dispatch ]; then
+            echo "sign=false" >> "${GITHUB_OUTPUT}"
+            echo "- dry run (${GITHUB_EVENT_NAME}): not signed, not uploaded" | tee -a "${GITHUB_STEP_SUMMARY}"
+          elif [ -z "${missing}" ]; then
             echo "sign=true" >> "${GITHUB_OUTPUT}"
           else
             echo "sign=false" >> "${GITHUB_OUTPUT}"
@@ -94,8 +105,8 @@ jobs:
       - name: mobile/ from ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          git fetch --depth 1 origin "${GITHUB_SHA}"
-          git checkout "${GITHUB_SHA}" -- mobile
+          git fetch --depth 1 origin "${GITHUB_REF}"
+          git checkout FETCH_HEAD -- mobile
           echo "- mobile/ from \`${GITHUB_SHA}\`; build number ${{ github.run_number }}" | tee -a "${GITHUB_STEP_SUMMARY}"
       - uses: actions/setup-node@v7
         with:
@@ -125,20 +136,6 @@ jobs:
           set -euo pipefail
           npm ci
           node scripts/check-versions.ts
-      # The smoke test first: failing, nothing is signed or uploaded.
-      - name: Smoke test (the smoke copy, a fresh iPhone simulator)
-        working-directory: mobile
-        run: |
-          set -euo pipefail
-          node scripts/web.ts --smoke
-          npx cap sync ios
-          gem install --user-install --no-document xcodeproj -v 1.28.1
-          cp ios/App/App.xcodeproj/project.pbxproj "${RUNNER_TEMP}/project.pbxproj"
-          ruby ci/add-ui-tests.rb ios/App/App.xcodeproj ci/SmokeUITests.swift
-          bash ci/smoke.sh "${GITHUB_WORKSPACE}/release-out/smoke"
-          # Back to the project as committed, without the test target and its scheme.
-          cp "${RUNNER_TEMP}/project.pbxproj" ios/App/App.xcodeproj/project.pbxproj
-          rm -rf ios/App/App.xcodeproj/xcshareddata/xcschemes/AppSmoke.xcscheme
       - name: The app as it ships
         working-directory: mobile
         run: |
@@ -154,7 +151,9 @@ jobs:
           P8: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
           KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
           TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
-        run: bash mobile/ci/signing.sh setup
+        run: |
+          gem install --user-install --no-document xcodeproj -v 1.28.1
+          bash mobile/ci/signing.sh setup
       - name: Archive
         working-directory: mobile/ios/App
         run: |
@@ -165,10 +164,20 @@ jobs:
           xcodebuild archive -project App.xcodeproj -scheme App -configuration Release \
             -destination "generic/platform=iOS" -archivePath "${RUNNER_TEMP}/App.xcarchive" \
             -derivedDataPath "${RUNNER_TEMP}/dd-release" CURRENT_PROJECT_VERSION="${{ github.run_number }}" ${extra[@]+"${extra[@]}"} \
-            > "${GITHUB_WORKSPACE}/release-out/archive.log" 2>&1 || { tail -n 60 "${GITHUB_WORKSPACE}/release-out/archive.log"; exit 1; }
+            > "${RUNNER_TEMP}/archive.log" 2>&1 || { tail -n 60 "${RUNNER_TEMP}/archive.log"; exit 1; }
           bash ../../ci/check-app.sh "${RUNNER_TEMP}/App.xcarchive/Products/Applications/App.app" ship
+      # The smoke test, after the archive (its test target is added to the project only now); failing, nothing is uploaded.
+      - name: Smoke test (the smoke copy, a fresh iPhone simulator)
+        working-directory: mobile
+        run: |
+          set -euo pipefail
+          node scripts/web.ts --smoke
+          npx cap sync ios
+          gem install --user-install --no-document xcodeproj -v 1.28.1
+          ruby ci/add-ui-tests.rb ios/App/App.xcodeproj ci/SmokeUITests.swift
+          bash ci/smoke.sh "${GITHUB_WORKSPACE}/release-out/smoke"
       - name: Upload to TestFlight
-        if: needs.preflight.outputs.sign == 'true'
+        if: success() && needs.preflight.outputs.sign == 'true'
         env:
           KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
           ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
