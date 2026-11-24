@@ -184,17 +184,40 @@ export class ArtUnits {
    * its picture (world px), for the bars above it, or null when it has no atlas.
    */
   unit(i: number, o: number, px: number, py: number, seconds: number, lift = 0, z: number | null = null, shadow = true): number | null {
+    const s = this.slot(this.slots, i);
+    const step = this.animate(o, seconds);
+    if (step === null) {
+      this.hide(s);
+      return null;
+    }
+    const { a, anim, dir, index, st, owner } = step;
+    this.place(s, a, anim, dir, index, owner, px, py, 1, lift, z);
+    if (!shadow) s.shadow.visible = false;
+    this.drawShield(s, a, st, seconds);
+    const f = this.art.frame(a.unit, "color", frameName(a, anim, dir, index).name);
+    return f === null ? null : py - lift - f.ay * f.texture.height * this.scale;
+  }
+
+  /**
+   * Slot `i`'s unit (snapshot row `o`) off the screen (world.ts: not drawn, the user 2026-11-24 「200兵時畫面會卡卡的」):
+   * its animation's clock and its arrows and stones go on as on the screen, so that it comes into sight as it would
+   * have been and what it shot flies in; nothing of it is placed.
+   */
+  track(i: number, o: number, seconds: number): void {
+    this.animate(o, seconds);
+    const s = this.slots[i];
+    if (s !== undefined) this.hide(s);
+  }
+
+  /** Row `o`'s animation at `seconds` (its state kept by id), and its arrow or stone when it lets one go; null without an atlas. */
+  private animate(o: number, seconds: number): { a: AtlasJson; anim: string; dir: number; index: number; st: AnimState; owner: number } | null {
     const u = (this.view.curr as NonNullable<GameView["curr"]>).snap.units;
     const id = u[o + U.id];
     const type = u[o + U.type];
     const owner = u[o + U.owner];
     const action = u[o + U.action];
     const a = this.atlasFor(type, owner);
-    const s = this.slot(this.slots, i);
-    if (a === null) {
-      this.hide(s);
-      return null;
-    }
+    if (a === null) return null;
     const shield = u[o + U.shield];
     let anim = animFor(a, action, action === Action.Gather ? this.workOf(u[o + U.orderTarget]) : null, (u[o + U.flags] & UnitFlag.OnWall) !== 0);
     let st = this.anims.get(id);
@@ -227,8 +250,6 @@ export class ArtUnits {
       else if (anim === "walk") index = frameAt(info, walkFps(a, unitInfo?.speed ?? 0), elapsed, id % info.frames);
       else index = frameAt(info, fpsOf(a, anim), elapsed, info.loop ? id % info.frames : 0);
     }
-    this.place(s, a, anim, dir, index, owner, px, py, 1, lift, z);
-    if (!shadow) s.shadow.visible = false;
     // The sling's stone leaves at its hit frame, once a throw (one a cooldown); a bowman's arrow
     // too, once the effects have the arrow (真的箭, art-v6: before, bowmen shoot none, as before).
     const sling = a.anims.sling;
@@ -243,9 +264,7 @@ export class ArtUnits {
         this.releases.push({ id, kind: anim === "sling" ? "stone" : "arrow", direction: dir, mirror: frameName(a, anim, dir, index).mirror, from });
       }
     }
-    this.drawShield(s, a, st, seconds);
-    const f = this.art.frame(a.unit, "color", frameName(a, anim, dir, index).name);
-    return f === null ? null : py - lift - f.ay * f.texture.height * this.scale;
+    return { a, anim, dir, index, st, owner };
   }
 
   /**
@@ -322,6 +341,11 @@ export class ArtUnits {
     s.box.visible = false;
     s.shadow.visible = false;
     if (s.ghost !== undefined) s.ghost.holder.visible = false;
+  }
+
+  /** Whether slot `i`'s unit is drawn this frame (tests). */
+  shown(i: number): boolean {
+    return this.slots[i]?.box.visible === true;
   }
 
   /** Units drawn from the atlases this frame, and the fallen lying there (for the test page). */

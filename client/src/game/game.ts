@@ -753,6 +753,16 @@ export class Game implements GestureHost {
   }
 
   /** The battlefield's clock held still or running again (the test page: the same frame twice). */
+  /** One frame drawn now, as the ticker would (tests: what the camera's move shows in that very frame). */
+  drawNowForTest(): void {
+    this.frame();
+  }
+
+  /** The units the last frame drew, and how many it left off the screen (tests). */
+  get unitsDrawnForTest(): { ids: number[]; off: number } {
+    return this.renderer?.unitsDrawnForTest ?? { ids: [], off: 0 };
+  }
+
   freezeClockForTest(on: boolean): void {
     this.frozenNow = on ? performance.now() : null;
   }

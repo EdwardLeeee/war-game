@@ -4,7 +4,7 @@
 // Terrain and fog are one small texture each (terrain one texel per cell, the fog
 // FOG_ROUND_SCALE for its round edge, scaled up), so they cost one sprite. Units, bars and buildings come from pools that only grow.
 
-import { FOG_ROUND_SCALE, roundFog } from "./round-fog.ts";
+import { FOG_ROUND_SCALE, roundFog, roundFogChanged } from "./round-fog.ts";
 import { type Application, ColorMatrixFilter, Container, Graphics, type Renderer, Sprite, Text, Texture } from "pixi.js";
 import { GroundCache } from "./ground-cache.ts";
 import type { Camera } from "../camera/camera.ts";
@@ -56,6 +56,13 @@ import { ArtUnits, type Release } from "./unit-art-draw.ts";
 import { ARROW_FLIGHT, CHEST_M, flightOf, flightSeconds, heightAt, SLING_FLIGHT } from "./missile.ts";
 import type { UnitArt } from "./unit-art.ts";
 
+/**
+ * Room round the camera's view, plane px, inside which a unit is drawn (draw, drawUnits): its picture stands up from
+ * its feet (on a wall or a bridge's deck higher still), its bars over it, its ring and shadow round its feet; a unit
+ * whose feet are this far below the bottom edge can still show its head.
+ */
+const CULL_SIDE = 3 * TILE_PX;
+const CULL_BELOW = 5 * TILE_PX;
 const UNIT_SCALE = 1;
 /** The owner's colour under a unit's feet on 寫實地面: its size (the selection ring is 1.05) and how strong. */
 const FOOT_SCALE = 0.85;
@@ -288,7 +295,14 @@ export class WorldRenderer {
   private readonly terrainTexture: Texture;
   private readonly fogCanvas: HTMLCanvasElement;
   /** The fog by cell, and a scratch buffer for its round edge (round-fog.ts). */
+  /** The plane's rectangle drawn this frame and the room round it (draw): units outside it are not drawn. */
+  private readonly viewRect = { x0: 0, y0: 0, x1: 0, y1: 0 };
+  /** Units drawn this frame and those off the screen (tests). */
+  private unitsShown = 0;
+  private unitsOff = 0;
   private readonly fogCells: Uint8Array;
+  /** The cells as last drawn (roundFogChanged redraws only the tiles that differ); null before the first picture. */
+  private fogDrawn: Uint8Array | null = null;
   private readonly fogTmp: Float32Array;
   private readonly fogTexture: Texture;
   private readonly fogPixels: ImageData;
@@ -484,6 +498,13 @@ export class WorldRenderer {
   draw(now: number, camera: Camera, placement: Placement | null): void {
     this.root.scale.set(camera.scale);
     this.root.position.set(-camera.x * camera.scale, -camera.y * camera.scale);
+    // What the camera shows (plane px), with the room a unit's picture, bars and ring take round its feet: the units
+    // outside it are not drawn (drawUnits).
+    const v = this.viewRect;
+    v.x0 = camera.x - CULL_SIDE;
+    v.y0 = camera.y - CULL_SIDE;
+    v.x1 = camera.x + camera.width / camera.scale + CULL_SIDE;
+    v.y1 = camera.y + camera.height / camera.scale + CULL_BELOW;
     const curr = this.view.curr;
     if (curr === null) return;
     this.drawTerrain();
@@ -508,6 +529,18 @@ export class WorldRenderer {
     this.drawMarkers(now);
     this.drawShots(now);
     this.drawGhost(placement, now);
+  }
+
+  /** The units drawn in the last frame (their ids), and how many were left off as off the screen (tests). */
+  get unitsDrawnForTest(): { ids: number[]; off: number } {
+    const u = this.view.curr?.snap.units;
+    const ids: number[] = [];
+    if (u !== undefined) {
+      for (let i = 0; i * UNIT_STRIDE < u.length && i < this.unitPool.length; i++) {
+        if (this.unitPool[i].body.visible || (this.artUnits?.shown(i) ?? false)) ids.push(u[i * UNIT_STRIDE + U.id]);
+      }
+    }
+    return { ids, off: this.unitsOff };
   }
 
   /** The building preview was put away with ✗ (world px): shrink it and fade it out (R6-25-11). */
@@ -1035,8 +1068,21 @@ export class WorldRenderer {
     if (fog === null || this.view.fogVersion === this.fogVersion) return;
     this.fogVersion = this.view.fogVersion;
     for (let i = 0; i < fog.length; i++) this.fogCells[i] = fog[i] === Fog.Visible ? 0 : fog[i] === Fog.Explored ? FOG_ALPHA.explored : FOG_ALPHA.unexplored;
-    roundFog(this.fogCells, this.view.map.size, this.fogPixels.data, this.fogTmp);
-    (this.fogCanvas.getContext("2d") as CanvasRenderingContext2D).putImageData(this.fogPixels, 0, 0);
+    const size = this.view.map.size;
+    const ctx = this.fogCanvas.getContext("2d") as CanvasRenderingContext2D;
+    // The simulation sends the fog every 5 ticks (6 times a second), changed or not, and a big battle changes 12 to
+    // 16 of its 9216 cells a time: only the tiles that changed are blurred and put again (the whole took 9 ms on
+    // the test machine; the user 2026-11-24 「200兵時畫面會卡卡的」). The first picture whole.
+    if (this.fogDrawn === null) {
+      roundFog(this.fogCells, size, this.fogPixels.data, this.fogTmp);
+      ctx.putImageData(this.fogPixels, 0, 0);
+      this.fogDrawn = this.fogCells.slice();
+    } else {
+      const rects = roundFogChanged(this.fogCells, this.fogDrawn, size, this.fogPixels.data);
+      if (rects.length === 0) return;
+      for (const q of rects) ctx.putImageData(this.fogPixels, 0, 0, q.x, q.y, q.w, q.h);
+      this.fogDrawn.set(this.fogCells);
+    }
     this.fogTexture.source.update();
     // The fog lies on the ground; what stands in it (nodes' marks) is dimmed by hand.
     for (const n of this.nodeSprites.values()) n.sprite.tint = this.fogTint(n.cell);
@@ -1536,6 +1582,8 @@ export class WorldRenderer {
     this.insideIds.clear();
     this.footCount = 0;
     this.wallLifted = 0;
+    this.unitsShown = 0;
+    this.unitsOff = 0;
     // A layer with no one behind a wall this frame is hidden: its filter's pass is skipped.
     const ghosts = { own: 0, enemy: 0, neutral: 0 };
     const walls = this.castle.hasPieces && this.artUnits !== null;
@@ -1599,6 +1647,25 @@ export class WorldRenderer {
       // Where it stands on the plane (what stands up is drawn there; the ground's marks at px, py).
       const type = u[o + U.type];
       const owner = u[o + U.owner];
+      // Off the screen (the user 2026-11-24 「200兵時畫面會卡卡的」: every unit in sight anywhere on the map was drawn
+      // and sent to the GPU, the camera's or not): not drawn; its animation's clock and its arrows go on (track), so
+      // it comes in as it would have been and what it shot flies in. The minimap, the alerts and the selection read
+      // the snapshot, not these.
+      const feet = this.projection.toPlane(px, py);
+      const vr = this.viewRect;
+      if (feet.x < vr.x0 || feet.x > vr.x1 || feet.y < vr.y0 || feet.y > vr.y1) {
+        this.unitsOff++;
+        p.body.visible = false;
+        this.artUnits?.track(i, o, seconds);
+        const shots = this.artUnits?.takeReleases() ?? [];
+        if (shots.length > 0) {
+          const wall = (u[o + U.flags] & UnitFlag.OnWall) !== 0 ? this.castle.onWall(px, py) : null;
+          const lift = wall?.lift ?? this.terrain.liftAt(px, py);
+          for (const r of shots) this.release(r, o, px + (wall?.dx ?? 0), py + (wall?.dy ?? 0), lift, owner, now);
+        }
+        continue;
+      }
+      this.unitsShown++;
       // On a castle's wall (D-096): on its walk (stand_in_m towards the town, walk_m up), over the
       // wall and under its front parts, no shadow (the walk is not the ground); on a bridge's deck (art-v5): up there.
       const onWall = (u[o + U.flags] & UnitFlag.OnWall) !== 0 ? this.castle.onWall(px, py) : null;
