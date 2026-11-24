@@ -64,6 +64,12 @@ export class GameView implements IntentWorld {
   readonly nodeAt: Int32Array;
   /** Bumped whenever the node table changes, so the renderer can skip unchanged frames. */
   nodesVersion = 0;
+  /**
+   * The nodes changed since the renderer last drew them (the snapshot sends changes only: a gatherer's every trip is
+   * one): it draws those and empties this (world.ts drawNodes; the user 2026-11-24 「200兵時畫面會卡卡的」: every node
+   * was drawn again whenever any changed).
+   */
+  readonly nodesChanged = new Set<number>();
   fog: Uint8Array | null = null;
   fogVersion = 0;
   placement: PlacementGrid | null = null;
@@ -136,6 +142,7 @@ export class GameView implements IntentWorld {
       const old = this.nodes.get(id);
       if (old !== undefined) this.nodeAt[old[N.cellY] * size + old[N.cellX]] = -1;
       this.nodes.set(id, row);
+      this.nodesChanged.add(id);
       if (row[N.amount] > 0) this.nodeAt[row[N.cellY] * size + row[N.cellX]] = id;
       // A node's cell taken for rock before its row came (the fake world's random map): it is not rock.
       if (this.ground[row[N.cellY] * size + row[N.cellX]] === Terrain.Blocked) {

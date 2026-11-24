@@ -23,8 +23,9 @@ test("哨所（art-v5.1）：自己的（蓋好、施工中）和敵方的都從
   await page.waitForFunction(() => window.__proto?.ready === true, null, { timeout: 60_000 });
   await expect.poll(async () => (await art(page))?.buildings ?? 0, { timeout: 30_000 }).toBeGreaterThan(0);
   const me = await page.evaluate(() => window.__proto?.game?.me() ?? 0);
-  // Every building in view drawn from the pictures: the two outposts too (with art-v5 they were shapes).
-  await expect.poll(async () => (await art(page))?.buildings).toBe((await buildings(page)).length);
+  // Every building in view drawn from the pictures: the two outposts too (with art-v5 they were shapes); those off the
+  // screen not drawn at all (鏡頭裁切, the user 2026-11-24).
+  await expect.poll(async () => ((a) => (a === null ? -1 : a.buildings + a.buildingsOff))(await art(page))).toBe((await buildings(page)).length);
   // The enemy's, at the neutral town's north wall, in view (a spearman of ours beside it; out of
   // view it is drawn grey, as last seen): selected, so its ring and panel say which.
   const [spear] = (await page.evaluate(() => window.__proto?.game?.units() ?? [])).filter((u) => u.owner === me && u.type === 1).map((u) => u.id);

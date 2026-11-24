@@ -63,6 +63,8 @@ import type { UnitArt } from "./unit-art.ts";
  * whose feet are this far below the bottom edge can still show its head.
  */
 const CULL_SIDE = 3 * TILE_PX;
+/** How far a building's picture may rise over its footprint on the plane, besides as much as its width and depth. */
+const BUILDING_RISE = 4 * TILE_PX;
 const CULL_BELOW = 5 * TILE_PX;
 const UNIT_SCALE = 1;
 /** The owner's colour under a unit's feet on 寫實地面: its size (the selection ring is 1.05) and how strong. */
@@ -301,6 +303,8 @@ export class WorldRenderer {
   /** Units drawn this frame and those off the screen (tests). */
   private unitsShown = 0;
   private unitsOff = 0;
+  /** Buildings left out this frame, off the screen (drawBuildings). */
+  buildingsOff = 0;
   private readonly fogCells: Uint8Array;
   /** The cells as last drawn (roundFogChanged redraws only the tiles that differ); null before the first picture. */
   private fogDrawn: Uint8Array | null = null;
@@ -543,6 +547,31 @@ export class WorldRenderer {
     this.drawShots(now);
     this.drawGhost(placement, now);
     prof.add("d.effects", t);
+  }
+
+  /**
+   * The nodes as drawn (from the atlases), then (`whole`) as drawn again all of them from the view now: what drawing
+   * only those changed (drawNodes) must come to (tests).
+   */
+  castleLooksForTest(whole: boolean): string[] {
+    return this.castle.looksForTest(whole);
+  }
+
+  nodeLooksForTest(whole: boolean): string[] {
+    if (whole) this.artStructures?.drawNodes([...this.view.nodes.keys()]);
+    return this.artStructures?.nodeLooks() ?? [];
+  }
+
+  /** The buildings drawn in the last frame (their ids), and how many were left off as off the screen (tests). */
+  get buildingsDrawnForTest(): { ids: number[]; off: number } {
+    const b = this.view.curr?.snap.buildings;
+    const ids: number[] = [];
+    if (b !== undefined) {
+      for (let i = 0; i * BUILDING_STRIDE < b.length && i < this.buildingPool.length; i++) {
+        if (this.buildingPool[i].base.visible || (this.artStructures?.shownSlot(i) ?? false)) ids.push(b[i * BUILDING_STRIDE + B.id]);
+      }
+    }
+    return { ids, off: this.buildingsOff };
   }
 
   /** The units drawn in the last frame (their ids), and how many were left off as off the screen (tests). */
@@ -1112,13 +1141,19 @@ export class WorldRenderer {
 
   private drawNodes(): void {
     if (this.view.nodesVersion === this.nodesVersion) return;
+    // The first time all of them, then those changed since (GameView.nodesChanged).
+    const first = this.nodesVersion === -1;
     this.nodesVersion = this.view.nodesVersion;
+    const ids = first ? [...this.view.nodes.keys()] : [...this.view.nodesChanged];
+    this.view.nodesChanged.clear();
     // From the atlases (art-v2 on): trees, mines, berries, veins and what is left of them.
     if (this.artStructures?.drawsNodes === true) {
-      this.artStructures.drawNodes();
+      this.artStructures.drawNodes(ids);
       return;
     }
-    for (const [id, row] of this.view.nodes) {
+    for (const id of ids) {
+      const row = this.view.nodes.get(id);
+      if (row === undefined) continue;
       let n = this.nodeSprites.get(id);
       if (n === undefined) {
         const s = new Sprite(this.atlas.nodes[row[N.kind]]);
@@ -1156,6 +1191,8 @@ export class WorldRenderer {
       this.buildingPool.push({ base, glyph, occupied, paused, hpBack, hpFront });
     }
     this.artStructures?.begin();
+    this.buildingsOff = 0;
+    const vr = this.viewRect;
     for (let i = 0; i < this.buildingPool.length; i++) {
       const p = this.buildingPool[i];
       const shown = i < n;
@@ -1175,6 +1212,15 @@ export class WorldRenderer {
       const size = Math.min(width, depth);
       const x = f.x * TILE_PX;
       const y = f.y * TILE_PX;
+      // Off the screen (as the units, the user 2026-11-24 「200兵時畫面會卡卡的」): not drawn. Its footprint on the plane,
+      // its picture standing up over it (BUILDING_RISE: the tallest, a main city's or a tower's, rises less) and its
+      // marks and bar beside it; the view's own room (viewRect) round that. A tower's shots are not drawn here.
+      if (this.offScreen(x, y, width, depth, vr)) {
+        this.buildingsOff++;
+        p.base.visible = p.glyph.visible = false;
+        this.artStructures?.hideSlot(i);
+        continue;
+      }
       const remembered = (b[o + B.flags] & BuildingFlag.Remembered) !== 0;
       const building = b[o + B.progress] < 1000;
       p.base.texture = type === BuildingType.Farm ? this.atlas.farm : type === BuildingType.ArrowTower ? this.atlas.tower : this.atlas.building;
@@ -1229,6 +1275,20 @@ export class WorldRenderer {
         this.bar(p.hpBack, p.hpFront, mid.x, Math.min(top.y, picture?.top ?? top.y, gateTop ?? top.y) - 4, Math.max(width, depth) * 0.8, frac, building ? 0xe7c35a : ownerTint(b[o + B.owner], this.view.me));
       }
     }
+  }
+
+  /** Whether a footprint (world px) and what stands on it lie off the view (plane px, with its room). */
+  private offScreen(x: number, y: number, width: number, depth: number, vr: { x0: number; y0: number; x1: number; y1: number }): boolean {
+    const pr = this.projection;
+    const a = pr.toPlane(x, y);
+    const b = pr.toPlane(x + width, y);
+    const c = pr.toPlane(x, y + depth);
+    const d = pr.toPlane(x + width, y + depth);
+    const x0 = Math.min(a.x, b.x, c.x, d.x);
+    const x1 = Math.max(a.x, b.x, c.x, d.x);
+    const y0 = Math.min(a.y, b.y, c.y, d.y) - BUILDING_RISE - (width + depth);
+    const y1 = Math.max(a.y, b.y, c.y, d.y);
+    return x1 < vr.x0 || x0 > vr.x1 || y1 < vr.y0 || y0 > vr.y1;
   }
 
   /** A gate tower's flash where its arrows leave (effects `tower_shot`, D-096: anchor in the middle), played once. */
@@ -1398,9 +1458,9 @@ export class WorldRenderer {
 
   /** The units' atlases (D-085): which, how many pages, and how many units drawn from them; null: the shapes. */
   /** `sling`: some unit's atlas has the militia's sling (D-096, art-v5.2). */
-  get artDrawn(): { label: string; pages: number; astc: number; bytes: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number; sling: boolean } | null {
+  get artDrawn(): { label: string; pages: number; astc: number; bytes: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number; buildingsOff: number; sling: boolean } | null {
     const a = this.artUnits;
-    return a === null ? null : { label: a.art.label, pages: a.art.pages, astc: a.art.resident.astc, bytes: a.art.resident.bytes, ...a.drawn, ...(this.artStructures?.counts ?? { buildings: 0, rubble: 0, nodes: 0 }), sling: [...a.art.atlases.values()].some((j) => j.anims.sling !== undefined) };
+    return a === null ? null : { label: a.art.label, pages: a.art.pages, astc: a.art.resident.astc, bytes: a.art.resident.bytes, ...a.drawn, ...(this.artStructures?.counts ?? { buildings: 0, rubble: 0, nodes: 0 }), buildingsOff: this.buildingsOff, sling: [...a.art.atlases.values()].some((j) => j.anims.sling !== undefined) };
   }
 
   /**

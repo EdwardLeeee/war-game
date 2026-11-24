@@ -142,7 +142,7 @@ export interface GameHook {
   /** 哨所 3 × 3 (D-121): spearmen drawn on the outposts' walks this frame, pokes drawn so far, stand points in our outpost's picture. */
   crew(): { drawn: number; pokes: number; stands: number };
   /** The units' atlases (D-085): which, how many pages, units drawn from them; null: the shapes. */
-  art(): { label: string; pages: number; astc: number; bytes: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number; sling: boolean } | null;
+  art(): { label: string; pages: number; astc: number; bytes: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number; buildingsOff: number; sling: boolean } | null;
   /** 你的陸 this game was started with (the computer wears the other). */
   culture(): string;
   /** The castles as drawn (D-089): wall pieces and floor tiles shown, towns drawn as blocks, towns no layout fits, units drawn behind a wall. */
@@ -163,6 +163,12 @@ export interface GameHook {
   /** One frame drawn now (the camera's move shown in that very frame), and the units it drew and left off the screen. */
   drawNow(): void;
   unitsDrawn(): { ids: number[]; off: number };
+  /** The resource nodes as drawn from the atlases; `whole`: drawn all again first (only those changed are drawn). */
+  nodeLooks(whole: boolean): string[];
+  /** The castles' pictures as drawn; `whole`: every town drawn again first (only those whose fog changed are). */
+  castleLooks(whole: boolean): string[];
+  /** The buildings drawn in the last frame, and how many were left off the screen (鏡頭裁切). */
+  buildingsDrawn(): { ids: number[]; off: number };
   /** Units whose ring flashed last frame, just ordered (R18-01 乙: 收到). */
   acked(): number;
   /** Units drawn with their owner's colour under their feet last frame (寫實地面, ceo 2026-10-25). */
@@ -404,6 +410,9 @@ export function gameHook(game: Game): GameHook {
     freezeClock: (on) => game.freezeClockForTest(on),
     drawNow: () => game.drawNowForTest(),
     unitsDrawn: () => game.unitsDrawnForTest,
+    buildingsDrawn: () => game.buildingsDrawnForTest,
+    nodeLooks: (whole) => game.nodeLooksForTest(whole),
+    castleLooks: (whole) => game.castleLooksForTest(whole),
     acked: () => game.ackedForTest,
     feet: () => game.feetForTest,
     filmGrade: () => game.filmGradeForTest,

@@ -187,19 +187,22 @@ export async function command(page: Page, name: string | RegExp): Promise<Locato
 /** 全軍, whose label says how many soldiers it selects (全軍 24; ceo 2026-10-03). */
 export const armyButton = (page: Page) => page.getByRole("button", { name: /^全軍 \d+$/ });
 
-/** The lab panel opens from the menu: 選單 → 量測與確定性檢查. */
 /**
  * The units in sight (not in a building), those of them on the screen drawn from their atlas, the rest off it (鏡頭裁切,
- * the user 2026-11-24): how many in sight, or -1 while a frame has not caught up with the snapshot.
+ * the user 2026-11-24): how many in sight, or -1 when they do not add up.
  */
 export const inSightDrawnOrOff = (page: Page) =>
   page.evaluate(() => {
     const g = window.__proto?.game;
+    // A frame drawn now, from the latest snapshot: the two read together (#572's run: waiting for a frame to catch up
+    // took oblique.spec's start to 65 % of its limit on the 7763).
+    g?.drawNow();
     const d = g?.unitsDrawn();
     const all = (g?.units() ?? []).filter((u) => u.action !== 7).length;
     return d !== undefined && g?.art()?.units === d.ids.length && d.ids.length + d.off === all ? all : -1;
   });
 
+/** The lab panel opens from the menu: 選單 → 量測與確定性檢查. */
 export async function openLab(page: Page): Promise<void> {
   await page.getByRole("button", { name: "選單" }).tap();
   await page.getByRole("button", { name: "量測與確定性檢查" }).tap();
