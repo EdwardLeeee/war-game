@@ -42,7 +42,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       web: ${{ steps.web.outputs.sha }}
-      sign: ${{ steps.secrets.outputs.sign }}
+      sign: ${{ steps.secrets.outputs.sign || 'false' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -56,8 +56,15 @@ jobs:
           git merge-base --is-ancestor "${sha}" origin/main || { echo "::error::${sha} is not on main"; exit 1; }
           echo "sha=${sha}" >> "${GITHUB_OUTPUT}"
           echo "- web commit (live at ${LIVE_VERSION_URL}): \`${sha}\` $(git log -1 --format=%s "${sha}")" | tee -a "${GITHUB_STEP_SUMMARY}"
+      # Signing only from main, run by hand (ceo 2026-11-24): another branch's ci/signing.sh never
+      # gets the keys. A dry run (pull_request) or another ref never even reads the secrets.
+      - name: Dry run (not main, or not run by hand)
+        if: github.event_name != 'workflow_dispatch' || github.ref != 'refs/heads/main'
+        run: |
+          echo "- dry run (${GITHUB_EVENT_NAME} on ${GITHUB_REF}): not signed, not uploaded" | tee -a "${GITHUB_STEP_SUMMARY}"
       - name: Signing secrets present?
         id: secrets
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
         env:
           P12: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
           P12_PASSWORD: ${{ secrets.IOS_DIST_CERT_P12_PASSWORD }}
@@ -73,10 +80,7 @@ jobs:
             var="${n%%:*}"
             [ -n "${!var}" ] || missing="${missing} ${n#*:}"
           done
-          if [ "${GITHUB_EVENT_NAME}" != workflow_dispatch ]; then
-            echo "sign=false" >> "${GITHUB_OUTPUT}"
-            echo "- dry run (${GITHUB_EVENT_NAME}): not signed, not uploaded" | tee -a "${GITHUB_STEP_SUMMARY}"
-          elif [ -z "${missing}" ]; then
+          if [ -z "${missing}" ]; then
             echo "sign=true" >> "${GITHUB_OUTPUT}"
           else
             echo "sign=false" >> "${GITHUB_OUTPUT}"
@@ -135,7 +139,7 @@ jobs:
           node scripts/web.ts
           npx cap sync ios
       - name: Signing (temporary keychain, profile, manual signing on the App target)
-        if: needs.preflight.outputs.sign == 'true'
+        if: needs.preflight.outputs.sign == 'true' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
         env:
           P12: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
           P12_PASSWORD: ${{ secrets.IOS_DIST_CERT_P12_PASSWORD }}
@@ -169,7 +173,7 @@ jobs:
           ruby ci/add-ui-tests.rb ios/App/App.xcodeproj ci/SmokeUITests.swift
           bash ci/smoke.sh "${GITHUB_WORKSPACE}/release-out/smoke"
       - name: Upload to TestFlight
-        if: success() && needs.preflight.outputs.sign == 'true'
+        if: success() && needs.preflight.outputs.sign == 'true' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
         env:
           KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
           ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
