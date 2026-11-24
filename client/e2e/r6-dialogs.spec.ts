@@ -17,7 +17,7 @@ for (const theme of ["a", "b"] as const) {
   test(`正式介面的開局（R6-10，${theme === "a" ? "A 銅木" : "B 墨漆金線"}）：兩欄；你的陸在最上面、後面寫電腦穿哪一陸；開始在右邊；標題沒有「原型」`, async ({ page }) => {
     await page.addInitScript((t) => localStorage.setItem("war-game.proto.theme", t), theme);
     await page.goto("./?test=1&mock=1&tps=20&ui=r6");
-    await expect(page.getByRole("heading", { name: "war-game", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "裂土稱王", exact: true })).toBeVisible();
     await expect(page.locator("#start .card")).toHaveClass(/\bpanel\b/);
     const culture = await box(page, "#start .culture");
     const difficulty = await box(page, "#start .difficulty:not(.culture):not(.map-mode)");
@@ -63,9 +63,9 @@ for (const theme of ["a", "b"] as const) {
   });
 }
 
-test("原型的開局照舊：標題「war-game 原型」，不是面板，沒有「電腦：…」", async ({ page }) => {
+test("原型的開局照舊：標題「裂土稱王 原型」，不是面板，沒有「電腦：…」", async ({ page }) => {
   await page.goto("./?test=1&mock=1&tps=20&ui=proto");
-  await expect(page.getByRole("heading", { name: "war-game 原型" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "裂土稱王 原型" })).toBeVisible();
   await expect(page.locator("#start .card")).not.toHaveClass(/\bpanel\b/);
   await expect(page.locator("#start .computer-culture")).toHaveCount(0);
   await expect(page.locator("#start button.b")).toHaveCount(0);

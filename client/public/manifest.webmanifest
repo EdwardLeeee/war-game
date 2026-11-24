@@ -1,7 +1,7 @@
 {
-  "name": "war-game",
-  "short_name": "war-game",
-  "description": "war-game 原型試玩（暫時的名稱和圖示）",
+  "name": "裂土稱王",
+  "short_name": "裂土稱王",
+  "description": "裂土稱王",
   "lang": "zh-Hant",
   "start_url": "./",
   "scope": "./",

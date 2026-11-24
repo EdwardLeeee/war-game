@@ -168,7 +168,7 @@ export interface GameOptions {
   progress?: (tick: number, toTick: number) => void;
   /** 繼續上一局: the game cannot go on (the Worker has no game). */
   continueFailed?: (reason: ContinueFailure, tick: number) => void;
-  /** Every minute of game time (SAVE_EVERY_TICKS): the page keeps the game for 繼續上一局. */
+  /** Every 30 seconds of game time (SAVE_EVERY_TICKS; named for the minute it was): the page keeps the game for 繼續上一局. */
   minute?: () => void;
   /** The units drawn from war-game-ui's atlases (D-085), or none: the shapes. Only the picture: never the simulation. */
   art?: UnitArt | null;
@@ -458,7 +458,11 @@ export class Game implements GestureHost {
     port.onmessage = (e) => {
       // 量測's breakdown (lab/prof.ts): a snapshot's arrival is part of a frame's time too.
       const t = prof.t0();
-      this.receive(e.data);
+      // The log's message read (繼續上一局's save, main.ts SaveCost): Chromium copies a message's data out when it is first read.
+      const r = performance.now();
+      const msg = e.data as FromWorker;
+      if (msg.type === "log") this.logReceiveMs = performance.now() - r;
+      this.receive(msg);
       prof.add("snapshot", t);
     };
     this.cleanups.push(
@@ -979,6 +983,9 @@ export class Game implements GestureHost {
    * the tick it got to (D-083), or null when it does not answer within `timeoutMs` (D-056).
    * Asked before the Worker is stopped.
    */
+  /** The main thread's time reading the last log's message (main.ts SaveCost). */
+  logReceiveMs = 0;
+
   exportLog(timeoutMs = 3000): Promise<ExportedLog | null> {
     return new Promise((resolve) => {
       const timer = setTimeout(() => {

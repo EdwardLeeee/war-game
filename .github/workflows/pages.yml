@@ -193,18 +193,31 @@ jobs:
     needs: deploy
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Playwright's own image, as client.yml's e2e: WebKit and the system libraries it needs are already in it, so
+    # nothing comes from the Ubuntu package mirror (run 45329961489: `playwright install --with-deps webkit` at
+    # 116 kB/s from the mirror, the job cancelled at its 20 minutes; the site itself was deployed).
+    # The tag is the Playwright version package-lock.json locks (a step below checks it).
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      options: --user 1001
     defaults:
       run:
         working-directory: client
     steps:
       - uses: actions/checkout@v7
+      - name: The image has the Playwright that package-lock.json locks
+        run: |
+          locked=$(node -p 'require("./package-lock.json").packages["node_modules/@playwright/test"].version')
+          if [ "$locked" != "1.63.0" ]; then
+            echo "::error::package-lock.json locks Playwright $locked; change the container image in pages.yml to v$locked-noble"
+            exit 1
+          fi
       - uses: actions/setup-node@v7
         with:
           node-version: "24"
           cache: npm
           cache-dependency-path: client/package-lock.json
       - run: npm ci
-      - run: npx playwright install --with-deps webkit
       - run: node scripts/live-check.ts "${{ needs.deploy.outputs.page_url }}" "${GITHUB_SHA::7}" "${GITHUB_WORKSPACE}/live"
       - if: always()
         uses: actions/upload-artifact@v7
