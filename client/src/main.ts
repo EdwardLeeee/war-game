@@ -28,7 +28,8 @@ import { type Compressed, gpuBytes } from "./art/compressed.ts";
 import { type EdgeArt, loadEdge } from "./render/edge.ts";
 import { loadGround } from "./render/ground-load.ts";
 import type { GroundTextures } from "./render/ground-draw.ts";
-import { markMeasuring, measureCutShort } from "./lab/panel.ts";
+import { BATTLE_LABEL, markMeasuring, measureCutShort } from "./lab/panel.ts";
+import { BATTLE } from "./lab/lab.ts";
 import { ART_MEASURE_MS, ART_MEASURE_SCENARIO, type ArtCost, type ArtVariant, artVariant } from "./lab/art-measure.ts";
 import { type LoadReport, loadLines, LoadTimes, LoadTimesBox } from "./lab/load-times.ts";
 import type { AstcSample } from "./lab/astc.ts";
@@ -496,11 +497,11 @@ $("tutorial-start").addEventListener("click", () => startTutorial());
  * scenario for 量測, which opens the lab and starts measuring once the game runs; `variant`:
  * art-v7 量測's (D-128), with its art, measured for 10 minutes.
  */
-async function newGame(scenario: ScenarioName = "standard", measure = false, variant: ArtVariant | null = null): Promise<void> {
+async function newGame(scenario: ScenarioName = "standard", measure = false, variant: ArtVariant | null = null, battle = false): Promise<void> {
   loadTimes.begin(measure ? "量測" : game === null ? "開始" : "重來");
   // Kept from here, before its 100-odd MB come down: a reload while they load is the memory too.
   if (variant !== null) markMeasuring(`art-v7 ${variant.label}（載入圖）`);
-  const load: Loading = { stopped: false, stage: "art", again: () => void newGame(scenario, measure, variant).catch(loadFailed) };
+  const load: Loading = { stopped: false, stage: "art", again: () => void newGame(scenario, measure, variant, battle).catch(loadFailed) };
   loading = load;
   hook.screen = "battle";
   hook.ready = false;
@@ -522,8 +523,9 @@ async function newGame(scenario: ScenarioName = "standard", measure = false, var
   const port = params.mock ? new MockPort(params.round7, params.map ?? mapMode, params.outpostHide ? "hide" : params.outpost, params.gallery, params.mine, params.walls, params.siege, params.keep, params.market) : createSimPort(simFailed);
   // Players get the chosen 難度 and no time limit (D-024); 量測 always plays 普通 with the
   // 30-minute limit, like the determinism check and CI, so the numbers compare between runs.
-  const level: AiDifficulty = measure ? "normal" : difficulty;
-  const maxTicks = measure ? MAX_TICKS : 0;
+  // 大軍交戰 (lab.ts BATTLE): both sides the computer at 困難, no time limit (they fight at once).
+  const level: AiDifficulty = battle ? BATTLE.difficulty : measure ? "normal" : difficulty;
+  const maxTicks = battle ? 0 : measure ? MAX_TICKS : 0;
   const enemyAi = measure || params.enemyAi;
   // 地圖 (D-074): the start screen's choice (a test page may ask for one); 量測 always the fixed map, so the numbers compare between runs.
   const map: MapMode = measure ? "fixed" : (params.map ?? mapMode);
@@ -546,9 +548,10 @@ async function newGame(scenario: ScenarioName = "standard", measure = false, var
     difficulty: level,
     maxTicks,
     map,
-    watch: params.watch && !measure,
+    watch: battle || (params.watch && !measure),
+    watchDifficulty: battle ? BATTLE.difficulty : undefined,
     measure,
-    env: env(scenario, gameText(level, maxTicks, enemyAi, map, params.watch && !measure)),
+    env: ((e) => (battle ? () => ({ ...e(), measure: BATTLE_LABEL }) : e))(env(scenario, gameText(level, maxTicks, enemyAi, map, battle || (params.watch && !measure)))),
     checkPort: params.mock ? null : () => createSimPort(showError),
     art,
     culture: params.culture ?? culture,
@@ -595,8 +598,8 @@ async function newGame(scenario: ScenarioName = "standard", measure = false, var
     g.focusBattle();
     g.lab.show();
     const seconds = params.measureSeconds;
-    const windowMs = variant === null ? undefined : seconds !== null ? seconds * 1000 : ART_MEASURE_MS;
-    g.lab.startMeasure(performance.now(), windowMs, variant ?? undefined);
+    const windowMs = battle ? (seconds !== null ? seconds * 1000 : BATTLE.windowMs) : variant === null ? undefined : seconds !== null ? seconds * 1000 : ART_MEASURE_MS;
+    g.lab.startMeasure(performance.now(), windowMs, variant ?? undefined, battle ? BATTLE.warmupMs : undefined);
   }
 }
 
@@ -987,7 +990,7 @@ const life: HudLifecycle = {
   // 新手教學's 回開局畫面 (the result's, the menu's): the tutorial over.
   toStart: () => (isTutorial(game) ? endTutorial("start") : showStart()),
   tutorial: () => startTutorial(),
-  perf: (s) => void newGame(s, true).catch(loadFailed),
+  perf: (k) => void (k === "battle" ? newGame(BATTLE.scenario, true, null, true) : newGame(k, true)).catch(loadFailed),
 };
 
 /**

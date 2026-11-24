@@ -188,6 +188,18 @@ export async function command(page: Page, name: string | RegExp): Promise<Locato
 export const armyButton = (page: Page) => page.getByRole("button", { name: /^全軍 \d+$/ });
 
 /** The lab panel opens from the menu: 選單 → 量測與確定性檢查. */
+/**
+ * The units in sight (not in a building), those of them on the screen drawn from their atlas, the rest off it (鏡頭裁切,
+ * the user 2026-11-24): how many in sight, or -1 while a frame has not caught up with the snapshot.
+ */
+export const inSightDrawnOrOff = (page: Page) =>
+  page.evaluate(() => {
+    const g = window.__proto?.game;
+    const d = g?.unitsDrawn();
+    const all = (g?.units() ?? []).filter((u) => u.action !== 7).length;
+    return d !== undefined && g?.art()?.units === d.ids.length && d.ids.length + d.off === all ? all : -1;
+  });
+
 export async function openLab(page: Page): Promise<void> {
   await page.getByRole("button", { name: "選單" }).tap();
   await page.getByRole("button", { name: "量測與確定性檢查" }).tap();

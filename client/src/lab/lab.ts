@@ -5,6 +5,7 @@
 // check running anyway, the page hidden, the game paused or not at normal speed, no ticks —
 // and its result then says 無效 with the reasons.
 
+import { type Profile, prof } from "./prof.ts";
 import { round2, summarize } from "./stats.ts";
 
 export const WARMUP_MS = 5000;
@@ -20,6 +21,14 @@ export const PERF_SCENARIOS = [
   { scenario: "perf360", population: 360 },
 ] as const;
 export type PerfScenario = (typeof PERF_SCENARIOS)[number]["scenario"];
+/**
+ * 大軍交戰 (the user 2026-11-24 「我用網頁到200兵時畫面會卡卡的」; ceo, core 2026-11-24): perf360 (234 soldiers a side
+ * by a big city) watched with the computer playing both sides at 困難, so they fight at once (core's runs: 10–30 s,
+ * 193/195 soldiers down to 160/150, 91–98 attacking, 66–78 fallen in 10 s, about the user's biggest battle). Measured
+ * from its 10th second for 30 (the first second has the computers' first thought and the JIT).
+ */
+export const BATTLE = { scenario: "perf360", difficulty: "hard", warmupMs: 10_000, windowMs: 30_000 } as const;
+export type MeasureKind = PerfScenario | "battle";
 /**
  * A frame that took longer than this is a stall (停頓): the picture stops for about three
  * frames at 60 fps or more, which the player sees. The median and the slowest 5 % do not
@@ -60,13 +69,16 @@ export interface MeasureResult {
   /** Draw calls a frame (D-085), when counted. */
   drawsMedian: number;
   drawsMax: number;
+  /** Where a frame's time went (lab/prof.ts). */
+  profile?: Profile;
 }
 
 export class Lab {
   phase: LabPhase = "idle";
   private start = 0;
-  /** How long this measurement's window is (art-v7 量測: 10 minutes, D-128). */
+  /** How long this measurement's window is (art-v7 量測: 10 minutes, D-128), and its warm-up (大軍交戰: 10 s). */
   windowMs = WINDOW_MS;
+  warmupMs = WARMUP_MS;
   private frames: number[] = [];
   private ticks: number[] = [];
   private batchMeans: number[] = [];
@@ -87,11 +99,12 @@ export class Lab {
     return null;
   }
 
-  startMeasure(now: number, windowMs = WINDOW_MS): boolean {
+  startMeasure(now: number, windowMs = WINDOW_MS, warmupMs = WARMUP_MS): boolean {
     if (this.blockedMeasure() !== null) return false;
     this.phase = "warmup";
     this.start = now;
     this.windowMs = windowMs;
+    this.warmupMs = warmupMs;
     this.frames = [];
     this.ticks = [];
     this.batchMeans = [];
@@ -126,9 +139,10 @@ export class Lab {
   /** Call every rendered frame; returns the result when the window closes. */
   frame(now: number, dtMs: number, ctx: FrameContext): MeasureResult | null {
     if (this.phase === "warmup") {
-      if (now - this.start >= WARMUP_MS) {
+      if (now - this.start >= this.warmupMs) {
         this.phase = "measuring";
         this.start = now;
+        prof.begin(now);
       }
       return null;
     }
@@ -144,7 +158,7 @@ export class Lab {
     this.frames.push(dtMs);
     if (now - this.start < this.windowMs) return null;
     this.phase = "idle";
-    return this.result();
+    return { ...this.result(), profile: prof.end(now) };
   }
 
   private result(): MeasureResult {
