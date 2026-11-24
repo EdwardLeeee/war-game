@@ -21,12 +21,21 @@
 // Pauses too: a block that would take the candidates listed past AUTO.candidatesMax since the last resume (listedSum:
 // what the bound adds up; ceo 2026-11-24), AUTO.roundsWithout rounds in a row with no promotion, the canary
 // games' hashes changed (the rules or the code changed under the training), the blocks run out, and the queue run out.
+//
+// PR C (selftrain-plan 4.3; ceo 2026-11-24): a training with `gen` settings makes its candidates in rounds once its
+// list is used up. A round: gen.ts proposes from the champion's plan (and nothing of the exam), each proposal plays a
+// few screening games on seeds of the training's range made for that round, gen.ts picks the list from those, and a new
+// block is opened for it (one round, one block: its list is fixed before any of its games). Then the list is examined
+// as any. gen.rounds rounds at most, then done. A block with no list plays no A/A (nothing to compare with it).
 
-import { createHash } from "node:crypto";
 import type { HardPlan } from "../ai.ts";
 import type { MapMode } from "../../protocol.ts";
 import type { Plan } from "../scripted-player.ts";
+import { checkSettings, type GenSettings, pick, propose, type ScreenGame, screenExaminerSeed, screenVsSeed } from "./gen.ts";
+import { normalize, planHash } from "./hard-space.ts";
 import { blockBase, EXAM_SEEDS } from "./seeds.ts";
+
+export { planHash };
 import { addA, addB, decide, noPairs, pairOf, pathA, pathB, type Side, SPRT } from "./sprt.ts";
 import type { Job, JobResult } from "./worker.ts";
 
@@ -166,8 +175,10 @@ export interface Training {
   last: number;
   source: string;
   lookAhead?: number;
+  /** PR C: candidates made in rounds once the list is used up (gen.ts); none: only the list. */
+  gen?: GenSettings;
 }
-export const STATE_VERSION = 2;
+export const STATE_VERSION = 3;
 export interface State {
   version: typeof STATE_VERSION;
   training: { name: string; first: number; last: number };
@@ -200,14 +211,17 @@ export interface State {
   done: boolean;
   decided: Decided[];
   log: { at: string; what: string }[];
+  /** PR C: the generator's settings (null: only the list given). */
+  gen: GenSettings | null;
+  /** The next round's number, and the rounds made so far. */
+  genRound: number;
+  genRounds: number;
+  /** Every plan proposed so far, by hash (what was proposed, never how it did: gen.ts proposes none twice). */
+  proposed: string[];
+  /** A round being screened: its proposals (their plans in `plans`) and what was dropped before any game. */
+  screen: { round: number; plans: string[]; invalid: number; repeated: number } | null;
 }
 
-/** A plan's hash: its JSON with the keys sorted, 12 hex digits. */
-export function planHash(p: HP): string {
-  const sorted = (v: unknown): unknown =>
-    Array.isArray(v) ? v.map(sorted) : v !== null && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, sorted((v as Record<string, unknown>)[k])])) : v;
-  return createHash("sha256").update(JSON.stringify(sorted(p))).digest("hex").slice(0, 12);
-}
 
 export function init(examiners: Examiner[], candidates: Candidate[], training: Training, baseline: HP = {}, at = ""): State {
   const { name, first, last, source } = training;
@@ -218,6 +232,7 @@ export function init(examiners: Examiner[], candidates: Candidate[], training: T
   if (candidates.length > AUTO.candidatesMax) throw new Error(`${name}: ${candidates.length} candidates listed, at most ${AUTO.candidatesMax} at once (each listed one adds to the bound)`);
   const lookAhead = training.lookAhead ?? AUTO.lookAhead;
   if (!Number.isInteger(lookAhead) || lookAhead < 1 || lookAhead > AUTO.lookAhead) throw new Error(`${name}: lookAhead ${lookAhead}: 1-${AUTO.lookAhead}`);
+  if (training.gen !== undefined) checkSettings(training.gen, examiners.length);
   const b = planHash(baseline);
   const s: State = {
     version: STATE_VERSION,
@@ -244,6 +259,11 @@ export function init(examiners: Examiner[], candidates: Candidate[], training: T
     paused: null,
     done: false,
     decided: [],
+    gen: training.gen ?? null,
+    genRound: 1 + Math.max(-1, ...candidates.map((c) => c.round)),
+    genRounds: 0,
+    proposed: [planHash(normalize(baseline)), ...candidates.map((c) => planHash(normalize(c.plan)))],
+    screen: null,
     log: [{ at, what: `開始 ${name}：基準 ${b}，${candidates.length} 個候選，考官 ${examiners.map((e) => e.id).join("、")}，種子第 ${first} 批（這次訓練有 ${first}-${last}）` }],
   };
   for (const c of candidates) s.plans[planHash(c.plan)] = c.plan;
@@ -352,18 +372,85 @@ export function canaryItems(s: State): Item[] {
   ];
 }
 
+/** The first look of `h` from `from` on with a game not played yet (MAX_LOOKS: all played). */
+function openLook(s: State, h: string, from: number): number {
+  let k = from;
+  while (k < MAX_LOOKS && has(s, lookItems(s, h, k))) k++;
+  return k;
+}
+
+/** The screening games of the round being screened (PR C): the proposals' and the champion's, on the round's seeds. */
+export function screenItems(s: State): Item[] {
+  const sc = s.screen;
+  const g = s.gen;
+  if (sc === null || g === null) return [];
+  const items: Item[] = [];
+  s.examiners.forEach((e, j) => {
+    for (let i = 0; i < g.screen.examiner; i++) {
+      const seed = screenExaminerSeed(g.seed, sc.round, j, i);
+      for (const p of [s.champion, ...sc.plans]) items.push({ ...exItem(s, p, e, seed), key: `sx|${p}|${e.id}|${seed}` });
+    }
+  });
+  for (let j = 0; j < g.screen.vs; j++) {
+    for (const p of sc.plans) items.push(...[false, true].map((swap) => ({ ...playItem(s, "sv", p, s.champion, screenVsSeed(g.seed, sc.round, j), swap, "random") })));
+  }
+  return items;
+}
+
+/** The round's screening games as gen.ts takes them: on its seeds, how each proposal did against the champion. */
+function screenGames(s: State): ScreenGame[] {
+  const sc = s.screen!;
+  const g = s.gen!;
+  const out: ScreenGame[] = [];
+  for (const p of sc.plans) {
+    s.examiners.forEach((e, j) => {
+      for (let i = 0; i < g.screen.examiner; i++) {
+        const seed = screenExaminerSeed(g.seed, sc.round, j, i);
+        const rp = s.results[`sx|${p}|${e.id}|${seed}`];
+        const rc = s.results[`sx|${s.champion}|${e.id}|${seed}`];
+        out.push({ plan: p, kind: "ex", seed, differ: rp.h !== rc.h, d: rc.w === 1 && rp.w !== 1 ? 1 : rp.w === 1 && rc.w !== 1 ? -1 : 0 });
+      }
+    });
+    for (let j = 0; j < g.screen.vs; j++) {
+      const seed = screenVsSeed(g.seed, sc.round, j);
+      for (const swap of [false, true]) {
+        const w = s.results[playKey("sv", p, s.champion, seed, swap)].w;
+        out.push({ plan: p, kind: "vs", seed, differ: true, d: w === 1 ? 1 : w === 0 ? -1 : 0 });
+      }
+    }
+  }
+  return out;
+}
+
 /** The games still to play, in order: the canary (always), the block's A/A, the champion's base games, the candidate's. */
 export function needed(s: State): Item[] {
   checkState(s);
   if (s.paused !== null || s.done) return [];
   const block = blockOf(s);
   const items = [...canaryItems(s)];
-  if (s.aa[block.n] === undefined) items.push(...aaItems(s));
+  if (block.listed > 0 && s.aa[block.n] === undefined) items.push(...aaItems(s));
   if (s.champion !== s.baseline && s.base[s.champion] === undefined) items.push(...baseItems(s, s.champion));
+  if (s.screen !== null) items.push(...screenItems(s));
+  // The current candidate's looks not played yet, then (PR C) the first such looks of those after it in the list, about
+  // s.lookAhead looks in all: with others waiting the current one takes half, so a decision leaves the next one's
+  // games played rather than its own far looks unused. Only in this block (the list's), only looks not played yet.
   const c = s.current;
+  const waiting = s.queue.map((x) => planHash(x.plan)).filter((h) => h !== s.champion && h !== c?.hash);
+  let budget = s.lookAhead;
   if (c !== null) {
-    if (c.stage === "exam") for (let k = c.looks; k < Math.min(c.looks + s.lookAhead, MAX_LOOKS); k++) items.push(...lookItems(s, c.hash, k));
-    else items.push(...finalItems(s, c.hash));
+    if (c.stage === "exam") {
+      const share = waiting.length > 0 && block.listed > 0 ? Math.max(1, Math.ceil(s.lookAhead / 2)) : s.lookAhead;
+      const from = openLook(s, c.hash, c.looks);
+      for (let k = from; k < Math.min(from + share, MAX_LOOKS); k++) items.push(...lookItems(s, c.hash, k));
+      budget -= share;
+    } else items.push(...finalItems(s, c.hash));
+  }
+  for (const h of block.listed > 0 ? waiting : []) {
+    if (budget <= 0) break;
+    const from = openLook(s, h, 0);
+    const n = Math.min(budget, MAX_LOOKS - from);
+    for (let k = from; k < from + n; k++) items.push(...lookItems(s, h, k));
+    budget -= n;
   }
   // The canary always; the rest once each, and only those not played yet.
   const seen = new Set<string>();
@@ -501,10 +588,15 @@ export function prune(s: State): void {
   const b = s.blocks.at(-1);
   if (b === undefined) return;
   const from = blockBase(b.n);
-  const keep = new Set([s.champion, s.current?.hash]);
+  const keep = new Set([s.champion, s.current?.hash, ...s.queue.map((c) => planHash(c.plan))]);
+  const screening = new Set(s.screen === null ? [] : [s.champion, ...s.screen.plans]);
   for (const k of Object.keys(s.results)) {
     const [kind, me, , seedText] = k.split("|");
     const seed = Number(seedText);
+    if (kind === "sx" || kind === "sv") {
+      if (!screening.has(me)) delete s.results[k];
+      continue;
+    }
     const here = kind === "bl" ? s.base[me] === undefined : seed >= from && seed < from + EXAM_SEEDS.blockSize;
     if (!here || !keep.has(me)) delete s.results[k];
   }
@@ -527,6 +619,49 @@ export function resume(s: State, id: string, at: string): boolean {
   return true;
 }
 
+/** A round's proposals (gen.ts): from the champion's plan, the round, the generator's settings and what was proposed. */
+function startRound(s: State, at: string, did: string[]): void {
+  const g = s.gen!;
+  const round = s.genRound;
+  const made = propose(s.plans[s.champion], round, g, new Set(s.proposed));
+  for (const p of made.plans) {
+    const h = planHash(p);
+    s.plans[h] = p;
+    s.proposed.push(h);
+  }
+  s.screen = { round, plans: made.plans.map(planHash), invalid: made.invalid, repeated: made.repeated };
+  const what = `第 ${round} 輪：提了 ${made.plans.length} 個（範圍外 ${made.invalid}、提過的 ${made.repeated} 個不算），篩選`;
+  s.log.push({ at, what });
+  did.push(what);
+}
+
+/** A round's list from its screening games, and a block opened for it; a round with none listed counts as no promotion. */
+function endRound(s: State, pauseId: string, at: string, did: string[]): void {
+  const g = s.gen!;
+  const sc = s.screen!;
+  const picked = pick(sc.plans, screenGames(s), g, sc.round);
+  s.queue = picked.list.map((h, k) => ({ id: `r${sc.round}-${k + 1}`, plan: s.plans[h], round: sc.round }));
+  const listed = new Set(picked.list);
+  for (const h of sc.plans) if (!listed.has(h) && h !== s.champion && h !== s.baseline) delete s.plans[h];
+  s.screen = null;
+  s.genRound++;
+  s.genRounds++;
+  for (const k of Object.keys(s.results)) if (k.startsWith("sx|") || k.startsWith("sv|")) delete s.results[k];
+  const what = `第 ${sc.round} 輪的名單：${picked.list.length} 個（和最強版同一局 ${picked.same}、不同的局太少 ${picked.few} 個丟掉）`;
+  s.log.push({ at, what });
+  did.push(what);
+  if (s.queue.length === 0) {
+    // No candidate this round: a round with no promotion all the same.
+    if (s.lastRound >= 0) s.roundsWithout = s.promotedInRound ? 0 : s.roundsWithout + 1;
+    s.promotedInRound = false;
+    s.lastRound = sc.round;
+    if (s.roundsWithout >= AUTO.roundsWithout) pause(s, pauseId, "rounds", `連續 ${s.roundsWithout} 輪都沒有升級`, [], at);
+    return;
+  }
+  openBlock(s, `第 ${sc.round} 輪`, pauseId, at);
+  prune(s);
+}
+
 /**
  * Moves the state on as far as the results allow; `pauseId` names a pause it makes (the segment's P-<run id>). Returns
  * what it did, a line each.
@@ -545,7 +680,7 @@ export function step(s: State, pauseId: string, at: string): string[] {
     const ch = s.champion;
     // The champion against itself.
     const aa = aaItems(s);
-    if (s.aa[block.n] === undefined && has(s, aa)) {
+    if (block.listed > 0 && s.aa[block.n] === undefined && has(s, aa)) {
       const m = { pairs: SEEDS.mirrorCount, differ: 0, draws: 0, games: SEEDS.aaCount };
       for (let i = 0; i < SEEDS.mirrorCount * 2; i += 2) {
         const a = s.results[aa[i].key];
@@ -580,7 +715,17 @@ export function step(s: State, pauseId: string, at: string): string[] {
     if (s.current === null) {
       if (s.queue.length === 0) {
         // The last champion's own checks (A/A, against the baseline) first: they can still pause.
-        if (s.aa[block.n] === undefined || (ch !== s.baseline && s.base[ch] === undefined)) return did;
+        if ((block.listed > 0 && s.aa[block.n] === undefined) || (ch !== s.baseline && s.base[ch] === undefined)) return did;
+        // PR C: the list used up, the next round.
+        if (s.gen !== null && s.genRounds < s.gen.rounds) {
+          if (s.screen === null) {
+            startRound(s, at, did);
+            continue;
+          }
+          if (!has(s, screenItems(s))) return did;
+          endRound(s, pauseId, at, did);
+          continue;
+        }
       }
       if (s.queue.length > 0 && block.source !== s.source) {
         openBlock(s, "產生候選的程式或設定改了", pauseId, at);
@@ -590,8 +735,9 @@ export function step(s: State, pauseId: string, at: string): string[] {
       const c = s.queue.shift();
       if (c === undefined) {
         s.done = true;
-        s.log.push({ at, what: "候選都考完了" });
-        did.push("候選都考完了");
+        const why = s.gen !== null ? `候選都考完了（產生了 ${s.genRounds} 輪）` : "候選都考完了";
+        s.log.push({ at, what: why });
+        did.push(why);
         return did;
       }
       if (c.round !== s.lastRound) {

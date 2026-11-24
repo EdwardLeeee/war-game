@@ -1,0 +1,9 @@
+{
+  "name": "trial-c1",
+  "note": "D-147 PR C's trial (ceo 2026-11-24): the baseline a little weaker than hard but inside the search space (farmers 22, production 2); the list hard itself (to walk a promotion and a new block), then 2 rounds made by gen.ts from the champion: 12 proposals a round, 10 screening games each, 4 listed. Its own budget of 30 machine hours (also counted in D-147's 5,000).",
+  "baseline": { "farmers": 22, "production": 2 },
+  "candidates": [{ "id": "hard", "plan": {}, "round": 0 }],
+  "lookAhead": 6,
+  "generator": ["src/ai/learn/gen.ts", "src/ai/learn/hard-space.ts", "src/ai/learn/seeds.ts", "src/ai/ai.ts"],
+  "gen": { "seed": 1, "propose": 12, "changes": [1, 3], "screen": { "examiner": 2, "vs": 2 }, "list": 4, "minDiffer": 0.05, "rounds": 2 }
+}
