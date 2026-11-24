@@ -574,8 +574,11 @@ export class WorldRenderer {
     return { ids, off: this.buildingsOff };
   }
 
-  /** The units drawn in the last frame (their ids), and how many were left off as off the screen (tests). */
-  get unitsDrawnForTest(): { ids: number[]; off: number } {
+  /**
+   * The units drawn in the last frame (their ids), how many were taken as on the screen (drawn, or as a ghost behind a
+   * building, or with no picture of their own) and how many left off as off it (tests).
+   */
+  get unitsDrawnForTest(): { ids: number[]; off: number; shown: number } {
     const u = this.view.curr?.snap.units;
     const ids: number[] = [];
     if (u !== undefined) {
@@ -583,7 +586,7 @@ export class WorldRenderer {
         if (this.unitPool[i].body.visible || (this.artUnits?.shown(i) ?? false)) ids.push(u[i * UNIT_STRIDE + U.id]);
       }
     }
-    return { ids, off: this.unitsOff };
+    return { ids, off: this.unitsOff, shown: this.unitsShown };
   }
 
   /** The building preview was put away with ✗ (world px): shrink it and fade it out (R6-25-11). */

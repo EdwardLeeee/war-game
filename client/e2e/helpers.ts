@@ -188,8 +188,10 @@ export async function command(page: Page, name: string | RegExp): Promise<Locato
 export const armyButton = (page: Page) => page.getByRole("button", { name: /^全軍 \d+$/ });
 
 /**
- * The units in sight (not in a building), those of them on the screen drawn from their atlas, the rest off it (鏡頭裁切,
- * the user 2026-11-24): how many in sight, or -1 when they do not add up.
+ * The units in sight (not in a building): those taken as on the screen and those left off it (鏡頭裁切, the user
+ * 2026-11-24) are all of them, and those drawn are drawn from their atlas: how many in sight, or -1 when not so. (Drawn
+ * and off do not always add up: one walking through one of our standing buildings is not drawn till it is out, D-154,
+ * world.ts drawUnits; at a perf start the farmers going out of the main city, 3 to 8 of about 140.)
  */
 export const inSightDrawnOrOff = (page: Page) =>
   page.evaluate(() => {
@@ -199,7 +201,7 @@ export const inSightDrawnOrOff = (page: Page) =>
     g?.drawNow();
     const d = g?.unitsDrawn();
     const all = (g?.units() ?? []).filter((u) => u.action !== 7).length;
-    return d !== undefined && g?.art()?.units === d.ids.length && d.ids.length + d.off === all ? all : -1;
+    return d !== undefined && g?.art()?.units === d.ids.length && d.shown + d.off === all ? all : -1;
   });
 
 /** The lab panel opens from the menu: 選單 → 量測與確定性檢查. */

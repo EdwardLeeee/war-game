@@ -791,8 +791,8 @@ export class Game implements GestureHost {
     return this.renderer?.buildingsDrawnForTest ?? { ids: [], off: 0 };
   }
 
-  get unitsDrawnForTest(): { ids: number[]; off: number } {
-    return this.renderer?.unitsDrawnForTest ?? { ids: [], off: 0 };
+  get unitsDrawnForTest(): { ids: number[]; off: number; shown: number } {
+    return this.renderer?.unitsDrawnForTest ?? { ids: [], off: 0, shown: 0 };
   }
 
   freezeClockForTest(on: boolean): void {

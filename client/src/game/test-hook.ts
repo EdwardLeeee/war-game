@@ -162,7 +162,7 @@ export interface GameHook {
   freezeClock(on: boolean): void;
   /** One frame drawn now (the camera's move shown in that very frame), and the units it drew and left off the screen. */
   drawNow(): void;
-  unitsDrawn(): { ids: number[]; off: number };
+  unitsDrawn(): { ids: number[]; off: number; shown: number };
   /** The resource nodes as drawn from the atlases; `whole`: drawn all again first (only those changed are drawn). */
   nodeLooks(whole: boolean): string[];
   /** The castles' pictures as drawn; `whole`: every town drawn again first (only those whose fog changed are). */
