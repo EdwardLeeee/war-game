@@ -1,0 +1,10 @@
+{
+  "name": "trial-c1",
+  "note": "D-147 PR C's trial (ceo 2026-11-24): the pipeline, not who is stronger. The baseline hard itself, no list given: 2 rounds made by gen.ts from the champion, 12 proposals a round, 10 screening games each, 2 listed; each candidate looked at 4 times at most (a trial's cap: at it, rejected as out of games). Its own budget of 30 machine hours, 15 the aim (also counted in D-147's 5,000).",
+  "baseline": {},
+  "candidates": [],
+  "lookAhead": 6,
+  "maxLooks": 4,
+  "generator": ["src/ai/learn/gen.ts", "src/ai/learn/hard-space.ts", "src/ai/learn/seeds.ts", "src/ai/ai.ts"],
+  "gen": { "seed": 1, "propose": 12, "changes": [1, 3], "screen": { "examiner": 2, "vs": 2 }, "list": 2, "minDiffer": 0.05, "rounds": 2 }
+}

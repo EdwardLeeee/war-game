@@ -26,6 +26,7 @@ import { dirname, join } from "node:path";
 import { createHash } from "node:crypto";
 import { checkCanary, checkState, type Examiner, init, listedSum, needed, prune, type Res, resOf, resume, setSource, type State, step, type Training } from "./auto.ts";
 import { Pool, threads } from "./pool.ts";
+import type { GenSettings } from "./gen.ts";
 import { SPRT } from "./sprt.ts";
 import { GiveWay } from "./yield.ts";
 
@@ -68,6 +69,10 @@ interface Config {
   candidates: State["queue"];
   lookAhead?: number;
   generator?: string[];
+  /** PR C: candidates made in rounds once the list is used up (gen.ts GenSettings). */
+  gen?: GenSettings;
+  /** A trial's cap on a candidate's looks (auto.ts Training.maxLooks). */
+  maxLooks?: number;
 }
 function readConfig(): { config: Config; source: string } {
   const file = arg("config", "");
@@ -91,7 +96,7 @@ function cmdInit(): void {
   if (!Object.hasOwn(registry, config.name)) throw new Error(`${config.name} is not in exam-blocks.json: give it a name and blocks no training had`);
   const { first, last, source: registered } = registry[config.name];
   if (registered !== source) throw new Error(`${config.name}: its settings (${source}) are not those registered (${registered}): other candidates take a new name and new blocks (exam-blocks.json)`);
-  const s = init(examiners(), config.candidates, { name: config.name, first, last, source, lookAhead: config.lookAhead }, config.baseline ?? {}, now());
+  const s = init(examiners(), config.candidates, { name: config.name, first, last, source, lookAhead: config.lookAhead, gen: config.gen, maxLooks: config.maxLooks }, config.baseline ?? {}, now());
   const out = arg("out", "state.json");
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, JSON.stringify(s));
@@ -226,6 +231,7 @@ function statusLine(s: State): string {
   if (s.paused !== null) return `暫停中 ${s.paused.id}：${s.paused.reason}`;
   if (s.done) return `考完了：考了 ${s.tested} 個候選，升級 ${s.decided.filter((d) => d.verdict === "promote").length} 次`;
   const c = s.current;
+  if (c === null && s.screen !== null) return `進行中：考了 ${s.tested} 個；第 ${s.screen.round} 輪篩選中（${s.screen.plans.length} 個提案）`;
   return `進行中：考了 ${s.tested} 個，還有 ${s.queue.length} 個；${c === null ? "下一個還沒開始" : `正在考 ${c.id}（${c.stage === "exam" ? `已看 ${c.looks} 次` : "上線前檢查"}）`}`;
 }
 
@@ -240,6 +246,7 @@ function report(s: State): string[] {
     // A block's candidates share seeds: they add up (a union bound), by the candidates listed when it opened (sprt.ts).
     `- 誤升級機率的上限（到目前開的各批）：各批開批時的名單共 ${listedSum(s)} 個 × 1e-4（兩條路合起來），至少誤升級一次最多 ${(Math.min(1, listedSum(s) * 2 * SPRT.alpha) * 100).toFixed(2)}%；上次恢復以後 ${listedSum(s) - s.listedAtResume} 個，滿 ${SPRT.candidatesMax} 個就暫停`,
     "- 這個上限要成立：候選、最強版和產生候選的程式都沒看過那一批種子的結果；各考官各用種子、兩個出生點算一個單位；λ 只看之前各次；種子當作隨機抽的；同一場考試規則沒變（sprt.ts 的 1–7）",
+    ...(s.gen === null ? [] : [`- 產生候選：做了 ${s.genRounds} 輪（最多 ${s.gen.rounds} 輪），提過 ${s.proposed.length} 個設定；每輪提 ${s.gen.propose} 個、每個篩 ${s.gen.screen.examiner * s.examiners.length + s.gen.screen.vs * 2} 局、名單最多 ${s.gen.list} 個`]),
     `- 考試種子：第 ${s.blocks.at(-1)!.n} 批（這次訓練有第 ${s.training.first}-${s.training.last} 批）；開過的：${s.blocks.map((b) => `${b.n}（${b.why}，名單 ${b.listed}）`).join("、")}`,
   ];
   const base = Object.entries(s.base);

@@ -1,6 +1,15 @@
 {
   "note": "Which blocks of exam seeds (seeds.ts: 1-999) are whose, and the hash of what makes that training's candidates (node src/ai/learn/exam-auto.ts source --config FILE). Only ever added to: a block once given is never given again, also after its training stopped or failed.",
   "trainings": {
-    "trial-3": { "first": 1, "last": 4, "source": "753ebc2dd92a" }
+    "trial-3": {
+      "first": 1,
+      "last": 4,
+      "source": "753ebc2dd92a"
+    },
+    "trial-c1": {
+      "first": 5,
+      "last": 20,
+      "source": "3b799355c21d"
+    }
   }
 }
