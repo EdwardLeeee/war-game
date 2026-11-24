@@ -145,6 +145,11 @@ let game: Game | null = null;
 let tutor: Tutor | null = null;
 /** The tutorial's game (sim PROTOCOL 3.12): never kept, never uploaded, no crash note (R25 brief). */
 const isTutorial = (g: Game | null): boolean => g !== null && g.initSent?.scenario === "tutorial";
+/**
+ * 新手教學 and 量測's own games (ceo 2026-11-24: 量測大軍交戰 from a game's menu took the player's game and its
+ * 繼續上一局 away): beside the player's game, taking nobody's place; ending or leaving one clears nothing.
+ */
+const isSideGame = (g: Game | null): boolean => isTutorial(g) || g?.measureGame === true;
 
 /** The canvas, made the first time a game starts; its renders timed while a start is measured. */
 async function stage(): Promise<Application> {
@@ -401,8 +406,8 @@ function keepGame(g: Game, why: KeepWhy): Promise<void> {
 /** The game is over, or another takes its place: its record as above, then no 繼續上一局 for it. */
 function forgetGame(g: Game, why: "end" | "restart"): Promise<void> {
   const k = keptOf(g);
-  // 新手教學: the game kept before it stays kept (R25).
-  if (isTutorial(g)) return k.job;
+  // 新手教學 and 量測: the game kept before them stays kept (R25; ceo 2026-11-24: a 量測 game that ends clears nothing).
+  if (isSideGame(g)) return k.job;
   return keepGame(g, why).then(() => {
     k.job = k.job.then(() => saveStore.clear());
     return k.job;
@@ -509,11 +514,12 @@ async function newGame(scenario: ScenarioName = "standard", measure = false, var
   const app = await stage();
   // 重來 leaves the game on screen: keep its record first (D-056). A new game takes the place
   // of the one kept for 繼續上一局 (D-083), once it shows (取消 meanwhile leaves that one kept).
-  // 新手教學 (R25) takes nobody's place: a game on screen is kept for 繼續上一局 (however short),
-  // the one kept before stays; a game after the tutorial is new.
+  // 新手教學 (R25) and 量測 (ceo 2026-11-24) take nobody's place: a game on screen is kept for 繼續上一局 (however
+  // short), the one kept before stays; a game after them is new.
   const tutorial = scenario === "tutorial";
-  const takesSave = !tutorial && (game === null || isTutorial(game));
-  if (game !== null && !isTutorial(game)) await (tutorial ? keepGame(game, "leave") : forgetGame(game, "restart"));
+  const side = tutorial || measure;
+  const takesSave = !side && (game === null || isSideGame(game));
+  if (game !== null && !isSideGame(game)) await (side ? keepGame(game, "leave") : forgetGame(game, "restart"));
   hideSaved();
   endTutor();
   game?.destroy();
@@ -988,7 +994,8 @@ function artCost(): Omit<ArtCost, "ground"> {
 const life: HudLifecycle = {
   restart: () => void newGame().catch(loadFailed),
   // 新手教學's 回開局畫面 (the result's, the menu's): the tutorial over.
-  toStart: () => (isTutorial(game) ? endTutorial("start") : showStart()),
+  // 新手教學's and 量測's: their game gone, 繼續上一局 offered again (ceo 2026-11-24).
+  toStart: () => (isSideGame(game) ? endTutorial("start") : showStart()),
   tutorial: () => startTutorial(),
   perf: (k) => void (k === "battle" ? newGame(BATTLE.scenario, true, null, true) : newGame(k, true)).catch(loadFailed),
 };

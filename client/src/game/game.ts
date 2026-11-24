@@ -310,6 +310,11 @@ export class Game implements GestureHost {
   tps: number;
   /** The init message this game started with (the test hook reads it). */
   initSent: InitMessage | null = null;
+
+  /** A game of its own for 量測 (perf, perf200, perf360, 大軍交戰, art-v7 量測), not the player's. */
+  get measureGame(): boolean {
+    return this.options.measure === true;
+  }
   /** The last state hash the simulation published (every HASH_EVERY ticks), for checking a replay of the log (D-056). */
   lastHash: { tick: number; hash: string } | null = null;
   /** How the game ended, once it has. */
