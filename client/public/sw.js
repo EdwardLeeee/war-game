@@ -4,7 +4,9 @@
 // never change (scripts/fetch-art.ts checks each against the lock), so no copy can be stale.
 // Everything else (the page, its code, version.json, the game records) is left to the network
 // as before, so a deploy is the new version at once. A new tag's worker deletes the old tag's
-// copies. Plain JavaScript: public/ is copied as it is, next to index.html.
+// copies, and the old address's (proto/art/…, from before the game moved up a level, #568: the
+// same cache name as this tag's, so they would stay till the next tag). Plain JavaScript: public/
+// is copied as it is, next to index.html.
 
 const TAG = new URL(self.location.href).searchParams.get("tag") ?? "";
 const PREFIX = "war-game-";
@@ -19,6 +21,11 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
       for (const name of await caches.keys()) if (name.startsWith(PREFIX) && name !== CACHE) await caches.delete(name);
+      const old = new URL("proto/", self.registration.scope).href;
+      if (await caches.has(CACHE)) {
+        const cache = await caches.open(CACHE);
+        for (const req of await cache.keys()) if (req.url.startsWith(old)) await cache.delete(req);
+      }
       // This page's first game already: its downloads go through here.
       await self.clients.claim();
     })(),

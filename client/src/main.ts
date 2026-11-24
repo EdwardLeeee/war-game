@@ -99,7 +99,7 @@ if (formalUi()) {
   // Its buttons the interface's: the chosen one and the main one (no .secondary) gold, the rest wood.
   for (const b of document.querySelectorAll<HTMLButtonElement>("#start button")) b.classList.add("b");
   const title = document.getElementById("start-title");
-  if (title !== null) title.textContent = "war-game";
+  if (title !== null) title.textContent = "裂土稱王";
 }
 applyTheme(loadTheme());
 // 介面放大 (R26-01): the interface bigger on a large window, as the window changes size too (ui/ui-scale.ts).

@@ -46,7 +46,7 @@ test("加到主畫面：頁面連到 manifest；名稱、起始網址、範圍�
   const res = await request.get(url.href);
   expect(res.ok()).toBe(true);
   const m = (await res.json()) as Manifest;
-  expect(m).toMatchObject({ name: "war-game", short_name: "war-game", start_url: "./", scope: "./", display: "fullscreen", orientation: "landscape" });
+  expect(m).toMatchObject({ name: "裂土稱王", short_name: "裂土稱王", start_url: "./", scope: "./", display: "fullscreen", orientation: "landscape" });
   // Both resolve to the page's own folder (/war-game/ on GitHub Pages, / here).
   const folder = new URL("./", page.url()).pathname;
   expect(new URL(m.start_url, url).pathname).toBe(folder);
@@ -61,7 +61,7 @@ test("加到主畫面：頁面連到 manifest；名稱、起始網址、範圍�
   }
   // iOS: the tags Safari reads before iOS 26, and the 180 icon it puts on the Home Screen.
   await expect(page.locator('meta[name="apple-mobile-web-app-capable"]')).toHaveAttribute("content", "yes");
-  await expect(page.locator('meta[name="apple-mobile-web-app-title"]')).toHaveAttribute("content", "war-game");
+  await expect(page.locator('meta[name="apple-mobile-web-app-title"]')).toHaveAttribute("content", "裂土稱王");
   await expect(page.locator('meta[name="viewport"]')).toHaveAttribute("content", /viewport-fit=cover/);
   const touch = await page.locator('link[rel="apple-touch-icon"]').getAttribute("href");
   const t = await request.get(new URL(touch ?? "", page.url()).href);
@@ -109,6 +109,19 @@ test.describe("service worker", () => {
     });
     expect(via).toEqual([null, null, null]);
     expect(await page.evaluate(async (t) => (await fetch(`art/${t}/x3/effects/effects.json`)).headers.get("x-war-game-sw"), tag)).toBe("hit");
+    // The old address's copies (proto/art/…, from before the game moved up a level, #568): the same cache name; a
+    // worker that activates deletes them, and keeps this tag's own.
+    const old = await page.evaluate(async (t) => {
+      const u = new URL(`proto/art/${t}/x3/effects/effects.json`, location.href).href;
+      await (await caches.open(`war-game-${t}`)).put(u, new Response("{}"));
+      return new URL(u).pathname;
+    }, tag);
+    const paths = (t: string) => page.evaluate(async (n) => (await (await caches.open(n)).keys()).map((r) => new URL(r.url).pathname), `war-game-${t}`);
+    const before = await paths(tag ?? "");
+    expect(before).toContain(old);
+    await page.evaluate((t) => navigator.serviceWorker.register(`sw.js?tag=${t}&again=1`), tag);
+    await expect.poll(() => paths(tag ?? ""), { timeout: 10_000 }).not.toContain(old);
+    expect(await paths(tag ?? "")).toEqual(expect.arrayContaining(before.filter((f) => f !== old)));
     // A new tag's worker deletes the old tag's pictures.
     await page.evaluate(() => navigator.serviceWorker.register("sw.js?tag=art-v999"));
     await expect.poll(() => page.evaluate(async () => await caches.keys()), { timeout: 10_000 }).not.toContain(`war-game-${tag}`);
