@@ -69,12 +69,14 @@ export const HARD_SPACE: Partial<Record<Field, Space>> = {
   cavalryWhen: int(0, 50, 10, "enemy ranged and mages share before cavalry", ["cavalryCounter"]),
   cavalryRandomOnly: bool("D-097: cavalry lost on the fixed map, won on random ones"),
   charge: bool("A4: cavalry charge ranged and mages", ["cavalryCounter"]),
+  chargeRest: int(1, 5, 1, "minutes a spot is left alone after a charge gives up (measured: changes no game, but it blocked a charge in 1 of 36 games only; ceo 2026-11-25: searched)", ["charge"]),
   // The army: sizes and when to go.
   townArmy: int(3, 10, 1, "fewer than 3 do not beat a small town's militia", ["bigArmy"]),
   bigArmy: int(10, 24, 2, "the big town's keep holds 12 down (D-100)"),
   keepTownArmy: int(6, 16, 2, "towns with a keep (D-100 found 10)"),
   keepBigArmy: int(14, 30, 2, "the big town with a keep (D-100 found 20)"),
   keepContest: bool("measured off (D-100)"),
+  pushRatio: int(100, 160, 10, "its army's worth at least this percent of what it believes the enemy has (measured: changes no game, but its window was reached in 2 of 36 games only; ceo 2026-11-25: searched)"),
   pushArmy: int(34, 60, 2, "R8: 31-37 fell under the break-off at the city, 44 took it (PR #171); 60 is still a march of a quarter of the population"),
   strongPush: int(0, 60, 10, "D-100: a march when strong enough; 0 as before"),
   strongRatio: int(150, 300, 25, "how much stronger for strongPush", ["strongPush"]),
@@ -141,7 +143,9 @@ const D135 = "D-135: no crystal under the rules as they are (NO_CRYSTAL), so it 
  * hard (as it plays: HARD_NOW) with the field one step from it, and at the ends of its range (a switch flipped), differed
  * from the same game without the change: the three examiners' plans, hard (the champion's side) and normal, on new seeds.
  * And the code the field steers ran in those games (counted: ai-tools promote-sim/coverage.mts), so it is not that they never
- * reached it. A field that changes no game is dropped by the screening (its proposals are the champion's games), so a
+ * reached it. Ran too few times is not "ran" (ceo 2026-11-25): pushRatio's window, with the army at pushArmy, came up in 2 of
+ * 36 games, and chargeRest blocked a charge in 1, so both are searched: each may matter when the champion's other fields move, and
+ * a field left in by mistake costs a proposal in about 75. A field that changes no game is dropped by the screening (its proposals are the champion's games), so a
  * proposal of it would be wasted. It is no proof it can do nothing: when the examiners or the rules change, or a field the
  * champion has that it depends on (the measurement's plan is hard), it is measured again.
  */
@@ -166,8 +170,6 @@ export const HARD_FIXED: Partial<Record<Field, string>> = {
   crystalStop: D135,
   mageReserve: D135,
   counterCavalry: measured(36, "the enemy-cavalry condition held 5,368 times in 18 of 36 games"),
-  chargeRest: measured(60, "a charge set the rest 6 times in 5 games and it blocked a charge 6 times in 1"),
-  pushRatio: measured(60, "the weighing fell between 100 and 160 in 885 of 13,564 times, with the army at pushArmy 80 times in 2 of 36 games: thin"),
 };
 
 /** The fields neither searched nor fixed: none may be left out (a test checks every field of HARD is in one of them). */

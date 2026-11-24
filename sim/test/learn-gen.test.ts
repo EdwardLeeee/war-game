@@ -116,16 +116,21 @@ test("hard-space: every field of hard's plan is either searched or fixed, with w
 test("hard-space: the fields that change no game are fixed, not searched (measured 2026-11-25; ceo)", () => {
   // Measured with the three examiners, hard and normal (ai-tools promote-sim/inert-step1.jsonl, inert2.jsonl): no game of
   // 36 or 60 differed, and their code ran in those games (coverage.mts). Put back in HARD_SPACE, every proposal of them
-  // would be the champion's games again. (cityCap, cityForget, rescueRest, towerFirst and productionFirst were measured so
-  // too, but they depend on others off, or hard's own value (HARD_POP) already was the change, so they are searched.)
-  const inert: Field[] = ["vein", "crystalStop", "mageReserve", "counterCavalry", "chargeRest", "pushRatio"];
+  // would be the champion's games again. (cityCap, cityForget, rescueRest, towerFirst, productionFirst, pushRatio and chargeRest were measured
+  // so too, but they depend on others off, hard's own value (HARD_POP) already was the change, or they ran too seldom:
+  // searched.)
+  // pushRatio and chargeRest were measured so too, but their window (with the army big enough) or a charge blocked came up
+  // in 2 and 1 of 36 games only: searched.
+  const inert: Field[] = ["vein", "crystalStop", "mageReserve", "counterCavalry"];
   for (const f of inert) {
     assert.equal(HARD_SPACE[f], undefined, `${f} is in the search space again`);
     assert.match(HARD_FIXED[f] ?? "", /D-135|measured/, `${f}: why it is fixed`);
   }
+  assert.equal(HARD_SPACE.pushRatio?.type, "int", "pushRatio is searched: its window was reached too seldom to say it does nothing");
+  assert.deepEqual([HARD_SPACE.chargeRest?.type, HARD_SPACE.chargeRest?.needs], ["int", ["charge"]], "chargeRest too");
   // A field measured to change no game must be one whose prerequisites are on in hard as it plays (else it was asleep, not inert),
   // and its reason says what it was: the games, that the code ran, and when to measure again.
-  const prerequisites: Partial<Record<Field, Field[]>> = { counterCavalry: [], chargeRest: ["charge", "cavalryCounter"], pushRatio: [] };
+  const prerequisites: Partial<Record<Field, Field[]>> = { counterCavalry: [] };
   for (const f of inert) {
     const why = HARD_FIXED[f]!;
     if (/D-135/.test(why)) continue;
