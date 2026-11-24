@@ -71,6 +71,8 @@ interface Config {
   generator?: string[];
   /** PR C: candidates made in rounds once the list is used up (gen.ts GenSettings). */
   gen?: GenSettings;
+  /** A trial's cap on a candidate's looks (auto.ts Training.maxLooks). */
+  maxLooks?: number;
 }
 function readConfig(): { config: Config; source: string } {
   const file = arg("config", "");
@@ -94,7 +96,7 @@ function cmdInit(): void {
   if (!Object.hasOwn(registry, config.name)) throw new Error(`${config.name} is not in exam-blocks.json: give it a name and blocks no training had`);
   const { first, last, source: registered } = registry[config.name];
   if (registered !== source) throw new Error(`${config.name}: its settings (${source}) are not those registered (${registered}): other candidates take a new name and new blocks (exam-blocks.json)`);
-  const s = init(examiners(), config.candidates, { name: config.name, first, last, source, lookAhead: config.lookAhead, gen: config.gen }, config.baseline ?? {}, now());
+  const s = init(examiners(), config.candidates, { name: config.name, first, last, source, lookAhead: config.lookAhead, gen: config.gen, maxLooks: config.maxLooks }, config.baseline ?? {}, now());
   const out = arg("out", "state.json");
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, JSON.stringify(s));

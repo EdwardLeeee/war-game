@@ -389,3 +389,22 @@ test("auto with gen: screening items only while screening, and none of them an e
   assert.equal(items.length, s.screen!.plans.length * (3 * 2 + 2 * 2) + 3 * 2);
   for (const x of items) assert.ok(!isExamSeed(x.job.kind === "scripted" ? x.job.seed : x.job.spec.seed));
 });
+
+test("auto: a trial's cap on looks rejects at it, lists no look past it, and only a trial may set it (ceo 2026-11-24)", () => {
+  const cap = 3;
+  const s = init(EXAMINERS, [], { ...TRAINING, name: "trial-cap", maxLooks: cap }, BASELINE);
+  let most = 0;
+  for (let seg = 0; seg < 3000 && !s.done && s.paused === null; seg++) {
+    for (const x of needed(s)) if (x.key.startsWith("vs|")) most = Math.max(most, Math.floor((Number(x.key.split("|")[3]) - blockBase(s.blocks.at(-1)!.n) - 6000) / 20) + 1);
+    play(s, needed(s));
+    step(s, `P-${seg}`, "t");
+  }
+  assert.ok(s.done && s.decided.length > 0);
+  assert.ok(most <= cap, `a look past the cap listed: ${most}`);
+  for (const d of s.decided) assert.ok(d.looks <= cap, `${d.id}: ${d.looks} looks`);
+  assert.ok(s.decided.some((d) => d.looks === cap && /試跑的上限/.test(d.why)), "rejected at the cap");
+  // Only lower; only a trial's.
+  assert.throws(() => init(EXAMINERS, [], { ...TRAINING, name: "trial-cap", maxLooks: 101 }), /only lower/);
+  assert.throws(() => init(EXAMINERS, [], { ...TRAINING, name: "training-1", maxLooks: 4 }), /trial's setting only/);
+  assert.equal(init(EXAMINERS, [], { ...TRAINING, name: "training-1" }).maxLooks, 100);
+});

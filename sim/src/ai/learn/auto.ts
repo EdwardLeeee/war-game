@@ -177,7 +177,14 @@ export interface Training {
   lookAhead?: number;
   /** PR C: candidates made in rounds once the list is used up (gen.ts); none: only the list. */
   gen?: GenSettings;
+  /**
+   * A trial's cap on a candidate's looks (ceo 2026-11-24): at it, rejected as out of games. Only lower than MAX_LOOKS,
+   * only a trial's (a name starting TRIAL_PREFIX): it only rejects, so false promotions are no likelier, but a real
+   * training would miss candidates better than the champion.
+   */
+  maxLooks?: number;
 }
+export const TRIAL_PREFIX = "trial-";
 export const STATE_VERSION = 3;
 export interface State {
   version: typeof STATE_VERSION;
@@ -185,6 +192,8 @@ export interface State {
   /** The hash of the program and settings that make candidates, as they are now (setSource). */
   source: string;
   lookAhead: number;
+  /** Looks of a candidate at most: MAX_LOOKS, or a trial's lower cap (Training.maxLooks). */
+  maxLooks: number;
   /** Every block opened, the last the one playing. */
   blocks: Block[];
   examiners: Examiner[];
@@ -233,12 +242,16 @@ export function init(examiners: Examiner[], candidates: Candidate[], training: T
   const lookAhead = training.lookAhead ?? AUTO.lookAhead;
   if (!Number.isInteger(lookAhead) || lookAhead < 1 || lookAhead > AUTO.lookAhead) throw new Error(`${name}: lookAhead ${lookAhead}: 1-${AUTO.lookAhead}`);
   if (training.gen !== undefined) checkSettings(training.gen, examiners.length);
+  const maxLooks = training.maxLooks ?? MAX_LOOKS;
+  if (training.maxLooks !== undefined && !name.startsWith(TRIAL_PREFIX)) throw new Error(`${name}: maxLooks is a trial's setting only (a name starting ${TRIAL_PREFIX}): a training would miss stronger candidates`);
+  if (!Number.isInteger(maxLooks) || maxLooks < 1 || maxLooks > MAX_LOOKS) throw new Error(`${name}: maxLooks ${maxLooks}: 1-${MAX_LOOKS}, only lower`);
   const b = planHash(baseline);
   const s: State = {
     version: STATE_VERSION,
     training: { name, first, last },
     source,
     lookAhead,
+    maxLooks,
     blocks: [{ n: first, champion: b, source, listed: candidates.length, opened: at, why: "開始" }],
     examiners,
     plans: { [b]: baseline },
@@ -372,10 +385,10 @@ export function canaryItems(s: State): Item[] {
   ];
 }
 
-/** The first look of `h` from `from` on with a game not played yet (MAX_LOOKS: all played). */
+/** The first look of `h` from `from` on with a game not played yet (s.maxLooks: all played). */
 function openLook(s: State, h: string, from: number): number {
   let k = from;
-  while (k < MAX_LOOKS && has(s, lookItems(s, h, k))) k++;
+  while (k < s.maxLooks && has(s, lookItems(s, h, k))) k++;
   return k;
 }
 
@@ -441,14 +454,14 @@ export function needed(s: State): Item[] {
     if (c.stage === "exam") {
       const share = waiting.length > 0 && block.listed > 0 ? Math.max(1, Math.ceil(s.lookAhead / 2)) : s.lookAhead;
       const from = openLook(s, c.hash, c.looks);
-      for (let k = from; k < Math.min(from + share, MAX_LOOKS); k++) items.push(...lookItems(s, c.hash, k));
+      for (let k = from; k < Math.min(from + share, s.maxLooks); k++) items.push(...lookItems(s, c.hash, k));
       budget -= share;
     } else items.push(...finalItems(s, c.hash));
   }
   for (const h of block.listed > 0 ? waiting : []) {
     if (budget <= 0) break;
     const from = openLook(s, h, 0);
-    const n = Math.min(budget, MAX_LOOKS - from);
+    const n = Math.min(budget, s.maxLooks - from);
     for (let k = from; k < from + n; k++) items.push(...lookItems(s, h, k));
     budget -= n;
   }
@@ -764,6 +777,12 @@ export function step(s: State, pauseId: string, at: string): string[] {
       c.looks++;
       const t = tally(s, c.hash, c.looks);
       const d = decide(t.ex, t.vs, t.same);
+      if (d.verdict === "continue" && c.looks >= s.maxLooks) {
+        const why = `看滿 ${s.maxLooks} 次（試跑的上限），當作局數用完`;
+        finish(s, "reject", why, pauseId, at);
+        did.push(`${c.id}：不升級（${why}）`);
+        continue;
+      }
       if (d.verdict === "continue") continue;
       if (d.verdict === "reject") {
         finish(s, "reject", d.why, pauseId, at);
