@@ -6,7 +6,8 @@ import { ART_CHOICES, ART_LABEL, type ArtChoice, loadArtChoice, loadTexChoice, s
 import { ART_MEASURE_NOTE, ART_VARIANTS, type ArtCost, type ArtVariant, artMeasureRows } from "./art-measure.ts";
 import { HeaderField as H, STEP_BATCH } from "../sim.ts";
 import type { CheckResult } from "./determinism.ts";
-import { type FrameContext, Lab, type MeasureResult, PASS, PERF_SCENARIOS, type PerfScenario, STALL_MS, WINDOW_MS } from "./lab.ts";
+import { BATTLE, type FrameContext, Lab, type MeasureKind, type MeasureResult, PASS, PERF_SCENARIOS, STALL_MS, WARMUP_MS, WINDOW_MS } from "./lab.ts";
+import type { Profile } from "./prof.ts";
 import { LogBox } from "./log.ts";
 import { round2, summarize } from "./stats.ts";
 
@@ -21,7 +22,7 @@ export interface LabHooks {
    * 量測 N 人 asks this instead of measuring the game on screen when given (it starts that
    * perf scenario, which measures itself once it is running).
    */
-  requestMeasure?: (scenario: PerfScenario) => void;
+  requestMeasure?: (kind: MeasureKind) => void;
   /** This build has the units' atlases (D-085): 美術 can be chosen. */
   artAvailable?: boolean;
   /** ASTC 樣本 (D-085), when the build has one. */
@@ -275,6 +276,13 @@ export class LabPanel {
       });
       return b;
     });
+    // 大軍交戰 (BATTLE): its own game; not on the fake world.
+    if (this.hooks.requestMeasure !== undefined) {
+      const b = make("button", measures, "", "量測大軍交戰");
+      b.type = "button";
+      b.addEventListener("click", () => this.hooks.requestMeasure?.("battle"));
+      this.measureBtns.push(b);
+    }
     const row = make("div", this.panel, "lab-buttons");
     this.checkBtn = make("button", row, "secondary", "確定性檢查");
     this.checkBtn.type = "button";
@@ -390,8 +398,8 @@ export class LabPanel {
   }
 
   /** `windowMs`: the window (30 s, art-v7 量測's 10 minutes); `variant`: art-v7 量測's (D-128). */
-  startMeasure(now: number, windowMs?: number, variant?: ArtVariant): boolean {
-    if (!this.lab.startMeasure(now, windowMs)) return false;
+  startMeasure(now: number, windowMs?: number, variant?: ArtVariant, warmupMs = WARMUP_MS): boolean {
+    if (!this.lab.startMeasure(now, windowMs, warmupMs)) return false;
     this.variant = variant ?? null;
     this.startPopulation = this.hooks.population?.() ?? null;
     try {
@@ -402,7 +410,7 @@ export class LabPanel {
     }
     this.resultBox.hidden = true;
     this.keepAwake();
-    this.log.add(`暖機 5 秒，接著量 ${this.windowText()}`);
+    this.log.add(`暖機 ${Math.round(warmupMs / 1000)} 秒，接著量 ${this.windowText()}`);
     this.refreshButtons();
     return true;
   }
@@ -525,11 +533,12 @@ export class LabPanel {
     box.hidden = false;
     box.replaceChildren();
     make("h3", box, "", r.valid ? (r.pass ? "通過" : "未通過") : "無效");
+    const battle = env.measure === BATTLE_LABEL;
     const perf = PERF_SCENARIOS.find((p) => p.scenario === env.scenario);
     // The population as the game had it when the measurement started: the rules set the cap (D-083).
     const pop = this.startPopulation;
     const detail = perf === undefined ? "" : `（所有系統都開著${pop === null ? "" : `，開始時雙方人口 ${pop.population}／${pop.cap}`}）`;
-    make("p", box, "", `場景：${String(env.scenario ?? "?")}${detail}`);
+    make("p", box, "", battle ? `場景：${BATTLE_LABEL}（${BATTLE.scenario}，第 ${BATTLE.warmupMs / 1000} 秒起量 ${this.windowText()}）` : `場景：${String(env.scenario ?? "?")}${detail}`);
     make("p", box, "", `tick 速度：${String(env.tickRate ?? "?")}`);
     if (!r.valid) make("p", box, "bad", `原因：${r.reasons.join("、")}。請重新量測。`);
     // ✓／✗ against a standard; ・ for the numbers that have none (yet).
@@ -559,10 +568,36 @@ export class LabPanel {
       rows.unshift([head[0], head[1], null], ["量測時間", this.windowText(), null], ...rest.map(([k, v]): [string, string, null] => [k, v, null]));
     }
     this.variant = null;
+    // Where a frame's time went (lab/prof.ts): under the fps, in the same screenshot.
+    if (r.profile !== undefined) rows.splice(4, 0, ...profileRows(r.profile, r.fpsMean));
     for (const [k, v, ok] of rows) make("p", box, "", `${ok === null ? "・" : ok ? "✓" : "✗"} ${k}：${v}`);
     make("p", box, "small", `樣本：${r.frames} 幀、${r.ticks} tick；${Object.values(env).join("；")}`);
     this.refreshButtons();
     // In sight for the screenshot (art-v7 量測, D-128: the phone's panel scrolls, the result under the buttons).
     box.scrollIntoView({ block: "start" });
   }
+}
+
+/** 量測大軍交戰's line in env (main.ts). */
+export const BATTLE_LABEL = "大軍交戰（雙方電腦困難）";
+
+const ms = (v: number): string => v.toFixed(2);
+
+/** A frame's time by part (lab/prof.ts), for the result box: a frame's own code, the drawing's parts, the counts. */
+export function profileRows(p: Profile, fpsMean: number): [string, string, null][] {
+  const sec = (name: string) => p.sections.find((x) => x.name === name)?.perFrame ?? 0;
+  // ms a second too (ceo 2026-11-24: each part's ms/s, as the before/after of the PR).
+  const both = (name: string) => `${ms(sec(name))}（${Math.round(p.sections.find((x) => x.name === name)?.perSecond ?? 0)}/s）`;
+  const per = (name: string) => p.counters.find((x) => x.name === name);
+  const own = ["snapshot", "draw", "pixi", "hud", "other"].reduce((t, k) => t + sec(k), 0);
+  const fog = per("fogRedraws");
+  return [
+    [
+      "每張畫面",
+      `平均 ${ms(p.frameMs)} ms（平均 fps ${fpsMean}；60 fps 是 16.67）＝本頁程式 ${ms(own)}（收快照 ${both("snapshot")}、畫圖 ${both("draw")}、Pixi render ${both("pixi")}、介面 ${both("hud")}、其他 ${both("other")}）＋程式以外（顯示卡、瀏覽器）${ms(p.outsideMs)}`,
+      null,
+    ],
+    ["畫圖裡（每張 ms，括號裡每秒 ms）", `迷霧 ${both("d.fog")}、兵 ${both("d.units")}、城和建築 ${both("d.buildings")}、資源點 ${both("d.nodes")}、地面 ${both("d.ground")}、特效 ${both("d.effects")}`, null],
+    ["數量", `迷霧每秒重畫 ${(fog?.perSecond ?? 0).toFixed(1)} 次；每張畫面畫 ${Math.round(per("unitsDrawn")?.perFrame ?? 0)} 個兵、畫面外 ${Math.round(per("unitsOff")?.perFrame ?? 0)} 個`, null],
+  ];
 }

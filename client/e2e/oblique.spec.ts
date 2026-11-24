@@ -3,7 +3,7 @@
 // right, the big city between.
 
 import { expect, type Page, test } from "@playwright/test";
-import { shot, watchErrors } from "./helpers.ts";
+import { inSightDrawnOrOff, shot, watchErrors } from "./helpers.ts";
 
 const MAIN_CITY = 0;
 const LARGE = 1;
@@ -69,7 +69,8 @@ test("方形斜看：開局看得到自己的主城，點村民的身體選得�
   await page.goto("./?test=1&art=x3&scenario=perf");
   await page.getByRole("button", { name: "開始" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true, null, { timeout: 60_000 });
-  await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.art() ?? null))?.units ?? 0, { timeout: 30_000 }).toBeGreaterThan(100);
+  // Those in sight on the screen from their atlases, the rest off it (鏡頭裁切): over 100 in sight.
+  await expect.poll(() => inSightDrawnOrOff(page), { timeout: 30_000 }).toBeGreaterThan(100);
   await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.art() ?? null))?.buildings ?? 0, { message: "art-v3's buildings drawn" }).toBeGreaterThan(0);
   await page.evaluate(() => window.__proto?.game?.centerOn(48, 52, 1.6));
   await page.waitForTimeout(3000);

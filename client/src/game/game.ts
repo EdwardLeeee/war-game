@@ -2,6 +2,7 @@
 // PixiJS world, and the gestures that turn into selections and commands. The only way
 // anything reaches the simulation is `command()`, which posts a protocol command.
 
+import { prof } from "../lab/prof.ts";
 import type { TutorHooks } from "../tutorial/hooks.ts";
 import { type EdgeArt, EdgeRenderer } from "../render/edge.ts";
 import type { Application } from "pixi.js";
@@ -142,6 +143,8 @@ export interface GameOptions {
   map: MapMode;
   /** Test pages (`?test=1&watch=1`): the computer plays both sides, the page only watches. */
   watch: boolean;
+  /** Watching, player 0's computer's 難度 too (量測's 大軍交戰: both 困難); else 普通. */
+  watchDifficulty?: AiDifficulty;
   /**
    * A game that measures itself (量測: perf, perf200, perf360, art-v7 量測): nothing pops up over its
    * panel and result (攻下城鎮's choice; 開局提示 is not shown either, main.ts). Absent: false.
@@ -390,7 +393,8 @@ export class Game implements GestureHost {
         requestMeasure: options.fake
           ? undefined
           : (scenario) => {
-              if (scenario === options.scenario && options.artChanged?.() !== true) this.lab.startMeasure(performance.now());
+              // 大軍交戰's game (watched) is not 量測 360 人's, though both are perf360.
+              if (scenario === options.scenario && options.watchDifficulty === undefined && options.artChanged?.() !== true) this.lab.startMeasure(performance.now());
               else options.life.perf(scenario);
             },
         artAvailable: options.artAvailable === true,
@@ -452,11 +456,14 @@ export class Game implements GestureHost {
     this.enterLayer = new EnterLayer(hud, (id) => this.enterGoTo(id));
     this.recognizer = new GestureRecognizer(this);
     port.onmessage = (e) => {
+      // 量測's breakdown (lab/prof.ts): a snapshot's arrival is part of a frame's time too.
+      const t = prof.t0();
       // The log's message read (繼續上一局's save, main.ts SaveCost): Chromium copies a message's data out when it is first read.
-      const t = performance.now();
+      const r = performance.now();
       const msg = e.data as FromWorker;
-      if (msg.type === "log") this.logReceiveMs = performance.now() - t;
+      if (msg.type === "log") this.logReceiveMs = performance.now() - r;
       this.receive(msg);
+      prof.add("snapshot", t);
     };
     this.cleanups.push(
       attachPointer(app.canvas, this.recognizer, () => {
@@ -500,6 +507,8 @@ export class Game implements GestureHost {
     // 快捷鍵 (R26 02 B), with a mouse too.
     this.cleanups.push(attachHotkeys(() => mouse?.matches === true && this.view !== null, (k) => this.hotkey(k)));
     app.ticker.add(this.tick);
+    // 量測's breakdown: Pixi's own render (its ticker calls it at LOW, between these two).
+    this.cleanups.push(prof.aroundRender(app.ticker));
     // GDD §11 (ceo 2026-09-30): going to the background or turning the phone upright pauses
     // the game; coming back leaves it paused until the player presses 繼續.
     const hidden = () => {
@@ -759,6 +768,16 @@ export class Game implements GestureHost {
   }
 
   /** The battlefield's clock held still or running again (the test page: the same frame twice). */
+  /** One frame drawn now, as the ticker would (tests: what the camera's move shows in that very frame). */
+  drawNowForTest(): void {
+    this.frame();
+  }
+
+  /** The units the last frame drew, and how many it left off the screen (tests). */
+  get unitsDrawnForTest(): { ids: number[]; off: number } {
+    return this.renderer?.unitsDrawnForTest ?? { ids: [], off: 0 };
+  }
+
   freezeClockForTest(on: boolean): void {
     this.frozenNow = on ? performance.now() : null;
   }
@@ -930,8 +949,8 @@ export class Game implements GestureHost {
       // Watching (test pages): no person plays, the worker shows everything.
       human: this.options.watch ? null : 0,
       ai: [this.options.watch, this.options.enemyAi],
-      // One value per player, like `ai`; the person's (player 0) is not used.
-      difficulty: ["normal", this.options.difficulty],
+      // One value per player, like `ai`; the person's (player 0) only when the computer plays it (watching).
+      difficulty: [this.options.watch ? (this.options.watchDifficulty ?? "normal") : "normal", this.options.difficulty],
       maxTicks: this.options.maxTicks,
       tps: this.options.tps,
       scenario: this.options.scenario,
@@ -3098,6 +3117,8 @@ export class Game implements GestureHost {
     const now = this.frozenNow ?? performance.now();
     const dt = now - this.lastFrame;
     this.lastFrame = now;
+    prof.frame(dt);
+    let t = prof.t0();
     this.recognizer.update(now);
     const cam = this.camera;
     const view = this.view;
@@ -3107,12 +3128,19 @@ export class Game implements GestureHost {
     this.renderer.paused = this.paused;
     this.edge?.update(now, cam, view.ground, view.groundVersion, view.fog, view.fogVersion);
     if (this.mode === "enter") this.enterFrame(now, cam);
+    prof.add("other", t);
+    t = prof.t0();
     this.renderer.draw(now, cam, this.placement);
+    prof.add("draw", t);
+    t = prof.t0();
     this.hud.frame(now);
+    prof.add("hud", t);
+    t = prof.t0();
     this.updateCursor(view, cam);
     this.frameTimes.add(dt, performance.now() - now);
     // ✓ and ✗ follow the preview on screen while the camera pinches or flings (a few style writes).
     if (this.placement?.phase === "confirm") this.showPlaceButtons();
+    prof.add("other", t);
     const header = view.header;
     this.lab.frame(now, dt, {
       hidden: document.hidden,

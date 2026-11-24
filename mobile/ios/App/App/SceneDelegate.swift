@@ -30,21 +30,25 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     func sceneDidEnterBackground(_ scene: UIScene) {
         guard keeping == .invalid else { return }
-        keeping = UIApplication.shared.beginBackgroundTask(withName: "keep the game") { [weak self] in
-            self?.endKeeping()
+        var task: UIBackgroundTaskIdentifier = .invalid
+        task = UIApplication.shared.beginBackgroundTask(withName: "keep the game") { [weak self] in
+            self?.endKeeping(task)
         }
+        keeping = task
         DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
-            self?.endKeeping()
+            self?.endKeeping(task)
         }
     }
 
     func sceneWillEnterForeground(_ scene: UIScene) {
-        endKeeping()
+        endKeeping(keeping)
     }
 
-    private func endKeeping() {
-        guard keeping != .invalid else { return }
-        UIApplication.shared.endBackgroundTask(keeping)
+    /// Ends `task` only while it is the one running: the timer or expiry of an earlier trip to the
+    /// background (away, back and away again within 10 s) never ends a later one (ceo 2026-11-24).
+    private func endKeeping(_ task: UIBackgroundTaskIdentifier) {
+        guard task != .invalid, task == keeping else { return }
+        UIApplication.shared.endBackgroundTask(task)
         keeping = .invalid
     }
 }
