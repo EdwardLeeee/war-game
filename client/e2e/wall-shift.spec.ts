@@ -25,8 +25,8 @@ test("牆上守軍換邊（D-119）：弓手沿著牆走，經過城門上方時
       return { over: over.length, lifted: g?.wallLifted() ?? 0 };
     }, cells.gate);
   // Someone crossing a gate, and all of them still drawn up on the walls: the camera on the castle again (鏡頭裁切, the
-  // user 2026-11-24: those off the screen are not drawn; WebKit's start may move it after the first), read on a frame
-  // drawn after it.
+  // user 2026-11-24: those off the screen are not drawn; in WebKit the count was 0 one run in two without this, why the
+  // camera was not on them is not checked), read on a frame drawn after it.
   await expect.poll(async () => (await look()).over, { timeout: 60_000 }).toBeGreaterThan(0);
   await onCastle();
   await expect.poll(async () => (await look()).lifted).toBe(ARCHERS);
