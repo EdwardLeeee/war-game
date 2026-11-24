@@ -139,6 +139,8 @@ final class SmokeUITests: XCTestCase {
         checkDiag("after 2 minutes")
 
         // 4. Away (the page keeps the game on visibilitychange), then killed.
+        let atHome = gameSeconds() ?? played
+        log(String(format: "game time at Home %d:%02d", atHome / 60, atHome % 60))
         XCUIDevice.shared.press(.home)
         log("pressed Home")
         sleep(5)
@@ -150,6 +152,7 @@ final class SmokeUITests: XCTestCase {
         log("launched again")
         let goOn = first(.button, "label BEGINSWITH %@", "繼續上一局")
         if !goOn.waitForExistence(timeout: 180) { throw stop("no 繼續上一局 after opening again") }
+        checkDiag("after opening again")
         // Read before the tap: the button is gone after it.
         let offered = goOn.label
         log("offered: \(offered)")
@@ -162,6 +165,13 @@ final class SmokeUITests: XCTestCase {
         log("tapped \(offered)")
         let back = waitForGameTime(minute * 60, timeout: 300)
         if back < minute * 60 { throw stop("the battlefield did not come back at minute \(minute) (last seen \(back) s)") }
+        // Paused where the kept game was: the background save's time, not only the last minute's.
+        sleep(3)
+        let continued = gameSeconds() ?? back
+        log(String(format: "continued at %d:%02d (Home at %d:%02d)", continued / 60, continued % 60, atHome / 60, atHome % 60))
+        if continued < atHome - 5 {
+            findings.append(String(format: "the background save is missing: Home at %d:%02d, continued at %d:%02d", atHome / 60, atHome % 60, continued / 60, continued % 60))
+        }
         if start.exists && start.isHittable { findings.append("開始 still on screen after going on") }
         shot("05-continued")
         checkDiag("after going on")

@@ -2,8 +2,16 @@
 // the app that ships). It counts page errors from the very start, notes a few facts about the web
 // view, and writes them as one line of text at the bottom-left corner, where the XCUITest
 // (mobile/ci/SmokeUITests.swift) reads it through the accessibility tree:
-//   mobile-diag {"errors":0,"first":"","sw":false,"astc":true,...}
+//   mobile-diag {"errors":0,"first":"","sw":false,"astc":true,...,"saved":2400,"prev":[...]}
+//
+// The background save (D-083: the page keeps the game on visibilitychange / pagehide): what happened
+// after the page went away is kept in localStorage and shown by the next page as "prev":
+//   "hidden 0" / "pagehide 3"      the event, ms after the first one
+//   "saved 2615 850"               the kept game's tick (IndexedDB) changed, at that ms
+//   "alive 4000"                   the page still ran then (written every 500 ms for 20 s)
+// and "saved" is the kept game's tick as this page finds it.
 (() => {
+  const LOG = "mobile-diag-log";
   const d = {
     errors: 0,
     first: "",
@@ -15,6 +23,10 @@
     astc: null,
     proto: location.protocol,
     native: null,
+    /** The kept game's tick (繼續上一局's IndexedDB), null: none. */
+    saved: null,
+    /** What the page before did after it went away. */
+    prev: [],
   };
   const note = (what) => {
     d.errors += 1;
@@ -36,6 +48,101 @@
   } catch (e) {
     note(`diag webgl: ${e}`);
   }
+
+  // The page before's log, then a fresh one for this page.
+  try {
+    d.prev = JSON.parse(localStorage.getItem(LOG) ?? "[]");
+  } catch {
+    d.prev = ["unreadable"];
+  }
+  localStorage.setItem(LOG, "[]");
+
+  /**
+   * The kept game's tick, read without ever creating the database: a fresh install has none yet,
+   * and making it here (with no store) would break the client's own first open.
+   */
+  const savedTick = () =>
+    new Promise((resolve) => {
+      let req;
+      try {
+        req = indexedDB.open("war-game-continue");
+      } catch {
+        resolve("no indexedDB");
+        return;
+      }
+      req.onupgradeneeded = () => req.transaction.abort();
+      req.onerror = (e) => {
+        e.preventDefault();
+        resolve(null);
+      };
+      req.onsuccess = () => {
+        const db = req.result;
+        try {
+          const get = db.transaction("game", "readonly").objectStore("game").get("last");
+          get.onsuccess = () => {
+            resolve(typeof get.result?.tick === "number" ? get.result.tick : null);
+            db.close();
+          };
+          get.onerror = () => {
+            resolve(null);
+            db.close();
+          };
+        } catch {
+          resolve(null);
+          db.close();
+        }
+      };
+    });
+
+  let away = null;
+  const record = (line) => {
+    try {
+      const log = JSON.parse(localStorage.getItem(LOG) ?? "[]");
+      log.push(line);
+      localStorage.setItem(LOG, JSON.stringify(log.slice(-40)));
+    } catch {
+      // nothing to do: the log is only the test's
+    }
+  };
+  const since = () => (away === null ? 0 : Math.round(performance.now() - away));
+  const leaving = async (what) => {
+    const first = away === null;
+    if (first) away = performance.now();
+    record(`${what} ${since()}`);
+    if (!first) return;
+    // Watch the save land, and how long the page keeps running, for 20 s.
+    let last = await savedTick();
+    record(`start ${last} ${since()}`);
+    let lastAlive = 0;
+    const end = away + 20000;
+    while (performance.now() < end) {
+      await new Promise((r) => setTimeout(r, 250));
+      const now = await savedTick();
+      if (now !== last) {
+        last = now;
+        record(`saved ${now} ${since()}`);
+      }
+      if (since() - lastAlive >= 500) {
+        lastAlive = since();
+        // One "alive" line, overwritten: the last time the page ran.
+        try {
+          const log = JSON.parse(localStorage.getItem(LOG) ?? "[]").filter((l) => !String(l).startsWith("alive "));
+          log.push(`alive ${lastAlive}`);
+          localStorage.setItem(LOG, JSON.stringify(log.slice(-40)));
+        } catch {
+          // as above
+        }
+      }
+    }
+  };
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") void leaving("hidden");
+    else record(`visible ${since()}`);
+  });
+  addEventListener("pagehide", () => void leaving("pagehide"));
+  document.addEventListener("freeze", () => record(`freeze ${since()}`));
+  document.addEventListener("resume", () => record(`resume ${since()}`));
+
   const box = document.createElement("div");
   box.id = "mobile-diag";
   box.style.cssText =
@@ -47,7 +154,10 @@
   const start = () => {
     document.body.append(box);
     show();
-    setInterval(show, 1000);
+    setInterval(() => {
+      void savedTick().then((t) => (d.saved = t));
+      show();
+    }, 1000);
     navigator.serviceWorker
       ?.getRegistrations()
       .then((r) => (d.swRegs = r.length))
