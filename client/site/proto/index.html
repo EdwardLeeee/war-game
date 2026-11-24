@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>war-game 搬家了</title>
+    <!-- The game moved to the site's home (the user 2026-11-24: 「網址可以拿掉proto了」): this old address goes there,
+         with what it carried (?test=1…, #…). Without scripts, the refresh below (it carries no ?…). -->
+    <noscript><meta http-equiv="refresh" content="0; url=../" /></noscript>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <script>
+      (async () => {
+        // The service worker this address had (sw.js?tag=…, scope proto/): unregistered, so nothing of the old site
+        // stays on this phone. It only ever kept the atlases (art/), never a page.
+        try {
+          for (const r of (await navigator.serviceWorker?.getRegistrations?.()) ?? []) {
+            if (new URL(r.scope).pathname.endsWith("/proto/")) await r.unregister();
+          }
+        } catch {
+          // Not allowed or not there: the move goes on all the same.
+        }
+      })().finally(() => location.replace(`../${location.search}${location.hash}`));
+    </script>
+    <style>
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #1d2320; color: #efe6d2; font: 16px/1.5 system-ui, sans-serif; }
+      a { color: #e7c35a; }
+    </style>
+  </head>
+  <body>
+    <p>遊戲搬到 <a href="../">新的網址</a> 了，正在帶你過去…</p>
+  </body>
+</html>

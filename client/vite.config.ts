@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import { simBuild } from "./scripts/sim-build.ts";
 
-// Relative base: the build is served from GitHub Pages at /war-game/proto/ and from
+// Relative base: the build is served from GitHub Pages at /war-game/ (at /war-game/proto/ until 2026-11-24) and from
 // `vite preview` at / in CI.
 function commit(): string {
   try {
