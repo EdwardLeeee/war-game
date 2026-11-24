@@ -21,4 +21,30 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
         SceneDelegateProxy.shared.scene(scene, continue: userActivity)
     }
+
+    /// The game keeps itself when the page goes to the background (繼續上一局, D-083): the page asks
+    /// the simulation for its log and writes it to IndexedDB. Without more time iOS suspends the app
+    /// at once and the write never lands, so a game killed in the background went back to its last
+    /// minute's save (D-163, the smoke test). Up to 10 s, ended early if iOS asks for it back.
+    private var keeping: UIBackgroundTaskIdentifier = .invalid
+
+    func sceneDidEnterBackground(_ scene: UIScene) {
+        guard keeping == .invalid else { return }
+        keeping = UIApplication.shared.beginBackgroundTask(withName: "keep the game") { [weak self] in
+            self?.endKeeping()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+            self?.endKeeping()
+        }
+    }
+
+    func sceneWillEnterForeground(_ scene: UIScene) {
+        endKeeping()
+    }
+
+    private func endKeeping() {
+        guard keeping != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(keeping)
+        keeping = .invalid
+    }
 }

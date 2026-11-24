@@ -132,6 +132,23 @@ final class SmokeUITests: XCTestCase {
             log("no 開局提示 within 240 s")
         }
 
+        // 3a. Away and back, not killed (D-163, the background save): the page's live log says
+        // whether "hidden" came, how long the page ran and when the save landed.
+        let early = waitForGameTime(70, timeout: 300)
+        if early < 70 { throw stop("the game time never passed 1:10 (last seen \(early) s)") }
+        XCUIDevice.shared.press(.home)
+        log(String(format: "pressed Home at %d:%02d, coming back", early / 60, early % 60))
+        sleep(8)
+        app.activate()
+        log("back in front")
+        sleep(3)
+        checkDiag("back from Home")
+        let resume = app.buttons["繼續"].firstMatch
+        if resume.exists && resume.isHittable {
+            resume.tap()
+            log("tapped 繼續")
+        }
+
         // 3. Past 2 minutes of game time (normal speed, 30 ticks a second: about 80 s).
         let played = waitForGameTime(130, timeout: 600)
         if played < 130 { throw stop("the game time never passed 2:10 (last seen \(played) s)") }

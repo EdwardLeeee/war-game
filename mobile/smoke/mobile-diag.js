@@ -27,6 +27,8 @@
     saved: null,
     /** What the page before did after it went away. */
     prev: [],
+    /** What this page did since it last went away (read again each second). */
+    now: [],
   };
   const note = (what) => {
     d.errors += 1;
@@ -148,6 +150,11 @@
   box.style.cssText =
     "position:fixed;left:2px;bottom:2px;z-index:2147483647;pointer-events:none;font:9px/1.2 monospace;color:#fff;background:rgba(0,0,0,.55);padding:1px 3px;max-width:70vw;white-space:normal";
   const show = () => {
+    try {
+      d.now = JSON.parse(localStorage.getItem(LOG) ?? "[]").slice(-12);
+    } catch {
+      d.now = ["unreadable"];
+    }
     d.native = typeof window.Capacitor?.isNativePlatform === "function" ? window.Capacitor.isNativePlatform() : null;
     box.textContent = `mobile-diag ${JSON.stringify(d)}`;
   };
