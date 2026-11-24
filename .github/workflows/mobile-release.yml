@@ -1,0 +1,187 @@
+name: Mobile release
+
+# The iOS app to TestFlight (D-163, stage 2; brief docs/briefs/2026-11-ios-app.md). Run by hand:
+#   gh workflow run mobile-release.yml --ref main
+# The game inside is the web build that is live (the site's version.json): client/, sim/ and
+# services/ from that commit, mobile/ and this workflow from the ref it runs on. The app freezes
+# the game at build time, so a web fix reaches the app only with the next run.
+# Versions (Apple: CFBundleShortVersionString "is three period-separated integers, such as 10.14.1.
+# The string can only contain numeric characters (0-9) and periods", so never a commit): the
+# display version is MARKETING_VERSION in the Xcode project (0.1.0, raised by hand), the build
+# number this workflow's run number; the web commit goes in the run's Summary.
+# Signing (secrets set by the user with mobile/scripts/ios-signing.sh): any missing, the run still
+# builds and smoke-tests, then skips signing and upload and lists what is missing.
+# Artifacts: screenshots and logs only, never the .ipa, and nothing that names the signer (an
+# individual account's certificate carries the account holder's legal name): the archive and export
+# logs stay out of them, and the name is masked in the job log (ci/signing.sh).
+# A pull request that changes this file or ci/signing.sh runs it as a dry run: everything but
+# signing and upload, on the live web commit.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/mobile-release.yml"
+      - "mobile/ci/signing.sh"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && 'mobile-release' || format('mobile-release-pr-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
+env:
+  # Where the live site says which commit it is (the game at the site's root since #568, 2026-11-24).
+  LIVE_VERSION_URL: https://edwardleeee.github.io/war-game/version.json
+  PROFILE_NAME: war-game App Store
+  BUNDLE_ID: com.edwardleeee.wargame
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      web: ${{ steps.web.outputs.sha }}
+      sign: ${{ steps.secrets.outputs.sign }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: The live web commit, on main
+        id: web
+        run: |
+          set -euo pipefail
+          short="$(curl -sSfL --retry 3 "${LIVE_VERSION_URL}?t=$(date +%s)" | python3 -c 'import json,sys; print(json.load(sys.stdin)["commit"])')"
+          sha="$(git rev-parse --verify "${short}^{commit}")"
+          git merge-base --is-ancestor "${sha}" origin/main || { echo "::error::${sha} is not on main"; exit 1; }
+          echo "sha=${sha}" >> "${GITHUB_OUTPUT}"
+          echo "- web commit (live at ${LIVE_VERSION_URL}): \`${sha}\` $(git log -1 --format=%s "${sha}")" | tee -a "${GITHUB_STEP_SUMMARY}"
+      - name: Signing secrets present?
+        id: secrets
+        env:
+          P12: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.IOS_DIST_CERT_P12_PASSWORD }}
+          PROFILE: ${{ secrets.IOS_PROFILE_BASE64 }}
+          P8: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
+          KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+          TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          missing=""
+          for n in P12:IOS_DIST_CERT_P12_BASE64 P12_PASSWORD:IOS_DIST_CERT_P12_PASSWORD PROFILE:IOS_PROFILE_BASE64 \
+                   P8:ASC_API_KEY_P8_BASE64 KEY_ID:ASC_API_KEY_ID ISSUER_ID:ASC_API_ISSUER_ID TEAM_ID:APPLE_TEAM_ID; do
+            var="${n%%:*}"
+            [ -n "${!var}" ] || missing="${missing} ${n#*:}"
+          done
+          if [ "${GITHUB_EVENT_NAME}" != workflow_dispatch ]; then
+            echo "sign=false" >> "${GITHUB_OUTPUT}"
+            echo "- dry run (${GITHUB_EVENT_NAME}): not signed, not uploaded" | tee -a "${GITHUB_STEP_SUMMARY}"
+          elif [ -z "${missing}" ]; then
+            echo "sign=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "sign=false" >> "${GITHUB_OUTPUT}"
+            echo "- **not signed, not uploaded**: missing${missing} (mobile/docs/apple-setup.md)" | tee -a "${GITHUB_STEP_SUMMARY}"
+          fi
+
+  ios:
+    needs: preflight
+    runs-on: macos-latest
+    timeout-minutes: 75
+    env:
+      WEB: ${{ needs.preflight.outputs.web }}
+    steps:
+      # The web commit's tree, then mobile/ from this run's ref over it.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.preflight.outputs.web }}
+      - name: mobile/ from ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          git fetch --depth 1 origin "${GITHUB_REF}"
+          git checkout FETCH_HEAD -- mobile
+          echo "- mobile/ from \`${GITHUB_SHA}\`; build number ${{ github.run_number }}" | tee -a "${GITHUB_STEP_SUMMARY}"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            client/package-lock.json
+            mobile/package-lock.json
+      - name: Atlases from cache
+        uses: actions/cache@v6
+        with:
+          path: client/.art-cache
+          key: art-macos-${{ hashFiles('client/art.lock.json') }}
+      - name: The game, as the live site was built
+        working-directory: client
+        run: |
+          set -euo pipefail
+          npm ci
+          node scripts/fetch-art.ts
+          # vite.config.ts takes the commit label from GITHUB_SHA, here the workflow's: the web's instead.
+          GITHUB_SHA="${WEB}" npm run build
+          got="$(python3 -c 'import json; print(json.load(open("dist/version.json"))["commit"])')"
+          [ "${got}" = "${WEB::7}" ] || { echo "::error::dist/version.json says ${got}, want ${WEB::7}"; exit 1; }
+      - name: Capacitor
+        working-directory: mobile
+        run: |
+          set -euo pipefail
+          npm ci
+          node scripts/check-versions.ts
+      - name: The app as it ships
+        working-directory: mobile
+        run: |
+          set -euo pipefail
+          node scripts/web.ts
+          npx cap sync ios
+      - name: Signing (temporary keychain, profile, manual signing on the App target)
+        if: needs.preflight.outputs.sign == 'true'
+        env:
+          P12: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.IOS_DIST_CERT_P12_PASSWORD }}
+          PROFILE: ${{ secrets.IOS_PROFILE_BASE64 }}
+          P8: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
+          KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          gem install --user-install --no-document xcodeproj -v 1.28.1
+          bash mobile/ci/signing.sh setup
+      - name: Archive
+        working-directory: mobile/ios/App
+        run: |
+          set -euo pipefail
+          mkdir -p "${GITHUB_WORKSPACE}/release-out"
+          extra=()
+          [ "${{ needs.preflight.outputs.sign }}" = true ] || extra=(CODE_SIGNING_ALLOWED=NO)
+          xcodebuild archive -project App.xcodeproj -scheme App -configuration Release \
+            -destination "generic/platform=iOS" -archivePath "${RUNNER_TEMP}/App.xcarchive" \
+            -derivedDataPath "${RUNNER_TEMP}/dd-release" CURRENT_PROJECT_VERSION="${{ github.run_number }}" ${extra[@]+"${extra[@]}"} \
+            > "${RUNNER_TEMP}/archive.log" 2>&1 || { tail -n 60 "${RUNNER_TEMP}/archive.log"; exit 1; }
+          bash ../../ci/check-app.sh "${RUNNER_TEMP}/App.xcarchive/Products/Applications/App.app" ship
+      # The smoke test, after the archive (its test target is added to the project only now); failing, nothing is uploaded.
+      - name: Smoke test (the smoke copy, a fresh iPhone simulator)
+        working-directory: mobile
+        run: |
+          set -euo pipefail
+          node scripts/web.ts --smoke
+          npx cap sync ios
+          gem install --user-install --no-document xcodeproj -v 1.28.1
+          ruby ci/add-ui-tests.rb ios/App/App.xcodeproj ci/SmokeUITests.swift
+          bash ci/smoke.sh "${GITHUB_WORKSPACE}/release-out/smoke"
+      - name: Upload to TestFlight
+        if: success() && needs.preflight.outputs.sign == 'true'
+        env:
+          KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+          TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: bash mobile/ci/signing.sh upload "${RUNNER_TEMP}/App.xcarchive"
+      - name: Remove the keychain, the profile and the key
+        if: always()
+        run: bash mobile/ci/signing.sh cleanup
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: mobile-release
+          path: release-out/
+          retention-days: 30
+          if-no-files-found: warn
