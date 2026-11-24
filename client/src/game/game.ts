@@ -737,7 +737,7 @@ export class Game implements GestureHost {
     return this.options.culture ?? DEFAULT_CULTURE;
   }
 
-  get artForTest(): { label: string; pages: number; astc: number; bytes: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number; sling: boolean } | null {
+  get artForTest(): { label: string; pages: number; astc: number; bytes: number; units: number; corpses: number; buildings: number; rubble: number; nodes: number; buildingsOff: number; sling: boolean } | null {
     return this.renderer?.artDrawn ?? null;
   }
 
@@ -779,8 +779,20 @@ export class Game implements GestureHost {
   }
 
   /** The units the last frame drew, and how many it left off the screen (tests). */
-  get unitsDrawnForTest(): { ids: number[]; off: number } {
-    return this.renderer?.unitsDrawnForTest ?? { ids: [], off: 0 };
+  castleLooksForTest(whole: boolean): string[] {
+    return this.renderer?.castleLooksForTest(whole) ?? [];
+  }
+
+  nodeLooksForTest(whole: boolean): string[] {
+    return this.renderer?.nodeLooksForTest(whole) ?? [];
+  }
+
+  get buildingsDrawnForTest(): { ids: number[]; off: number } {
+    return this.renderer?.buildingsDrawnForTest ?? { ids: [], off: 0 };
+  }
+
+  get unitsDrawnForTest(): { ids: number[]; off: number; shown: number } {
+    return this.renderer?.unitsDrawnForTest ?? { ids: [], off: 0, shown: 0 };
   }
 
   freezeClockForTest(on: boolean): void {

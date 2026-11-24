@@ -1,4 +1,4 @@
-// 鏡頭裁切 (the user 2026-11-24 「我用網頁到200兵時畫面會卡卡的」; ceo 2026-11-24): units off the screen are not drawn,
+// 鏡頭裁切 (the user 2026-11-24 「我用網頁到200兵時畫面會卡卡的」; ceo 2026-11-24): units and buildings off the screen are not drawn,
 // those on it are, in the very frame the camera moves (none comes in a frame late as the view is dragged to them); an
 // archer off the screen shooting at one on it still sends its arrows in. The fog's own redraw (only its changed tiles)
 // is round-fog.test.ts's.
@@ -97,5 +97,82 @@ test("鏡頭裁切：畫面外的弓手照樣放箭（箭照樣飛），停手�
   await page.evaluate(([ids, t]) => window.__proto?.game?.strike(ids, t), [bowmen, foe.id] as const);
   // One a cooldown each (CI's Chromium runs the fake world at a few ticks a second: 30 s).
   await expect.poll(async () => (await page.evaluate(() => window.__proto?.game?.arrows()))?.bow ?? 0, { timeout: 30_000 }).toBeGreaterThanOrEqual(before + bowmen.length);
+  check();
+});
+
+const GATE = 13;
+
+/**
+ * The camera to `cell` at `scale` and a frame drawn at once: every building whose footprint is on the screen drawn in it,
+ * none a screen away to the sides or above, nor three below (a picture stands up over its footprint: one below the
+ * screen may rise into it, world.ts BUILDING_RISE); gates are their castle's pictures, not buildings'. Returns how many
+ * were drawn and left off.
+ */
+async function moveAndCheckBuildings(page: Page, x: number, y: number, scale: number): Promise<{ drawn: number; off: number; onScreen: number }> {
+  return page.evaluate(
+    ([x, y, scale, gate]) => {
+      const g = window.__proto?.game;
+      if (g === undefined) throw new Error("no game");
+      g.centerOn(x, y, scale);
+      g.drawNow();
+      const d = g.buildingsDrawn();
+      const drawn = new Set(d.ids);
+      const W = innerWidth;
+      const H = innerHeight;
+      // The footprint's corners on the screen (cellToScreen gives a cell's middle).
+      const box = (b: { cx: number; cy: number; size: number }) => {
+        const pts = [
+          [b.cx - 0.5, b.cy - 0.5],
+          [b.cx + b.size - 0.5, b.cy - 0.5],
+          [b.cx - 0.5, b.cy + b.size - 0.5],
+          [b.cx + b.size - 0.5, b.cy + b.size - 0.5],
+        ].map(([a, c]) => g.cellToScreen(a, c));
+        return { x0: Math.min(...pts.map((p) => p.x)), x1: Math.max(...pts.map((p) => p.x)), y0: Math.min(...pts.map((p) => p.y)), y1: Math.max(...pts.map((p) => p.y)) };
+      };
+      const all = g.buildings().filter((b) => b.type !== gate);
+      const onScreen = all.filter((b) => {
+        const r = box(b);
+        return r.x1 >= 0 && r.x0 <= W && r.y1 >= 0 && r.y0 <= H;
+      });
+      const missing = onScreen.filter((b) => !drawn.has(b.id)).map((b) => `${b.id} (type ${b.type}) at ${b.cx},${b.cy}`);
+      const far = all.filter((b) => {
+        const r = box(b);
+        return drawn.has(b.id) && (r.x1 < -W || r.x0 > 2 * W || r.y1 < -H || r.y0 > 4 * H);
+      });
+      if (missing.length > 0) throw new Error(`on the screen and not drawn in the frame the camera moved: ${missing.join("; ")}`);
+      if (far.length > 0) throw new Error(`drawn a screen away: ${far.map((b) => b.id).join(", ")}`);
+      return { drawn: drawn.size, off: d.off, onScreen: onScreen.length };
+    },
+    [x, y, scale, GATE] as const,
+  );
+}
+
+test("鏡頭裁切：畫面外的建築不畫；鏡頭一動，畫面裡的建築當下那一格就畫出來（跳過去、一點一點拖過去都一樣），一個螢幕以外的不畫", async ({ page }) => {
+  const check = watchErrors(page);
+  // The round 7 fake world's two bases and towns, from the atlases (3 倍).
+  await page.goto("./?test=1&mock=1&r7=1&tps=20&art=x3");
+  await page.getByRole("button", { name: "開始" }).tap();
+  await page.waitForFunction(() => window.__proto?.ready === true, null, { timeout: 60_000 });
+  await page.waitForFunction(() => (window.__proto?.game?.header().tick ?? 0) > 5);
+  await page.evaluate(() => window.__proto?.game?.pause());
+  expect((await page.evaluate(() => window.__proto?.game?.buildings() ?? [])).length, "buildings in sight").toBeGreaterThan(5);
+  let culled = 0;
+  let seen = 0;
+  for (const [x, y, s] of [
+    [25, 70, 1.6],
+    [14, 76, 1],
+    [60, 60, 1],
+    [90, 20, 1.6],
+    [25, 70, 0.6],
+    [40, 40, 2.4],
+  ] as const) {
+    const r = await moveAndCheckBuildings(page, x, y, s);
+    culled += r.off;
+    seen += r.onScreen;
+  }
+  expect(culled, "some left off the screen").toBeGreaterThan(0);
+  expect(seen, "some on it").toBeGreaterThan(0);
+  for (let x = 4; x <= 40; x += 1) await moveAndCheckBuildings(page, x, 70, 1.6);
+  for (let y = 50; y <= 90; y += 1) await moveAndCheckBuildings(page, 25, y, 1.6);
   check();
 });

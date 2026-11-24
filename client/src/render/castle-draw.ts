@@ -79,6 +79,18 @@ interface TownDraw {
   decor: DecorSprites[];
   /** Its look as last drawn (state, owner, gates, decor left out). */
   look: string;
+  /** The map cells its pictures read the fog at (floor, pieces, decor), and the fog there as last drawn. */
+  fogCells: Int32Array | null;
+  fogSeen: Uint8Array | null;
+}
+
+/** The town's cells for the fog (dress reads the fog at these and no other). */
+function fogCellsOf(d: TownDraw): Int32Array {
+  const cells = new Set<number>();
+  for (const f of d.floor) cells.add(f.cell);
+  for (const p of d.pieces) for (const c of p.cells) cells.add(c);
+  for (const s of d.decor) for (const c of s.cells) cells.add(c);
+  return Int32Array.from([...cells].filter((c) => c >= 0));
 }
 
 function put(s: Sprite, f: ArtFrame | null, x: number, y: number, scale: number, insets: InsetFrames | null = null): void {
@@ -170,9 +182,12 @@ export class CastleDraw {
       const gates = this.gateLooks(d, state === TownState.Ruins, owner, around);
       const decor = this.decorLeftOut(town, d, state === TownState.Ruins, footprints);
       const look = `${state}|${owner}|${gates}|${decor}`;
-      if (look !== d.look || fogChanged) {
+      // Drawn again when its look changed, or the fog at its own cells (the user 2026-11-24 「200兵時畫面會卡卡的」:
+      // every castle was drawn again whenever the fog came, 6 times a second, and a battle changes a few cells of it).
+      if (look !== d.look || (fogChanged && this.fogMoved(d))) {
         d.look = look;
         this.dress(town, d, state === TownState.Ruins ? "ruin" : "intact", owner);
+        this.fogDrawn(d);
       }
     }
     const key = blockTowns.map((b) => `${b.town.id}:${b.tint}`).join(",");
@@ -184,7 +199,7 @@ export class CastleDraw {
 
   /** The town's pieces and tiles, laid on its castle; null fit (blocks) when the pictures are off or none fits. */
   private build(town: TownSpot): TownDraw {
-    const d: TownDraw = { fit: null, pieces: [], floor: [], decor: [], look: "" };
+    const d: TownDraw = { fit: null, pieces: [], floor: [], decor: [], look: "", fogCells: null, fogSeen: null };
     const c = this.art?.castle ?? null;
     const castle = this.view.castleOf(town);
     if (!this.pictures || c === null || castle === null) return d;
@@ -360,6 +375,44 @@ export class CastleDraw {
   }
 
   /** Its pieces standing or burnt, its owner's colour on them, each shown once explored and darker out of sight. */
+  /**
+   * Each town's pictures as drawn (floor, pieces, decor: picture, tint), then (`whole`) as every town is drawn again
+   * from the view now: what drawing only those whose fog changed must come to (tests).
+   */
+  looksForTest(whole: boolean): string[] {
+    if (whole) {
+      for (const d of this.towns.values()) d.fogSeen = null;
+      this.fogVersion = -1;
+      this.lastSnap = null;
+      this.update();
+    }
+    const look = (s: Sprite) => (s.visible ? `${s.texture.uid}:${s.tint}` : "-");
+    return [...this.towns.entries()].sort(([a], [b]) => a - b).map(([id, d]) => `${id} ${d.floor.map((f) => look(f.sprite)).join(",")} | ${d.pieces.map((p) => [p.color, p.team, p.shadow, p.front].map(look).join("/")).join(",")} | ${d.decor.map((s) => [s.color, s.team, s.shadow].map(look).join("/")).join(",")}`);
+  }
+
+  /** Whether the fog at the town's cells is not as it was when it was last drawn. */
+  private fogMoved(d: TownDraw): boolean {
+    const fog = this.view.fog;
+    if (fog === null || d.fogCells === null || d.fogSeen === null) return true;
+    const cells = d.fogCells;
+    const seen = d.fogSeen;
+    for (let i = 0; i < cells.length; i++) if (fog[cells[i]] !== seen[i]) return true;
+    return false;
+  }
+
+  /** The fog at the town's cells as it is drawn now. */
+  private fogDrawn(d: TownDraw): void {
+    const fog = this.view.fog;
+    d.fogCells ??= fogCellsOf(d);
+    if (fog === null) {
+      d.fogSeen = null;
+      return;
+    }
+    const seen = d.fogSeen ?? new Uint8Array(d.fogCells.length);
+    for (let i = 0; i < d.fogCells.length; i++) seen[i] = fog[d.fogCells[i]];
+    d.fogSeen = seen;
+  }
+
   private dress(town: TownSpot, d: TownDraw, state: CastleState, owner: number): void {
     const fit = d.fit;
     const c = this.art?.castle ?? null;

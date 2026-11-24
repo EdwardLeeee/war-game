@@ -136,6 +136,8 @@ export class ArtStructures {
   /** Seconds farmers have worked each field (its crops, section 3). */
   private readonly worked = new Map<number, number>();
   private readonly nodeSprites = new Map<number, NodeSprites>();
+  /** The nodes' atlas entries by kind (drawNodes). */
+  private byKind: Map<number, NodeEntry> | null = null;
   /** A gold mine's amount when first seen: mined at half of it. */
   private readonly firstAmount = new Map<number, number>();
   private lastTick = -1;
@@ -481,12 +483,17 @@ export class ArtStructures {
   }
 
   /** The nodes the player knows: standing, or spent on the ground; darker out of view. */
-  drawNodes(): void {
+  /** `ids`: the nodes to draw (all of them the first time, then those changed: world.ts drawNodes). */
+  drawNodes(ids: Iterable<number>): void {
     const nodes = this.art.nodes;
     if (nodes === null || !this.drawsNodes) return;
-    const byKind = new Map<number, NodeEntry>(Object.values(nodes.nodes).map((e) => [e.kind, e]));
+    this.byKind ??= new Map<number, NodeEntry>(Object.values(nodes.nodes).map((e) => [e.kind, e]));
+    const byKind = this.byKind;
     const size = this.view.map.size;
-    for (const [id, row] of this.view.nodes) {
+    const fog = this.view.fog;
+    for (const id of ids) {
+      const row = this.view.nodes.get(id);
+      if (row === undefined) continue;
       const e = byKind.get(row[N.kind]);
       if (e === undefined) continue;
       let ns = this.nodeSprites.get(id);
@@ -506,8 +513,9 @@ export class ArtStructures {
       // Square on by its cell's front edge (depth.ts); as a diamond by its middle.
       ns.color.zIndex = this.projection.kind === "oblique" ? depthOf(this.projection.toPlane(0, nodeFront(row[N.cellY]) * TILE_PX).y, row[N.cellX], id) : at.y;
       put(ns.shadow, spent ? null : this.art.nodeFrame("shadow", name ?? ""), at.x, at.y, this.nodeScale);
+      // Those drawn now tinted here; all of them when the fog changes (world.ts drawFog → tintNodes).
+      ns.color.tint = fog === null || fog[ns.cell] === Fog.Visible ? 0xffffff : OUT_OF_VIEW;
     }
-    this.tintNodes();
   }
 
   /** The nodes' tints as the fog changes. */
@@ -519,6 +527,18 @@ export class ArtStructures {
   /** Whether nodes are drawn from the atlases, drawn for this camera (the renderer then draws no marks for them). */
   get drawsNodes(): boolean {
     return this.art.nodes !== null && viewFits(this.art.nodes.view, this.projection.kind);
+  }
+
+  /** Each node as drawn: its picture, place, depth, tint, shadow and layer (tests: drawn bit by bit as drawn whole). */
+  nodeLooks(): string[] {
+    const look = (s: Sprite) => `${s.visible ? s.texture.uid : "-"}@${s.position.x.toFixed(2)},${s.position.y.toFixed(2)}x${s.scale.x.toFixed(3)}`;
+    return [...this.nodeSprites.entries()].sort(([a], [b]) => a - b).map(([id, n]) => `${id} ${look(n.color)} z${n.color.zIndex.toFixed(2)} t${n.color.tint} ${look(n.shadow)} ${n.color.parent === this.ground ? "ground" : "up"}`);
+  }
+
+  /** Whether slot `i`'s building is drawn now (tests). */
+  shownSlot(i: number): boolean {
+    const s = this.slots[i];
+    return s !== undefined && (s.color.visible || s.ground.visible);
   }
 
   /** For the test page: buildings drawn from the atlases this frame, rubble lying, nodes. */
