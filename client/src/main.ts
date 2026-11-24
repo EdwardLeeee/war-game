@@ -326,8 +326,8 @@ $("record-code").textContent = `紀錄代號 ${code}`;
  *   the place of the game's earlier one, so the game keeps one entry, and of a game's uploads
  *   the one with the most ticks is the newest. In the background it is still being played
  *   (result abandoned, reason "hidden").
- * - 繼續上一局's save (D-083), on this phone only: in the background and every minute of game
- *   time while the game goes on (ceo 2026-10-17: the minute's is not uploaded).
+ * - 繼續上一局's save (D-083), on this phone only: in the background and every 30 seconds of game
+ *   time while the game goes on (ceo 2026-10-17: that one is not uploaded).
  * From a minute of game time on. Resolves when the simulation has given the log (before its
  * Worker may be stopped) and the save is written; uploading goes on by itself, off the game's
  * frames. The fake world, 量測 and watching are not kept.

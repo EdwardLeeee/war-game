@@ -124,7 +124,7 @@ test("手機上只存一局：存、讀回、清掉；讀回來的東西不像�
 });
 
 test("開局畫面和快轉的字；能不能接著打看模擬（protocol 和 build）；畫面狀態格式不同時照樣接著打", () => {
-  assert.equal(SAVE_EVERY_TICKS, 1200, "every minute of game time");
+  assert.equal(SAVE_EVERY_TICKS, 600, "every 30 seconds of game time (ceo 2026-11-24; was a minute)");
   assert.equal(minuteOf(25_000), 20);
   assert.equal(continueLabel(saved()), "繼續上一局（第 20 分）");
   assert.equal(progressText(2400, 96_000), "快轉中：第 2／80 分");

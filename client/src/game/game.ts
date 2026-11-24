@@ -168,7 +168,7 @@ export interface GameOptions {
   progress?: (tick: number, toTick: number) => void;
   /** 繼續上一局: the game cannot go on (the Worker has no game). */
   continueFailed?: (reason: ContinueFailure, tick: number) => void;
-  /** Every minute of game time (SAVE_EVERY_TICKS): the page keeps the game for 繼續上一局. */
+  /** Every 30 seconds of game time (SAVE_EVERY_TICKS; named for the minute it was): the page keeps the game for 繼續上一局. */
   minute?: () => void;
   /** The units drawn from war-game-ui's atlases (D-085), or none: the shapes. Only the picture: never the simulation. */
   art?: UnitArt | null;

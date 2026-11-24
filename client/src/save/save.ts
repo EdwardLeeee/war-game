@@ -17,8 +17,14 @@ import type { SpeedName } from "../ui/controls.ts";
 /** The screen's part's format. A page with another number goes on without it (ceo 2026-10-17). */
 export const SCREEN_VERSION = 1;
 const MINUTE_TICKS = 60 * TICKS_PER_SECOND;
-/** Saved every minute of game time as well: the background save does not come when the page crashes. */
-export const SAVE_EVERY_TICKS = MINUTE_TICKS;
+/**
+ * Saved every 30 seconds of game time as well: the background save does not come when the page crashes, and iOS may
+ * freeze the page before it is written (WebKit aborts an IndexedDB transaction under way, bugs.webkit.org 202705).
+ * Was a minute; ceo 2026-11-24: 30 s, each time (also when the log is the same: the game's time goes on). A save's
+ * main-thread time on CI (continue.spec's 80-minute game, 252 KB of log): WebKit 1–2 ms, Chromium mostly 1.5–4.8 ms,
+ * once 20 (IndexedDB's put).
+ */
+export const SAVE_EVERY_TICKS = 30 * TICKS_PER_SECOND;
 
 /** What the screen keeps beside the simulation. */
 export interface ScreenState {
