@@ -1,0 +1,9 @@
+{
+  "appId": "com.edwardleeee.wargame",
+  "appName": "war-game",
+  "webDir": "www",
+  "backgroundColor": "#1d2320",
+  "ios": {
+    "contentInset": "never"
+  }
+}
