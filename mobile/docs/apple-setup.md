@@ -11,6 +11,7 @@
 - 用你加入 Apple Developer Program 的 Apple ID 登入（會要求兩步驟驗證）。
 - 網頁上方如果出現「需要同意新版協議」的橫幅，先按進去同意，不然後面的按鈕會是灰的、上傳也會失敗。
 - 下載的檔案都留在瀏覽器預設的 `~/Downloads`，不用搬。
+- 標著 ⚠️ 的步驟，mobile 沒辦法先對照蘋果網站的畫面：**如果畫面和這裡寫的不一樣，停下來截圖給 ceo**，不要自己猜。
 - 名稱（你 2026-11-24 定的）：App Store 上是「裂土稱王：RTS 即時戰略」，英文「Divide & Crown: RTS」；
   手機桌面上的圖示名稱是「裂土稱王」（英文的 iPhone 是「Divide & Crown」，已經寫在 app 裡）。
 
@@ -32,7 +33,7 @@
 1. 開 https://developer.apple.com/account/resources/identifiers/list
 2. 按「Identifiers」標題旁的藍色 **＋**。
 3. 選 **App IDs** → **Continue** → 選 **App** → **Continue**。
-4. **Description** 填 `Divide and Crown`（用 and，不用 `&`：這一欄不收特殊符號）；**Bundle ID** 選 **Explicit**，填 `com.edwardleeee.wargame`
+4. ⚠️ **Description** 填 `Divide and Crown`（用 and，不用 `&`：這一欄可能不收特殊符號）；**Bundle ID** 選 **Explicit**，填 `com.edwardleeee.wargame`
    （一字不差；第一次上傳後就永遠不能改）。
 5. 下面一長串 Capabilities 都不用勾 → **Continue** → **Register**。
 
@@ -93,7 +94,7 @@
 5. **Bundle ID** 選 `Divide and Crown - com.edwardleeee.wargame`。
 6. **SKU** 填 `war-game-ios`（只給自己看的代號）。
 7. **User Access** 選 **Full Access** → **Create**。
-8. 加英文名稱：在剛建好的 app 裡，左邊 **App Information**（App 資訊）→ 右上角語言選單（現在是
+8. ⚠️ 加英文名稱：在剛建好的 app 裡，左邊 **App Information**（App 資訊）→ 右上角語言選單（現在是
    「Chinese (Traditional)」）→ 選 **English (U.S.)** → **Name** 填 `Divide & Crown: RTS` → 右上角 **Save**。
    這裡一樣：名稱被占用就停下來告訴 ceo。
    （副標題、關鍵字等公開上架時再填，現在留空。）

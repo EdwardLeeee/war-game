@@ -31,10 +31,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 env:
-  # Where the live site says which commit it is: the game's new place (ceo 2026-11-24: off /proto/);
-  # the old one only until client's move is live (on 2026-11-24 the new one was still a 404).
+  # Where the live site says which commit it is (the game at the site's root since #568, 2026-11-24).
   LIVE_VERSION_URL: https://edwardleeee.github.io/war-game/version.json
-  OLD_VERSION_URL: https://edwardleeee.github.io/war-game/proto/version.json
   PROFILE_NAME: war-game App Store
   BUNDLE_ID: com.edwardleeee.wargame
 
@@ -53,17 +51,11 @@ jobs:
         id: web
         run: |
           set -euo pipefail
-          url="${LIVE_VERSION_URL}"
-          body="$(curl -sSfL --retry 3 "${url}?t=$(date +%s)" 2>/dev/null)" || {
-            url="${OLD_VERSION_URL}"
-            body="$(curl -sSfL --retry 3 "${url}?t=$(date +%s)")"
-            echo "::warning::${LIVE_VERSION_URL} not there yet; ${url} used"
-          }
-          short="$(printf '%s' "${body}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["commit"])')"
+          short="$(curl -sSfL --retry 3 "${LIVE_VERSION_URL}?t=$(date +%s)" | python3 -c 'import json,sys; print(json.load(sys.stdin)["commit"])')"
           sha="$(git rev-parse --verify "${short}^{commit}")"
           git merge-base --is-ancestor "${sha}" origin/main || { echo "::error::${sha} is not on main"; exit 1; }
           echo "sha=${sha}" >> "${GITHUB_OUTPUT}"
-          echo "- web commit (live at ${url}): \`${sha}\` $(git log -1 --format=%s "${sha}")" | tee -a "${GITHUB_STEP_SUMMARY}"
+          echo "- web commit (live at ${LIVE_VERSION_URL}): \`${sha}\` $(git log -1 --format=%s "${sha}")" | tee -a "${GITHUB_STEP_SUMMARY}"
       - name: Signing secrets present?
         id: secrets
         env:

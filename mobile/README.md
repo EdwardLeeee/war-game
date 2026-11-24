@@ -46,11 +46,8 @@ secrets it builds and tests only, and its Summary says what is missing.
 
 ## Before the app goes public
 
-- An in-app switch to stop uploading the game records and a privacy page saying that they are
-  uploaded (D-056; ceo 2026-11-24: through client and ui). Keep `PrivacyInfo.xcprivacy` and the
-  App Privacy answers in step with them.
-- The Apple Distribution certificate and the profile expire after a year: renew both, then
-  `scripts/ios-signing.sh` again (the dates are in the release run's Summary).
+`docs/before-going-public.md`: the switch and privacy page for the game records, the seller name
+on the store page, the store listing, the real icon, the certificate's expiry.
 
 ## Keys
 
