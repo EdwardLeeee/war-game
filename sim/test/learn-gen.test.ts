@@ -9,9 +9,10 @@ import { dirname, join, relative, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { HARD, type HardPlan } from "../src/ai/ai.ts";
-import { checkCanary, type Examiner, init, type Item, listedSum, lookItems, needed, planHash, prune, type Res, screenItems, type State, step, type Training } from "../src/ai/learn/auto.ts";
+import { checkCanary, type Examiner, init, type Item, listedSum, lookItems, needed, planHash, prune, type Res, resume, screenItems, type State, step, type Training } from "../src/ai/learn/auto.ts";
 import { checkSettings, type GenSettings, pick, propose, SCREEN, screenBase, screenExaminerSeed, screenVsSeed } from "../src/ai/learn/gen.ts";
-import { type Field, fieldsOf, HARD_FIXED, HARD_SPACE, type HP, normalize, validateHard } from "../src/ai/learn/hard-space.ts";
+import { active, type Field, fieldsOf, HARD_FIXED, HARD_SPACE, type HP, normalize, validateHard } from "../src/ai/learn/hard-space.ts";
+import { NO_CRYSTAL } from "../src/core/rules.ts";
 import { blockBase, EXAM_SEEDS, isExamSeed } from "../src/ai/learn/seeds.ts";
 
 const SIM = fileURLToPath(new URL("..", import.meta.url));
@@ -39,6 +40,11 @@ function full(s: State, h: string): HardPlan {
   return { ...HARD, ...(s.plans[h] ?? {}) } as HardPlan;
 }
 const strength = (p: HardPlan) => (p.farmers - 32) * 0.006 + (p.production - 4) * 0.03 + (p.pushArmy - 44) * 0.002;
+/** The fake champions are measured against the baseline on noisy games: a "dropped against the baseline" pause is noise
+ * here, and the user would say go on. (The other pauses are real in these tests.) */
+const goOn = (s: State) => {
+  if (s.paused?.kind === "base") resume(s, s.paused.id, "t");
+};
 /** Every game played, by key (what a segment would have cost). */
 const played = new Set<string>();
 function play(s: State, items: Item[]) {
@@ -82,6 +88,7 @@ function run(s: State, opts: { jobs?: number; seed?: number; most?: number } = {
     }
     checkCanary(s, ["a", "b", "c"], "tree", "commit", `P-${seg}`, "t");
     step(s, `P-${seg}`, `t${seg}`);
+    goOn(s);
   }
 }
 const clone = (s: State): State => JSON.parse(JSON.stringify(s));
@@ -102,6 +109,28 @@ test("hard-space: every field of hard's plan is either searched or fixed, with w
   for (const [f, why] of Object.entries(HARD_FIXED)) assert.ok(why!.length > 5, `${f}: why it is fixed`);
   assert.equal(validateHard({}), "");
   assert.equal(validateHard(BASELINE), "");
+});
+
+test("hard-space: the fields that change no game are fixed, not searched (measured 2026-11-25; ceo)", () => {
+  // Measured with the three examiners, hard and normal (ai-tools promote-sim/inert-step1.jsonl, inert2.jsonl): no game of
+  // 36 or 60 differed. Put back in HARD_SPACE, every proposal of them would be the champion's games again.
+  const inert: Field[] = ["vein", "crystalStop", "mageReserve", "productionFirst", "counterCavalry", "chargeRest", "pushRatio", "cityCap", "cityForget", "rescueRest", "towerFirst"];
+  for (const f of inert) {
+    assert.equal(HARD_SPACE[f], undefined, `${f} is in the search space again`);
+    assert.match(HARD_FIXED[f] ?? "", /D-135|measured/, `${f}: why it is fixed`);
+  }
+  assert.ok(inert.filter((f) => /D-135/.test(HARD_FIXED[f]!)).length === 3 && NO_CRYSTAL.on, "crystal back (NO_CRYSTAL off): measure vein, crystalStop and mageReserve again");
+});
+
+test("hard-space: a field that only acts with another on is changed only then (towerSpare with towers or townTowers)", () => {
+  const hard = { ...HARD } as HardPlan;
+  assert.equal(active(hard, "towerSpare"), false);
+  assert.equal(active({ ...hard, towers: 1 }, "towerSpare"), true);
+  assert.equal(active({ ...hard, townTowers: 2 }, "towerSpare"), true);
+  assert.equal(active({ ...hard, cavalryCounter: 0 }, "cavalryWhen"), false);
+  assert.equal(active({ ...hard, cavalryCounter: 20 }, "cavalryWhen"), true);
+  // Never proposed while off: hard's towers and townTowers are 0.
+  for (let round = 1; round < 12; round++) for (const p of propose({}, round, GEN, new Set()).plans) assert.ok(p.towerSpare === undefined, JSON.stringify(p));
 });
 
 test("hard-space: what is out of range, off its steps, fixed, or crossing fields is refused (no march of 0 soldiers)", () => {
@@ -220,6 +249,7 @@ test("auto with gen: screening games are this round's alone, and nothing of them
     }
     play(s, items);
     step(s, `P-${seg}`, "t");
+    goOn(s);
     if (s.screen === null) assert.ok(!Object.keys(s.results).some((k) => k.startsWith("sx|") || k.startsWith("sv|")), "screening results dropped once listed");
     const open = blockBase(s.blocks.at(-1)!.n);
     for (const k of Object.keys(s.results)) {
@@ -227,7 +257,7 @@ test("auto with gen: screening games are this round's alone, and nothing of them
       if (kind !== "bl" && kind !== "sx" && kind !== "sv") assert.ok(Number(seed) >= open && Number(seed) < open + EXAM_SEEDS.blockSize, `kept from a closed block: ${k}`);
     }
   }
-  assert.ok(s.done);
+  assert.ok(s.done, `${JSON.stringify(s.paused)} | ${s.log.at(-1)?.what ?? ""}`);
   const rounds = [...byRound.values()];
   assert.equal(rounds.length, GEN.rounds);
   for (let i = 0; i < rounds.length; i++) for (let j = i + 1; j < rounds.length; j++) for (const x of rounds[i]) assert.ok(!rounds[j].has(x), `seed ${x} screened in two rounds`);
