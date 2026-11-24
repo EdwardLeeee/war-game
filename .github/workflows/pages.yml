@@ -200,8 +200,11 @@ jobs:
     container:
       image: mcr.microsoft.com/playwright:v1.63.0-noble
       options: --user 1001
+    # bash: in a container a step's shell is `sh -e` (dash) unless named, and the check's `${GITHUB_SHA::7}` is bash's
+    # (run 45352258155: 「Bad substitution」, exit 2, after #573 put this job in the image).
     defaults:
       run:
+        shell: bash
         working-directory: client
     steps:
       - uses: actions/checkout@v7
