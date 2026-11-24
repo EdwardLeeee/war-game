@@ -31,7 +31,7 @@ import { dir16, Rng } from "./fixed.ts";
 import { type CastleMap, castleOf } from "./castle.ts";
 import { farTrees, type GameMap, type NodeSpec, stampCastles, type TownSpec, turnedTerrain } from "./map.ts";
 import { forestCells, homeForests } from "./forests.ts";
-import { KEEP, NO_CRYSTAL, NODE_AMOUNT, RICH, TOWNS } from "./rules.ts";
+import { KEEP, NODE_AMOUNT, RICH, TOWNS } from "./rules.ts";
 
 export type Layout = "diagonal" | "adjacent";
 
@@ -282,8 +282,8 @@ function attemptMap(n: number, rng: Rng, layout: Layout, townCount: number, scat
     placed.push({ size: TownSize.Small, ...p });
   }
 
-  // The crystal vein on the axis, 14-24 cells from the big city: 2 x 2 on the diagonal, 1 x 4
-  // along a vertical axis (a 2 x 2 cannot be its own mirror image there).
+  // The crystal vein's place on the axis (no vein since D-135; picked as ever, so the map is as it was), 14-24 cells from
+  // the big city: 2 x 2 on the diagonal, 1 x 4 along a vertical axis (a 2 x 2 cannot be its own mirror image there).
   const vein = pick(
     () => {
       const d = k(14) + rng.below(k(10) + 1);
@@ -479,8 +479,7 @@ function attemptMap(n: number, rng: Rng, layout: Layout, townCount: number, scat
       ground[y * n + x] = layout === "diagonal" ? turnedTerrain(ground[m]) : ground[m];
     }
   }
-  // None with NO_CRYSTAL on (D-135): its place is picked and kept clear all the same, so the rest of the map is as it was.
-  if (!NO_CRYSTAL.on) for (const [x, y] of veinCells(layout, vein)) kind[y * n + x] = NodeKind.CrystalVein;
+  // No crystal vein since D-135: its place (`vein`) is picked and kept clear all the same, so the rest of the map is as it was.
   const wall = stampCastles(n, rock, kind, castles);
   if (WATER_TRIM.on) trimWater(n, ground, wall);
 
@@ -1086,9 +1085,7 @@ function orient(seed: number, g: Generated, orientation: number, across: boolean
         ? NODE_AMOUNT.tree
         : kd === NodeKind.GoldMine
           ? NODE_AMOUNT.goldCell
-          : kd === NodeKind.Berries
-            ? NODE_AMOUNT.bush
-            : NODE_AMOUNT.crystalCell;
+          : NODE_AMOUNT.bush;
     nodes.push({ kind: kd as NodeKind, cellX: i % n, cellY: Math.trunc(i / n), amount });
   }
   const spawns = g.spawns.map((p, player) => {

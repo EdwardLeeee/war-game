@@ -2,9 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Game } from "../src/core/game.ts";
 import { generateMap, MAP_SIZE, turnedTerrain } from "../src/core/map.ts";
-import { NO_CRYSTAL, TOWNS } from "../src/core/rules.ts";
+import { TOWNS } from "../src/core/rules.ts";
 import { NodeKind, Terrain, TownSize, UnitType } from "../src/protocol.ts";
-import { switchedOff } from "./helpers.ts";
 
 const m = generateMap();
 const n = MAP_SIZE;
@@ -23,12 +22,8 @@ test("mirror-symmetric across the main diagonal (a north-south bridge's image ru
   assert.deepEqual([m.spawns[1].cellX, m.spawns[1].cellY], [m.spawns[0].cellY, m.spawns[0].cellX]);
 });
 
-test("towns and the crystal vein sit on the axis, equally far from both starts", switchedOff(NO_CRYSTAL, () => {
+test("towns sit on the axis, equally far from both starts", () => {
   for (const t of m.towns) assert.equal(t.cellX, t.cellY);
-  const vein = generateMap().nodes.filter((s) => s.kind === NodeKind.CrystalVein);
-  assert.equal(vein.length, 4);
-  assert.equal(vein.reduce((a, s) => a + s.amount, 0), 600);
-  for (const v of vein) assert.ok(Math.abs(v.cellX - v.cellY) <= 1);
   const [a, b] = m.spawns;
   for (const t of m.towns) {
     const da = (t.cellX - a.cellX) ** 2 + (t.cellY - a.cellY) ** 2;
@@ -36,16 +31,16 @@ test("towns and the crystal vein sit on the axis, equally far from both starts",
     assert.equal(da, db);
   }
   assert.equal(m.towns.length, 4);
-}));
+});
 
-test("no crystal (D-135): no vein, open ground where it was; every other node and cell as with it", () => {
+// The map with the vein (the switch NO_CRYSTAL off) went in D-135's first layer; every node and cell but the vein's was
+// checked the same then, and the final hashes of the games before and after are the same.
+test("no crystal (D-135): no vein; its 2 x 2 place on the axis (66-67) open ground with no node", () => {
   assert.equal(m.nodes.filter((s) => s.kind === NodeKind.CrystalVein).length, 0);
-  let off: ReturnType<typeof generateMap> = m;
-  switchedOff(NO_CRYSTAL, () => {
-    off = generateMap();
-  })();
-  assert.deepEqual(m.nodes, off.nodes.filter((s) => s.kind !== NodeKind.CrystalVein));
-  assert.deepEqual([m.terrain, m.towns, m.spawns], [off.terrain, off.towns, off.spawns]);
+  for (const [x, y] of [[66, 66], [67, 66], [66, 67], [67, 67]]) {
+    assert.equal(m.terrain[y * m.size + x], Terrain.Open, `${x},${y}`);
+    assert.ok(!m.nodes.some((s) => s.cellX === x && s.cellY === y), `${x},${y}: a node`);
+  }
 });
 
 test("round 6 (D-054): small towns in the top-left and bottom-right corners, after the two old ones", () => {
