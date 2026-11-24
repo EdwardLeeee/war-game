@@ -47,6 +47,11 @@ export interface GameOutcome {
   reached: boolean;
   /** The trained side's network: per head, how many thinks it made each choice (empty: no network). */
   choices: number[][];
+  /** D-147 step 4 (exam-auto.ts): the game's final hash (8 hex digits, as scripted-play's), and the trained side's thinks. */
+  finalHash: string;
+  thinks: number;
+  /** Their time in all (milliseconds, this machine's: compared only within one job). */
+  thinkMs: number;
 }
 
 /** As scripted-games --strategy push --speed h1 --formation close --late (D-086 A). */
@@ -62,9 +67,22 @@ export function playGame(spec: GameSpec): GameOutcome {
   const w = g.w;
   const me = spec.opp.kind === "late" ? 1 : spec.swap ? 1 : 0;
   const thinkers: { p: number; every: number; think: (p: number) => CommandBody[] }[] = [];
+  let thinks = 0;
+  let thinkMs = 0;
   const hard = (p: number, plan: Partial<HardPlan>) => {
     const ai = createAi(p, spec.seed, { ...aiKnowledge(w.map, p, maxTicks, "hard"), hard: plan }, p);
-    thinkers.push({ p, every: AI_THINK_EVERY, think: () => ai.think(buildView(g, p)) });
+    thinkers.push({
+      p,
+      every: AI_THINK_EVERY,
+      think: () => {
+        if (p !== me) return ai.think(buildView(g, p));
+        const t0 = performance.now();
+        const out = ai.think(buildView(g, p));
+        thinkMs += performance.now() - t0;
+        thinks++;
+        return out;
+      },
+    });
   };
   const choices: number[][] = [];
   hard(me, {
@@ -147,5 +165,6 @@ export function playGame(spec: GameSpec): GameOutcome {
   const full = rules(w.map).buildings[0].hp || 1;
   const margin = (soldiers[me] - soldiers[them]) / (soldiers[me] + soldiers[them] + 1) + (hp[me] - hp[them]) / full;
   const won = !w.over || (w.winner !== 0 && w.winner !== 1) ? -1 : w.winner === me ? 1 : 0;
-  return { won, ticks: g.tick, margin, ...out, choices: choices.map((h) => Array.from(h, (v) => v ?? 0)) };
+  const finalHash = (g.hash() >>> 0).toString(16).padStart(8, "0");
+  return { won, ticks: g.tick, margin, ...out, choices: choices.map((h) => Array.from(h, (v) => v ?? 0)), finalHash, thinks, thinkMs };
 }

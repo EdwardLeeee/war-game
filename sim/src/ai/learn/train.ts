@@ -12,6 +12,7 @@ import { asHardNet, NET_HEADS, NET_INPUTS, type NetWeights } from "../net.ts";
 import { type EsState, fromVector, generation, newState, sameShape } from "./es.ts";
 import type { Opponent } from "./play.ts";
 import { runPlays, threads } from "./pool.ts";
+import { refuseExamSeeds } from "./seeds.ts";
 import type { Job } from "./worker.ts";
 
 const [mode] = process.argv.slice(2);
@@ -109,7 +110,10 @@ if (mode === "dryrun") {
 } else if (mode === "eval") {
   const file = arg("net", "");
   const net: NetWeights | null = file === "" ? null : JSON.parse(readFileSync(file, "utf8"));
-  const rows = await evaluate(net, Number(arg("games", "100")), Number(arg("seed", "1")));
+  const games = Number(arg("games", "100"));
+  const seed0 = Number(arg("seed", "1"));
+  refuseExamSeeds(Array.from({ length: games }, (_, i) => seed0 + i), "train.ts eval (--seed)");
+  const rows = await evaluate(net, games, seed0);
   summary(`## 比強弱（${file === "" ? "困難本身" : file}）\n\n${rows.join("\n")}`);
 } else {
   throw new Error(`mode ${mode}: dryrun, record, es or eval`);

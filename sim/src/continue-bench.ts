@@ -12,6 +12,7 @@ import { rules } from "./core/rules.ts";
 import type { AiDifficulty } from "./protocol.ts";
 import { Runner } from "./runner.ts";
 import { buildView, mapInfo } from "./view/view.ts";
+import { refuseExamSeeds } from "./ai/learn/seeds.ts";
 
 function arg(name: string, def: string): string {
   const i = process.argv.indexOf(`--${name}`);
@@ -20,6 +21,7 @@ function arg(name: string, def: string): string {
 
 const ticks = Number(arg("ticks", "96000"));
 const seed = Number(arg("seed", "1"));
+refuseExamSeeds([seed], "continue-bench --seed");
 
 function measure(difficulty: AiDifficulty, upTo: number): void {
   const r = new Runner({ seed, scenario: "standard", ai: [false, true], maxTicks: 0, difficulty: ["normal", difficulty], autoTrain: [true, false], build: "bench" });

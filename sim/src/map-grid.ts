@@ -6,6 +6,7 @@
 import { generateMap, type GameMap } from "./core/map.ts";
 import { generateRandomMap } from "./core/random-map.ts";
 import { NodeKind, Terrain } from "./protocol.ts";
+import { refuseExamSeeds } from "./ai/learn/seeds.ts";
 
 function arg(name: string, fallback: string): string {
   const i = process.argv.indexOf(`--${name}`);
@@ -13,6 +14,7 @@ function arg(name: string, fallback: string): string {
 }
 
 const mode = arg("map", "fixed");
+if (mode === "random") refuseExamSeeds([Number(arg("seed", "1"))], "map-grid --seed");
 const map: GameMap = mode === "random" ? generateRandomMap(Number(arg("seed", "1")), 129) : generateMap();
 const n = map.size;
 const GROUND: Record<number, string> = {

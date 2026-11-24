@@ -12,12 +12,14 @@ import json
 import os
 import sys
 import unittest
+import urllib.error
 from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import dispatch as D  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+WAIT_TITLE = "AI train: wait"  # ai-train-wait.yml's run-name
 REPO, REPO_ID = "o/war-game", 7
 REAL_CHAIN_START = D.CHAIN_START
 # The tests run as if the chain had started (CHAIN_START is far off until PR B sets the real date).
@@ -57,11 +59,18 @@ class Fake:
         self.posts, self.next_id = [], 9_000_000
         self.return_id = True
         self.fail_paths = ()
+        # The wait environment as GET environments/<name> gives it (None: not there, 404); the wait workflow on the ref.
+        self.wait_env = None
+        self.wait_file = True
+        self.wait_posts = []
+
+    def make_wait_env(self, minutes=10):
+        self.wait_env = {"name": D.WAIT_ENV, "protection_rules": [{"id": 1, "node_id": "x", "type": "wait_timer", "wait_timer": minutes}]}
 
     def add(self, rid, created, *, status="completed", conclusion="success", actor=D.BOT, trig=None, event="workflow_dispatch",
             title="AI train", branch="main", attempt=1, path=D.WORKFLOW, jobs=None):
         self.runs[rid] = {"id": rid, "status": status, "conclusion": conclusion if status == "completed" else None, "actor": {"login": actor},
-                          "triggering_actor": {"login": trig or actor}, "event": event, "display_title": title, "name": "AI train" if path == D.WORKFLOW else "Other",
+                          "triggering_actor": {"login": trig or actor}, "event": event, "display_title": title, "name": {D.WORKFLOW: "AI train", D.WAIT_WORKFLOW: "AI train wait"}.get(path, "Other"),
                           "head_branch": branch, "run_attempt": attempt, "path": path, "created_at": created}
         self.jobs[rid] = jobs or []
         return self.runs[rid]
@@ -76,6 +85,11 @@ class Fake:
         u = urlparse(path)
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
         parts = u.path.split("/")[3:]  # after repos/o/war-game
+        if method == "POST" and "ai-train-wait.yml" in path:
+            self.wait_posts.append(body)
+            self.next_id += 1
+            self.add(self.next_id, D.iso(NOW), status="waiting", branch=body["ref"], path=D.WAIT_WORKFLOW, title=WAIT_TITLE)
+            return None, None
         if method == "POST":
             self.posts.append(body)
             self.next_id += 1
@@ -83,8 +97,14 @@ class Fake:
             return ({"workflow_run_id": self.next_id, "run_url": "", "html_url": ""} if self.return_id else None), None
         if parts[:2] == ["actions", "artifacts"]:
             return {"total_count": len(self.artifacts), "artifacts": self.artifacts}, None
-        if parts[:3] == ["actions", "workflows", "ai-train.yml"]:
-            rs = [r for r in self.runs.values() if r["path"] == D.WORKFLOW]
+        if parts[:2] == ["environments", D.WAIT_ENV]:
+            if self.wait_env is None:
+                raise urllib.error.HTTPError(path, 404, "Not Found", None, None)
+            return copy.deepcopy(self.wait_env), None
+        if parts[:3] == ["actions", "workflows", "ai-train-wait.yml"] and not self.wait_file:
+            raise urllib.error.HTTPError(path, 404, "Not Found", None, None)
+        if parts[:2] == ["actions", "workflows"] and parts[2] in ("ai-train.yml", "ai-train-wait.yml"):
+            rs = [r for r in self.runs.values() if r["path"] == f".github/workflows/{parts[2]}"]
             if "created" in q:
                 a, b = q["created"].split("..")
                 rs = [r for r in rs if a <= r["created_at"] <= b]
@@ -153,6 +173,14 @@ class Classify(unittest.TestCase):
         self.assertEqual(D.classify("success", seg_jobs(70, 9, yielded=True))[0], "yield")
         self.assertEqual(D.classify("success", seg_jobs(70, 40, yielded=True))[0], "ok")  # gave way after training enough
 
+    def test_exam_paused_and_merge_minutes(self):
+        jobs = seg_jobs(70, 60)
+        merge = job("merge", 9, 2, steps=[("Merge", "success"), (D.EXAM_STOP_STEP, "success")])
+        self.assertEqual(D.classify("success", jobs + [merge])[0], "stop")
+        merge["steps"][1]["conclusion"] = "skipped"
+        self.assertEqual(D.classify("success", jobs + [merge])[0], "ok")  # the merge job's 2 minutes are not training
+        self.assertEqual(D.classify("success", jobs + [job("merge", 9, 2, "failure")])[0], "bad")
+
     def test_own_run_still_going(self):
         jobs = seg_jobs(70, 60)
         jobs[-1].update(status="in_progress", conclusion=None, completed_at=None)  # this dispatch job
@@ -195,9 +223,10 @@ class Walk(unittest.TestCase):
 class Options(unittest.TestCase):
     def test_only_lower_and_earlier(self):
         o = D.options("--day-cap 500 --total-cap 3 --segment-hours x --day-segments 2 --chain-start 2026-11-21T05:00:00Z --short --api-fail".split())
-        self.assertEqual((o["day_cap"], o["total_cap"], o["segment_hours"], o["day_segments"]), (200.0, 3.0, 1.0, 2))
+        # No cap a day (D-160): a trial's --day-cap sets one, whatever its value.
+        self.assertEqual((o["day_cap"], o["total_cap"], o["segment_hours"], o["day_segments"]), (500.0, 3.0, 1.0, 2))
         self.assertEqual(o["chain_start"], "2026-11-21T05:00:00Z")
-        self.assertEqual(o["carry"], "--total-cap 3 --day-segments 2 --chain-start 2026-11-21T05:00:00Z --short")
+        self.assertEqual(o["carry"], "--day-cap 500 --total-cap 3 --day-segments 2 --chain-start 2026-11-21T05:00:00Z --short")
         self.assertTrue(o["api_fail"])
         self.assertEqual(D.options(["--chain-start", "2030-01-01T00:00:00Z"])["chain_start"], D.CHAIN_START)  # not later
         self.assertEqual(D.options(["--chain-start", "2026-01-01T00:00:00Z"])["chain_start"], D.CHAIN_START)  # not before the ledger
@@ -211,7 +240,7 @@ class Run(unittest.TestCase):
             f.return_id = return_id
             ok, text, ledger = go(f, env())
             self.assertTrue(ok, text)
-            self.assertEqual(f.posts, [{"ref": "main", "inputs": {"mode": D.SEGMENT_MODE, "hours": "1", "islands": "1", "args": ""}}])
+            self.assertEqual(f.posts, [{"ref": "main", "inputs": {"mode": D.SEGMENT_MODE, "hours": "1", "islands": str(D.SEGMENT_JOBS_MAX), "args": ""}}])
             self.assertIn(f"新的 run {f.next_id}", text)
             self.assertIsNone(ledger["unseen"])
             self.assertAlmostEqual(ledger["closed"]["2026-11-23"], D.DISPATCH_HOURS)
@@ -348,9 +377,48 @@ class Run(unittest.TestCase):
     def test_hours_caps(self):
         f = Fake()
         f.add(8000100, t(600), actor="someone", event="workflow_dispatch", jobs=[job("exam (0)", 599, 60 * 8)])
-        self.assertTrue(go(f, env(ARGS="--day-cap 9.5"))[0])
-        self.assertFalse(go(f, env(ARGS="--day-cap 8.5"))[0])
-        self.assertFalse(go(f, env(ARGS="--total-cap 8.5"))[0])
+        # 8 hours used, a segment of SEGMENT_JOBS_MAX jobs of an hour each (nothing else running).
+        room = 8 + D.SEGMENT_HOURS * D.SEGMENT_JOBS_MAX
+        self.assertTrue(go(f, env(ARGS=f"--day-cap {room + 0.5}"))[0])
+        self.assertFalse(go(f, env(ARGS=f"--day-cap {room - 0.5}"))[0])
+        self.assertFalse(go(f, env(ARGS=f"--total-cap {room - 0.5}"))[0])
+
+    def test_no_cap_a_day_and_the_brake(self):
+        # The user (D-160): no cap a day, only the 5,000 in all; a trial's --day-cap still lowers it.
+        f = Fake()
+        f.add(8000100, t(1300), actor="someone", jobs=[job("exam (0)", 1299, 60 * 21)])  # 21 hours today
+        ok, text, _ = go(f, env())
+        self.assertTrue(ok, text)
+        self.assertIn("不設每天上限", text)
+        self.assertFalse(go(f, env(ARGS="--day-cap 30"))[0])
+        self.assertFalse(go(f, env(ARGS="--total-cap 30"))[0])
+        # The brake on the rate: a day of minimal chained segments plus what the schedule can start.
+        self.assertEqual(D.MAX_SEGMENTS_PER_DAY, 24 * 60 // D.MIN_SEGMENT_MINUTES + 48)
+        self.assertEqual(D.MAX_SEGMENTS_PER_DAY, 192)
+
+    def test_segment_takes_what_is_free(self):
+        def busy(n):
+            f = Fake()
+            f.add(8100000, t(5), status="in_progress", path=".github/workflows/sim.yml", actor="someone", jobs=[job(f"sim {i}", 4, 1, status="in_progress") for i in range(n)])
+            return f
+        # 6 running: 20 - 6 - 4 = 10 jobs.
+        f = busy(6)
+        ok, text, _ = go(f, env())
+        self.assertTrue(ok, text)
+        self.assertEqual(f.posts[0]["inputs"]["islands"], "10")
+        self.assertIn("10 個 job", text)
+        # None free with 4 kept: no segment (never one squeezed in).
+        for n in (16, 17, 20):
+            f = busy(n)
+            ok, text, _ = go(f, env())
+            self.assertFalse(ok, n)
+            self.assertIn("沒有可以用的", text)
+            self.assertEqual(f.posts, [])
+        # Nothing else running: the most, 16; a trial's --segment-jobs lowers it and is passed on.
+        f = busy(0)
+        go(f, env(ARGS="--segment-jobs 2"))
+        self.assertEqual(f.posts[0]["inputs"]["islands"], "2")
+        self.assertIn("--segment-jobs 2", f.posts[0]["inputs"]["args"])
 
     def test_not_seen_holds_off(self):
         f = Fake()
@@ -429,9 +497,143 @@ class Run(unittest.TestCase):
 
     def test_trial_options_pass_on(self):
         f = Fake()
-        ok, _, _ = go(f, env(EVENT="workflow_dispatch", MODE="dispatch", ARGS="--total-cap 3 --segment-hours 0.25 --short --api-fail-not"))
+        ok, _, _ = go(f, env(EVENT="workflow_dispatch", MODE="dispatch", ARGS="--total-cap 3 --segment-hours 0.25 --segment-jobs 4 --short --api-fail-not"))
         self.assertTrue(ok)
-        self.assertEqual(f.posts[0]["inputs"], {"mode": D.SEGMENT_MODE, "hours": "0.25", "islands": "1", "args": "--total-cap 3 --segment-hours 0.25 --short"})
+        self.assertEqual(f.posts[0]["inputs"], {"mode": D.SEGMENT_MODE, "hours": "0.25", "islands": "4", "args": "--total-cap 3 --segment-hours 0.25 --segment-jobs 4 --short"})
+
+
+def other_waiting(f, rid=8100002):
+    """Another workflow's job waiting for a runner."""
+    f.add(rid, t(3), status="in_progress", path=".github/workflows/client.yml", actor="someone", jobs=[job("e2e", 2, 1, status="queued")])
+
+
+class Wait(unittest.TestCase):
+    """D-147 PR B (ceo 2026-11-24): the wait run, only with the environment there."""
+
+    def test_without_the_environment_nothing_changes(self):
+        for setup in (lambda f: None, lambda f: f.make_wait_env(0), lambda f: setattr(f, "wait_env", {"name": D.WAIT_ENV, "protection_rules": []})):
+            f = Fake()
+            setup(f)
+            other_waiting(f)
+            ok, text, _ = go(f, env())
+            self.assertFalse(ok)
+            self.assertEqual((f.posts, f.wait_posts), ([], []))
+            self.assertIn("沒有派等待接回的 run", text)
+        # The wait workflow not on the ref (before PR B is merged): as before, the segment dispatched.
+        f = Fake()
+        f.wait_file = False
+        self.assertTrue(go(f, env())[0])
+
+    def test_runners_taken_send_a_wait_run(self):
+        f = Fake()
+        f.make_wait_env(10)
+        other_waiting(f)
+        ok, text, _ = go(f, env())
+        self.assertFalse(ok)
+        self.assertEqual((f.posts, f.wait_posts), ([], [{"ref": "main"}]))
+        self.assertIn("派了等待接回的 run：等 10 分鐘", text)
+        # None free with 4 kept.
+        f = Fake()
+        f.make_wait_env(10)
+        f.add(8100003, t(3), status="in_progress", path=".github/workflows/client.yml", actor="someone", jobs=[job(f"e{i}", 2, 1, status="in_progress") for i in range(D.RUNNERS - D.RESERVE)])
+        self.assertFalse(go(f, env())[0])
+        self.assertEqual(len(f.wait_posts), 1)
+
+    def test_a_segment_that_gave_way_is_taken_over(self):
+        for gave_way, want in ((True, 1), (False, 0)):
+            f = Fake()
+            f.make_wait_env(10)
+            own = f.add(8100000, t(8), status="in_progress", jobs=seg_jobs(6, 5, yielded=gave_way))
+            f.jobs[own["id"]][-1].update(status="in_progress", conclusion=None, completed_at=None)
+            ok, text, _ = go(f, tail_env(own["id"]))
+            self.assertFalse(ok)
+            self.assertEqual(len(f.wait_posts), want, text)
+
+    def test_not_for_any_other_reason(self):
+        cases = [
+            lambda f: (other_waiting(f), {"AI_TRAIN": "off"}),
+            lambda f: (other_waiting(f), f.add(8060000, t(200), conclusion="cancelled"), {}),
+            lambda f: (other_waiting(f), {"ARGS": "--total-cap 0.001"}),
+            # Another AI train run (a segment, or a wait run waiting) is on it already.
+            lambda f: (other_waiting(f), f.add(8100005, t(5), status="in_progress", actor="someone"), {}),
+            lambda f: (other_waiting(f), f.add(8100006, t(5), status="waiting", path=D.WAIT_WORKFLOW, title=WAIT_TITLE), {}),
+        ]
+        for i, case in enumerate(cases):
+            f = Fake()
+            f.make_wait_env(10)
+            kw = case(f)[-1]
+            ok, text, _ = go(f, env(**kw))
+            self.assertFalse(ok, i)
+            self.assertEqual(f.wait_posts, [], f"{i}: {text}")
+
+    def test_the_dispatcher_the_wait_run_started_decides(self):
+        # The wait run past its timer (in progress, starting the dispatcher) does not hold the dispatcher off.
+        f = Fake()
+        f.make_wait_env(10)
+        f.add(8100007, t(12), status="in_progress", path=D.WAIT_WORKFLOW, title=WAIT_TITLE, jobs=[job("wait", 1, 1, status="in_progress")])
+        ok, text, ledger = go(f, env(EVENT="workflow_dispatch", MODE="dispatch", ACTOR=D.BOT, TRIGGERING_ACTOR=D.BOT))
+        self.assertTrue(ok, text)
+        self.assertEqual(len(f.posts), 1)
+        # Still taken: it sends another wait run.
+        f = Fake()
+        f.make_wait_env(10)
+        f.add(8100007, t(12), status="in_progress", path=D.WAIT_WORKFLOW, title=WAIT_TITLE, jobs=[job("wait", 1, 1, status="in_progress")])
+        other_waiting(f)
+        self.assertFalse(go(f, env(EVENT="workflow_dispatch", MODE="dispatch", ACTOR=D.BOT, TRIGGERING_ACTOR=D.BOT))[0])
+        self.assertEqual(len(f.wait_posts), 1)
+
+    def test_the_wait_workflow_only_starts_the_dispatcher(self):
+        # The ceo's three (2026-11-24): its permissions, its `if` as the dispatch job's, and what it starts.
+        try:
+            import yaml
+        except ImportError:
+            self.skipTest("no PyYAML")
+        with open(os.path.join(HERE, "..", "workflows", "ai-train-wait.yml")) as fh:
+            w = yaml.safe_load(fh)
+        on = w.get("on", w.get(True))
+        self.assertEqual(on, {"workflow_dispatch": None})  # no inputs, no other event
+        self.assertEqual(w["permissions"], {"contents": "read", "actions": "read"})
+        self.assertEqual(list(w["jobs"]), ["wait"])
+        j = w["jobs"]["wait"]
+        self.assertEqual(j["permissions"], {"actions": "write"})
+        self.assertEqual(j["environment"], {"name": D.WAIT_ENV, "deployment": False})
+        for cond in ("vars.AI_TRAIN == 'on'", "github.actor == 'github-actions[bot]'", "github.triggering_actor == 'github-actions[bot]'",
+                     "github.run_attempt == '1'", "github.ref == 'refs/heads/main'"):
+            self.assertIn(cond, j["if"])
+        self.assertEqual([s.get("run") for s in j["steps"]], ['gh workflow run ai-train.yml --repo "$GITHUB_REPOSITORY" --ref main -f mode=dispatch'])
+        self.assertFalse(any("uses" in s for s in j["steps"]))
+        self.assertEqual(w["run-name"], WAIT_TITLE)
+
+    def test_a_cancelled_wait_run_pauses_and_its_minutes_are_booked(self):
+        f = Fake()
+        f.add(8100008, t(30), conclusion="cancelled", path=D.WAIT_WORKFLOW, title=WAIT_TITLE, jobs=[job("wait", 29, 0)])
+        f.add(8100009, t(20), conclusion="success", path=D.WAIT_WORKFLOW, title=WAIT_TITLE, jobs=[job("wait", 19, 6)])
+        ok, text, ledger = go(f, env())
+        self.assertFalse(ok)
+        self.assertIn("暫停中：P-8100008", text)
+        self.assertEqual(ledger["segs"]["8100009"]["cls"], "none")
+        self.assertAlmostEqual(float(text.split("已用：")[1].split(" ")[0]), 0.1, places=3)
+        # Resumed by its name, as a segment's pause.
+        self.assertTrue(go(f, env(AI_TRAIN_RESUME="P-8100008"))[0])
+
+    def test_the_brake(self):
+        f = Fake()
+        f.make_wait_env(10)
+        other_waiting(f)
+        for i in range(D.WAITS_PER_DAY):
+            f.add(8200000 + i, t(1), conclusion="success", path=D.WAIT_WORKFLOW, title=WAIT_TITLE)
+        ok, text, _ = go(f, env())
+        self.assertEqual(f.wait_posts, [])
+        self.assertIn(f"每天最多 {D.WAITS_PER_DAY} 個", text)
+
+    def test_a_wait_run_is_never_given_way_to(self):
+        import giveway
+        f = Fake()
+        # Waiting on its timer the run is "waiting", which giveway does not list; listed as queued, it is still its own.
+        for status in ("waiting", "queued"):
+            f = Fake()
+            f.add(8100010, t(30), status=status, path=D.WAIT_WORKFLOW, title=WAIT_TITLE, jobs=[{"name": "wait", "status": "waiting", "created_at": t(30), "run_attempt": 1}])
+            self.assertEqual(giveway.why(f, REPO, NOW), "", status)
 
 
 class GiveWay(unittest.TestCase):

@@ -1,0 +1,7 @@
+{
+  "name": "trial-3",
+  "note": "D-147 PR B's trial of the corrected rule (ceo 2026-11-23, D-162): as trial-2, the baseline weakened (fewer farmers and production) and the candidate hard itself, which should be promoted, on blocks of seeds of its own; 6 looks ahead, for the trial's hours. trial-1 and trial-2 played the first rules on seeds no longer used (their runs: 44872573528-44886418571). PR C replaces this file with the training's candidates (a new name, new blocks).",
+  "baseline": { "farmers": 14, "production": 1 },
+  "candidates": [{ "id": "hard", "plan": {}, "round": 0 }],
+  "lookAhead": 6
+}

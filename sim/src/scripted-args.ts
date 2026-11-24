@@ -7,6 +7,7 @@ import { AI_STYLES } from "./ai/ai.ts";
 import { AI_DIFFICULTIES, type AiDifficulty, MAP_MODES, type MapMode } from "./protocol.ts";
 import { lateSiege, WATCH_TICKS } from "./late-start.ts";
 import { applyPlan } from "./plan-space.ts";
+import { refuseExamSeeds } from "./ai/learn/seeds.ts";
 
 /** "1-5" or "1,3,7" (or both: "1-3,9"). */
 function seedList(text: string): number[] {
@@ -64,6 +65,7 @@ export function scriptedArgs(argv: readonly string[]): ScriptedArgs {
   const style = arg("style", "");
   if (style !== "" && !(AI_STYLES as readonly string[]).includes(style)) throw new Error(`--style ${style}: one of ${AI_STYLES.join(", ")}`);
   const seeds = seedList(arg("seeds", "1-5"));
+  refuseExamSeeds(seeds, "scripted-games --seeds");
   const think = Number(arg("think", String(SCRIPTED_THINK_EVERY)));
   /** Games still going at this game minute are stopped and counted apart. */
   const CAP = Number(arg("cap", "120")) * 1200;

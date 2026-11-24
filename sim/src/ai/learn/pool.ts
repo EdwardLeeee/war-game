@@ -2,14 +2,19 @@
 
 import { cpus } from "node:os";
 import { Worker } from "node:worker_threads";
+import { refuseExamSeeds } from "./seeds.ts";
 import type { Job, JobResult } from "./worker.ts";
+
+const seedOf = (j: Job) => (j.kind === "scripted" ? j.seed : j.spec.seed);
 
 export function threads(): number {
   return Math.max(1, cpus().length);
 }
 
+/** Never the exam's seeds (seeds.ts): only a Pool opened for the exam plays those (exam-auto.ts). */
 export function runAll(jobs: Job[], n = threads()): Promise<JobResult[]> {
   return new Promise((resolve, reject) => {
+    refuseExamSeeds(jobs.map(seedOf), "pool runAll");
     const results: JobResult[] = new Array(jobs.length);
     let next = 0;
     let done = 0;
@@ -56,11 +61,14 @@ export async function runPlays(jobs: Job[], n = threads()): Promise<Exclude<JobR
  * D-147 (exam.ts): workers kept for many runs. A worker started and stopped for every few games (#514's chunks, run
  * 43762744582's job 4) crashed V8 after some thousand of them ("jit_page_->allocations_.erase"), so these live as long as
  * the pool; `stop`, asked before each job is handed out, ends a run early (those under way finish, results kept).
+ * `exam`: the automatic exam's pool, the only one that plays the exam's seeds (seeds.ts).
  */
 export class Pool {
   private readonly workers: Worker[] = [];
   private failed: Error | null = null;
-  constructor(n = threads()) {
+  private readonly exam: boolean;
+  constructor(n = threads(), opts: { exam?: boolean } = {}) {
+    this.exam = opts.exam === true;
     for (let i = 0; i < n; i++) {
       const wk = new Worker(new URL("./worker.ts", import.meta.url));
       wk.on("error", (e: unknown) => (this.failed = e instanceof Error ? e : new Error(String(e))));
@@ -69,6 +77,7 @@ export class Pool {
   }
   run(jobs: Job[], stop: () => boolean = () => false): Promise<{ results: (JobResult | undefined)[]; stopped: boolean }> {
     return new Promise((resolve, reject) => {
+      if (!this.exam) refuseExamSeeds(jobs.map(seedOf), "pool");
       const results: (JobResult | undefined)[] = new Array(jobs.length);
       let next = 0;
       let busy = 0;

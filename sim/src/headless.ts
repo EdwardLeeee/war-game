@@ -29,6 +29,7 @@ import {
 import { Runner } from "./runner.ts";
 import { ECO_SCRIPT_EVERY, ecoScript } from "./scripts/eco.ts";
 import { buildView } from "./view/view.ts";
+import { refuseExamSeeds } from "./ai/learn/seeds.ts";
 
 function arg(name: string, fallback: string): string {
   const i = process.argv.indexOf(`--${name}`);
@@ -45,6 +46,8 @@ if (replayFile !== "") {
 }
 const scenario = (header?.scenario ?? arg("scenario", "standard")) as ScenarioKey;
 const seed = header?.seed ?? Number(arg("seed", "1"));
+// A replay is whatever was played (a player's game draws any seed); a new game never takes the exam's.
+if (header?.seed === undefined) refuseExamSeeds([seed], "headless --seed");
 const ai = (header?.ai ?? arg("ai", "1,1").split(",").map((v) => v === "1")) as boolean[];
 // The game's time limit: the log's (MAX_TICKS for logs from before round 2), or --ticks (0 = none).
 const maxTicks = replay !== undefined ? (header?.maxTicks ?? MAX_TICKS) : Number(arg("ticks", String(MAX_TICKS)));

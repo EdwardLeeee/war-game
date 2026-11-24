@@ -28,10 +28,11 @@
 
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { execFileSync } from "node:child_process";
 import type { MapMode } from "../../protocol.ts";
 import { drawPlan, type Drawn, mutate, rng } from "./exam-space.ts";
 import { Pool } from "./pool.ts";
+import { refuseExamSeeds } from "./seeds.ts";
+import { GiveWay } from "./yield.ts";
 import type { Job, JobResult, ScriptedOutcome } from "./worker.ts";
 
 const [mode] = process.argv.slice(2);
@@ -50,37 +51,14 @@ const hours = () => (performance.now() - started) / 3_600_000;
 const MIN = 1200;
 const cap = Number(arg("cap", "90")) * MIN;
 
-/** D-123: how often it looks (ms), and how long another job may wait before it gives way (ms). */
-const YIELD_EVERY = 6 * 60_000;
-const YIELD_WAIT = 10 * 60_000;
-const yieldRepo = process.env.YIELD_REPO ?? "";
-let lastLook = 0;
-let apiErrors = 0;
+// D-123: it gives way to the site's deployment and to jobs long waiting (yield.ts, shared with exam-auto.ts).
+const yielder = new GiveWay();
 let gaveWay = "";
-const ghJson = (path: string, jq: string): unknown => JSON.parse(execFileSync("gh", ["api", path, "--jq", jq], { encoding: "utf8", timeout: 60_000 }) || "null");
-/** Whether to give way now (in CI only, at most once every YIELD_EVERY); why, in gaveWay. */
+/** Whether to give way now (in CI only); why, in gaveWay. */
 function giveWay(): boolean {
-  if (yieldRepo === "" || gaveWay !== "") return gaveWay !== "";
-  const now = Date.now();
-  if (now - lastLook < YIELD_EVERY) return false;
-  lastLook = now;
-  try {
-    const old = (t: string) => now - Date.parse(t) >= YIELD_WAIT;
-    type Run = { id: number; name: string; created: string; event: string; branch: string };
-    const runs = (status: string) => ghJson(`repos/${yieldRepo}/actions/runs?status=${status}&per_page=50`, `[.workflow_runs[] | select(.name != "AI train" and .name != "AI scratch") | {id, name, created: .created_at, event, branch: .head_branch}]`) as Run[];
-    // The site's deployment (Pages on a push to main), not a pull request's build of it.
-    const deploys = (r: Run) => r.name === "Pages" && r.event === "push" && r.branch === "main";
-    for (const r of runs("queued")) if (deploys(r) || old(r.created)) { gaveWay = `${r.name} 在等（run ${r.id}）`; return true; }
-    for (const r of runs("in_progress")) {
-      const waiting = ghJson(`repos/${yieldRepo}/actions/runs/${r.id}/jobs?filter=latest&per_page=100`, `[.jobs[] | select(.status == "queued") | .created_at]`) as string[];
-      if (waiting.some((t) => deploys(r) || old(t))) { gaveWay = `${r.name} 有 job 在等（run ${r.id}）`; return true; }
-    }
-    apiErrors = 0;
-  } catch {
-    // Twice in a row: give way rather than hold runners blind.
-    if (++apiErrors >= 2) { gaveWay = "GitHub API 連續兩次出錯"; return true; }
-  }
-  return false;
+  const stop = yielder.now();
+  gaveWay = yielder.why;
+  return stop;
 }
 class GaveWay extends Error {}
 let workers: Pool | null = null;
@@ -157,6 +135,7 @@ async function search(): Promise<void> {
   const r = rng(seed);
   // Seeds of this job's games: away from CI's (1-100, 2000001-, 3000001-) and from the checks' (6000001-).
   const seedBase = 5_000_000 + seed * 10_000;
+  refuseExamSeeds([seedBase, seedBase + 9_999], "exam.ts search (--seed, --seed-offset)");
   const mapFor = (): MapMode => (mapArg === "mix" ? (r() < 2 / 3 ? "random" : "fixed") : (mapArg as MapMode));
   const kept: Cand[] = [];
   let games = 0;
@@ -252,6 +231,7 @@ async function check(): Promise<void> {
   const dirs = arg("from", "").split(",").filter((x) => x !== "");
   const games = Number(arg("games", "200"));
   const seedFrom = Number(arg("seed-from", "6000001"));
+  refuseExamSeeds(Array.from({ length: games }, (_, i) => seedFrom + i), "exam.ts check (--seed-from)");
   const topN = Number(arg("top", "12"));
   const shard = Number(arg("shard", "0"));
   const shards = Number(arg("shards", "1"));
