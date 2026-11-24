@@ -139,11 +139,12 @@ for (const culture of ["e", "w"] as const) {
     // Our small town's south stretch (they come from the south-east), its stakes in front of them.
     const south = ranged.slice(0, 2);
     await wallUp(south, OUR_TOWN);
-    // With art-v5.2's castle, drawn up there (art-v5's has no walk: where they stand; blocks: none).
+    // With art-v5.2's castle, drawn up there (art-v5's has no walk: where they stand; blocks: none); the camera on
+    // them first (鏡頭裁切, the user 2026-11-24: those off the screen are not drawn).
     const v6 = await artV52(page);
-    if (v6) await expect.poll(() => page.evaluate(() => window.__proto?.game?.wallLifted() ?? 0)).toBe(south.length);
     const on = (await units(page)).filter((u) => south.includes(u.id));
     await centre(page, on.reduce((n, u) => n + u.cx, 0) / on.length + 0.5, on.reduce((n, u) => n + u.cy, 0) / on.length - 1, 1.6);
+    if (v6) await expect.poll(() => page.evaluate(() => window.__proto?.game?.wallLifted() ?? 0)).toBe(south.length);
     await page.waitForTimeout(400);
     await shot(page, info, `walls-on-wall-${culture}`);
     // Its north stretch, the walk in front of the stakes (put by it first).
@@ -158,8 +159,10 @@ for (const culture of ["e", "w"] as const) {
     await expect.poll(async () => (await units(page)).filter((u) => ranged.includes(u.id) && u.order === 11).length).toBe(0);
     await page.evaluate(([ids, y]) => window.__proto?.game?.place(ids, [43, 44, 45, 50, 51, 52].map((x) => ({ x, y }))), [ranged, BIG_CITY.y + 8] as const);
     await wallUp(ranged, BIG_CITY);
-    if (v6) await expect.poll(() => page.evaluate(() => window.__proto?.game?.wallLifted() ?? 0)).toBe(ranged.length);
     const up = (await units(page)).filter((u) => ranged.includes(u.id));
+    // All of them on the screen (the camera on their middle), then drawn up there.
+    await centre(page, (Math.min(...up.map((u) => u.cx)) + Math.max(...up.map((u) => u.cx))) / 2 + 0.5, BIG_CITY.y + 2.5, 1);
+    if (v6) await expect.poll(() => page.evaluate(() => window.__proto?.game?.wallLifted() ?? 0)).toBe(ranged.length);
     await centre(page, Math.min(...up.map((u) => u.cx)) + 2, BIG_CITY.y + 2.5, 2.2);
     await page.waitForTimeout(400);
     await shot(page, info, `walls-on-wall-stone-${culture}`);

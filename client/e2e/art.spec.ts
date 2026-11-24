@@ -5,20 +5,9 @@
 // reload is told on the start screen. The atlases are only the picture: the game is the same.
 
 import { expect, type Page, test } from "@playwright/test";
-import { openLab, shot, watchErrors } from "./helpers.ts";
+import { inSightDrawnOrOff, openLab, shot, watchErrors } from "./helpers.ts";
 
 const art = (page: Page) => page.evaluate(() => window.__proto?.game?.art() ?? null);
-/**
- * The units in sight (not in a building), those of them on the screen drawn from their atlas, the rest off it (鏡頭裁切,
- * the user 2026-11-24): how many in sight, or -1 while a frame has not caught up with the snapshot.
- */
-const inSightDrawnOrOff = (page: Page) =>
-  page.evaluate(() => {
-    const g = window.__proto?.game;
-    const d = g?.unitsDrawn();
-    const all = (g?.units() ?? []).filter((u) => u.action !== 7).length;
-    return d !== undefined && g?.art()?.units === d.ids.length && d.ids.length + d.off === all ? all : -1;
-  });
 
 async function start(page: Page, query: string): Promise<void> {
   await page.goto(`./?test=1&${query}`);

@@ -15,7 +15,8 @@ test("牆上守軍換邊（D-119）：弓手沿著牆走，經過城門上方時
   await page.waitForFunction(() => window.__proto?.ready === true, null, { timeout: 60_000 });
   const cells = await page.evaluate(() => window.__proto?.game?.castleCells(0) ?? null);
   if (cells === null) throw new Error("no castle");
-  await page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 0.6), [(cells.inside.x0 + cells.inside.x1) / 2, (cells.inside.y0 + cells.inside.y1) / 2] as const);
+  const onCastle = () => page.evaluate(([x, y]) => window.__proto?.game?.centerOn(x, y, 0.6), [(cells.inside.x0 + cells.inside.x1) / 2, (cells.inside.y0 + cells.inside.y1) / 2] as const);
+  await onCastle();
   const look = () =>
     page.evaluate((gate) => {
       const g = window.__proto?.game;
@@ -23,8 +24,11 @@ test("牆上守軍換邊（D-119）：弓手沿著牆走，經過城門上方時
       const over = (g?.units() ?? []).filter((u) => u.owner === me && u.action === 1 && gate.some(([x, y]) => x === u.cx && y === u.cy));
       return { over: over.length, lifted: g?.wallLifted() ?? 0 };
     }, cells.gate);
-  // Someone crossing a gate, and all of them still drawn up on the walls.
+  // Someone crossing a gate, and all of them still drawn up on the walls: the camera on the castle again (鏡頭裁切, the
+  // user 2026-11-24: those off the screen are not drawn; WebKit's start may move it after the first), read on a frame
+  // drawn after it.
   await expect.poll(async () => (await look()).over, { timeout: 60_000 }).toBeGreaterThan(0);
-  expect((await look()).lifted).toBe(ARCHERS);
+  await onCastle();
+  await expect.poll(async () => (await look()).lifted).toBe(ARCHERS);
   check();
 });
