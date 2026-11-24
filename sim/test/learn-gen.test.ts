@@ -391,7 +391,8 @@ test("auto with gen: screening items only while screening, and none of them an e
 });
 
 test("auto: a trial's cap on looks rejects at it, lists no look past it, and only a trial may set it (ceo 2026-11-24)", () => {
-  const cap = 3;
+  // Under the current one's share of the look-ahead (3 of 6), so a cap not kept would list past it.
+  const cap = 2;
   const s = init(EXAMINERS, [], { ...TRAINING, name: "trial-cap", maxLooks: cap }, BASELINE);
   let most = 0;
   for (let seg = 0; seg < 3000 && !s.done && s.paused === null; seg++) {
