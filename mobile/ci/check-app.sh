@@ -23,7 +23,14 @@ want() { # want <key> <expected raw value>
 }
 
 want CFBundleIdentifier com.edwardleeee.wargame
-want CFBundleDisplayName war-game
+want CFBundleDisplayName 裂土稱王
+want CFBundleDevelopmentRegion zh-Hant
+# The name under the icon per language (D-163, the user 2026-11-24).
+for pair in "en:Divide & Crown" "zh-Hant:裂土稱王"; do
+    lang="${pair%%:*}" name="${pair#*:}"
+    got="$(plutil -extract CFBundleDisplayName raw -o - "${app}/${lang}.lproj/InfoPlist.strings" 2>/dev/null)"
+    if [ "${got}" = "${name}" ]; then ok "${lang}.lproj name = ${name}"; else bad "${lang}.lproj name is '${got}', want '${name}'"; fi
+done
 want ITSAppUsesNonExemptEncryption false
 want UIStatusBarHidden true
 want UIViewControllerBasedStatusBarAppearance false
