@@ -451,7 +451,13 @@ export class Game implements GestureHost {
     this.hud = new Hud(hud, this, this.controls.bar, options.life);
     this.enterLayer = new EnterLayer(hud, (id) => this.enterGoTo(id));
     this.recognizer = new GestureRecognizer(this);
-    port.onmessage = (e) => this.receive(e.data);
+    port.onmessage = (e) => {
+      // The log's message read (繼續上一局's save, main.ts SaveCost): Chromium copies a message's data out when it is first read.
+      const t = performance.now();
+      const msg = e.data as FromWorker;
+      if (msg.type === "log") this.logReceiveMs = performance.now() - t;
+      this.receive(msg);
+    };
     this.cleanups.push(
       attachPointer(app.canvas, this.recognizer, () => {
         const was = this.camera?.flinging ?? false;
@@ -958,6 +964,9 @@ export class Game implements GestureHost {
    * the tick it got to (D-083), or null when it does not answer within `timeoutMs` (D-056).
    * Asked before the Worker is stopped.
    */
+  /** The main thread's time reading the last log's message (main.ts SaveCost). */
+  logReceiveMs = 0;
+
   exportLog(timeoutMs = 3000): Promise<ExportedLog | null> {
     return new Promise((resolve) => {
       const timer = setTimeout(() => {

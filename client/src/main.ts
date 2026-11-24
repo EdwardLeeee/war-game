@@ -77,7 +77,14 @@ export interface SaveCost {
   tick: number;
   logBytes: number;
   hashes: number;
+  /** From asking the simulation for its log to having it (its Worker's time and the wait for it, mostly). */
   exportMs: number;
+  /** The main thread's own (ceo 2026-11-24: a save every 15 s if these come to under 5 ms on CI's slowest runner): */
+  /** the screen's state taken (army, alarms…), */
+  screenMs: number;
+  /** the log's message read (the browser copies it out of the Worker's), */
+  receiveMs: number;
+  /** the save put together, and IndexedDB's copy of it in put(). */
   buildMs: number;
   putMs: number;
 }
@@ -362,19 +369,25 @@ function keepGame(g: Game, why: KeepWhy): Promise<void> {
     k.ended = over !== null;
   }
   if (save) k.saved = ticks;
+  const s0 = performance.now();
   const screen = save ? g.screenState() : null;
   const asked = performance.now();
+  const screenMs = asked - s0;
   k.job = k.job.then(() =>
     g.exportLog().then((log) => {
       if (log === null || log.jsonl === "") return;
       const got = performance.now();
-      if (upload) {
+      const keepRecord = () => {
+        if (!upload) return;
         const end = over !== null ? { result: resultFor(over.winner, init.human ?? 0), reason: reasonName(over.reason), ticks } : { result: "abandoned" as const, reason: why === "hidden" || why === "leave" ? "hidden" : "", ticks };
         // 美術 and 介面 in use, and the note of the page that last died with a game on screen (once, logs/heartbeat.ts).
         const record = makeRecord({ id: crypto.randomUUID(), code, commit: __COMMIT__, protocol: PROTOCOL_VERSION, scenario: init.scenario, difficulty: init.difficulty?.[1] ?? "normal", end, lastHash: g.lastHash, log: log.jsonl, art: artInUse(), ui: formalUi() ? "r6" : "proto", crash: heartbeat.takeCrash() });
         void logs.keep(record, k.game);
+      };
+      if (screen === null || g.over !== null) {
+        keepRecord();
+        return;
       }
-      if (screen === null || g.over !== null) return;
       const saved: SavedGame = {
         savedAt: Date.now(),
         commit: __COMMIT__,
@@ -389,8 +402,12 @@ function keepGame(g: Game, why: KeepWhy): Promise<void> {
         screen,
       };
       const built = performance.now();
+      // 繼續上一局's save first, the record (and its upload) once it is written (ceo 2026-11-24): going to the
+      // background, iOS may freeze the page soon after, and WebKit then aborts an IndexedDB transaction under
+      // way (bugs.webkit.org 202705); the save is what puts the game back.
       return saveStore.save(saved).then(() => {
-        hook.lastSave = { tick: log.tick, logBytes: log.jsonl.length, hashes: log.hashes.length, exportMs: got - asked, buildMs: built - got, putMs: saveStore.lastPutMs };
+        hook.lastSave = { tick: log.tick, logBytes: log.jsonl.length, hashes: log.hashes.length, exportMs: got - asked, screenMs, receiveMs: g.logReceiveMs, buildMs: built - got, putMs: saveStore.lastPutMs };
+        keepRecord();
       });
     }),
   );

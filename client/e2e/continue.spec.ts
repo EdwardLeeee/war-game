@@ -290,7 +290,7 @@ async function longGame(ticks: number): Promise<{ log: string; hashes: { tick: n
 }
 
 test("量測（CI 的數字，不是 iPhone）：80 分鐘的局快轉要多久、進度和取消；之後存一次，主執行緒花多久（D-083）", async ({ page, browserName }, info) => {
-  test.skip(browserName !== "chromium", "one browser is enough for the numbers; the screenshot is Chromium's");
+  // Both browsers (ceo 2026-11-24: a save every 15 s if a save's main-thread time is under 5 ms on CI's slowest runner, in each).
   test.setTimeout(600_000);
   await catchUploads(page);
   const t0 = Date.now();
@@ -379,7 +379,20 @@ test("量測（CI 的數字，不是 iPhone）：80 分鐘的局快轉要多久�
   await expect.poll(() => page.evaluate(() => window.__proto?.lastSave?.tick ?? 0), { timeout: 30_000 }).toBeGreaterThan(96_000);
   const withSave = await during;
   const cost = await page.evaluate(() => window.__proto?.lastSave);
-  const numbers = { playInNodeMs: playMs, logKB: Math.round(game.log.length / 1024), hashes: game.hashes.length, continueInBrowserMs: continueMs, save: cost, longTasks2sWithoutSaveMs: withoutSave, longTasks2sFromSaveMs: withSave };
+  // Two saves more (going on a little, back to the background each time): three samples of the main thread's time.
+  const costs = [cost];
+  for (let i = 0; i < 2; i++) {
+    const last = (await page.evaluate(() => window.__proto?.lastSave?.tick)) ?? 0;
+    await visibility(page, "visible");
+    await page.getByRole("button", { name: "繼續", exact: true }).tap();
+    await expect.poll(async () => (await header(page)).tick, { timeout: 60_000 }).toBeGreaterThan(last + 60);
+    await page.evaluate(() => window.__proto?.game?.pause());
+    await visibility(page, "hidden");
+    await expect.poll(() => page.evaluate(() => window.__proto?.lastSave?.tick ?? 0), { timeout: 30_000 }).toBeGreaterThan(last);
+    costs.push(await page.evaluate(() => window.__proto?.lastSave));
+  }
+  const mainMs = costs.map((c) => (c === null || c === undefined ? null : Math.round((c.screenMs + c.receiveMs + c.buildMs + c.putMs) * 100) / 100));
+  const numbers = { browser: browserName, mainMs, saves: costs, playInNodeMs: playMs, logKB: Math.round(game.log.length / 1024), hashes: game.hashes.length, continueInBrowserMs: continueMs, save: cost, longTasks2sWithoutSaveMs: withoutSave, longTasks2sFromSaveMs: withSave };
   info.annotations.push({ type: "d083-measure", description: JSON.stringify(numbers) });
   await info.attach("d083-measure.json", { body: JSON.stringify(numbers, null, 2), contentType: "application/json" });
   console.log(`D083 MEASURE ${JSON.stringify(numbers)}`);
