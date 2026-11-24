@@ -12,8 +12,8 @@
 // It takes no exam state (auto.ts calls it with exactly these), imports nothing of the exam's, reads no file, and pick
 // throws on any game whose seed is not this round's screening seed. test/learn-gen.test.ts checks all of it.
 
-import { HARD, type HardPlan } from "../ai.ts";
-import { active, type Field, HARD_SPACE, type HP, normalize, planHash, validateHard } from "./hard-space.ts";
+import type { HardPlan } from "../ai.ts";
+import { active, type Field, HARD_NOW, HARD_SPACE, type HP, normalize, planHash, validateHard } from "./hard-space.ts";
 import { EXAM_SEEDS, isExamSeed } from "./seeds.ts";
 
 export interface GenSettings {
@@ -100,7 +100,7 @@ export function propose(champion: HP, round: number, g: GenSettings, proposedBef
   let invalid = 0;
   let repeated = 0;
   for (let attempt = 0; attempt < g.propose * 50 && out.length < g.propose; attempt++) {
-    const plan = { ...HARD, ...champion } as HardPlan;
+    const plan = { ...HARD_NOW, ...champion } as HardPlan;
     const n = g.changes[0] + Math.floor(r() * (g.changes[1] - g.changes[0] + 1));
     const changed = new Set<Field>();
     for (let k = 0; k < n; k++) {

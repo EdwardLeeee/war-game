@@ -8,11 +8,13 @@ import { readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { HARD, type HardPlan } from "../src/ai/ai.ts";
+import { HARD, HARD_POP, type HardPlan } from "../src/ai/ai.ts";
 import { checkCanary, type Examiner, init, type Item, listedSum, lookItems, needed, planHash, prune, type Res, resume, screenItems, type State, step, type Training } from "../src/ai/learn/auto.ts";
 import { checkSettings, type GenSettings, pick, propose, SCREEN, screenBase, screenExaminerSeed, screenVsSeed } from "../src/ai/learn/gen.ts";
-import { active, type Field, fieldsOf, HARD_FIXED, HARD_SPACE, type HP, normalize, validateHard } from "../src/ai/learn/hard-space.ts";
-import { NO_CRYSTAL } from "../src/core/rules.ts";
+import { active, type Field, fieldsOf, HARD_FIXED, HARD_NOW, HARD_SPACE, type HP, normalize, validateHard } from "../src/ai/learn/hard-space.ts";
+import { generateMap } from "../src/core/map.ts";
+import { NO_CRYSTAL, rules } from "../src/core/rules.ts";
+import { TownSize } from "../src/protocol.ts";
 import { blockBase, EXAM_SEEDS, isExamSeed } from "../src/ai/learn/seeds.ts";
 
 const SIM = fileURLToPath(new URL("..", import.meta.url));
@@ -37,7 +39,7 @@ const REACH: Partial<Record<Field, number>> = { dodge: 0, peekFirst: 0.01 };
 /** Set: no field reaches any game, so every plan plays as the champion. */
 let inert = false;
 function full(s: State, h: string): HardPlan {
-  return { ...HARD, ...(s.plans[h] ?? {}) } as HardPlan;
+  return { ...HARD_NOW, ...(s.plans[h] ?? {}) } as HardPlan;
 }
 const strength = (p: HardPlan) => (p.farmers - 32) * 0.006 + (p.production - 4) * 0.03 + (p.pushArmy - 44) * 0.002;
 /** The fake champions are measured against the baseline on noisy games: a "dropped against the baseline" pause is noise
@@ -56,8 +58,8 @@ function play(s: State, items: Item[]) {
     let res: Res;
     if (kind === "ex" || kind === "sx") {
       const p = full(s, me);
-      const sig = (Object.keys(HARD) as Field[]).filter((f) => !inert && p[f] !== HARD[f] && u01(`${f}|${seed}`) < (REACH[f] ?? 0.3)).map((f) => `${f}=${JSON.stringify(p[f])}`).join(",");
-      const sigPlan = { ...HARD } as HardPlan;
+      const sig = (Object.keys(HARD) as Field[]).filter((f) => !inert && p[f] !== HARD_NOW[f] && u01(`${f}|${seed}`) < (REACH[f] ?? 0.3)).map((f) => `${f}=${JSON.stringify(p[f])}`).join(",");
+      const sigPlan = { ...HARD_NOW } as HardPlan;
       for (const part of sig === "" ? [] : sig.split(",")) {
         const [f, v] = part.split("=");
         (sigPlan as unknown as Record<string, unknown>)[f] = JSON.parse(v);
@@ -99,7 +101,7 @@ test("hard-space: every field of hard's plan is either searched or fixed, with w
   for (const f of [...Object.keys(HARD_SPACE), ...Object.keys(HARD_FIXED)]) assert.ok((all as string[]).includes(f) || f === "netLog" || f === "netSeen", `${f} is not a field of HARD`);
   for (const [f, sp] of Object.entries(HARD_SPACE)) {
     assert.ok(sp!.why.length > 10, `${f}: a reason`);
-    const v = HARD[f as Field];
+    const v = HARD_NOW[f as Field];
     if (sp!.type === "int") {
       assert.equal(typeof v, "number", f);
       assert.ok(sp!.min <= (v as number) && (v as number) <= sp!.max, `${f}: hard's ${v} inside ${sp!.min}-${sp!.max}`);
@@ -113,17 +115,57 @@ test("hard-space: every field of hard's plan is either searched or fixed, with w
 
 test("hard-space: the fields that change no game are fixed, not searched (measured 2026-11-25; ceo)", () => {
   // Measured with the three examiners, hard and normal (ai-tools promote-sim/inert-step1.jsonl, inert2.jsonl): no game of
-  // 36 or 60 differed. Put back in HARD_SPACE, every proposal of them would be the champion's games again.
-  const inert: Field[] = ["vein", "crystalStop", "mageReserve", "productionFirst", "counterCavalry", "chargeRest", "pushRatio", "cityCap", "cityForget", "rescueRest", "towerFirst"];
+  // 36 or 60 differed, and their code ran in those games (coverage.mts). Put back in HARD_SPACE, every proposal of them
+  // would be the champion's games again. (cityCap, cityForget, rescueRest, towerFirst and productionFirst were measured so
+  // too, but they depend on others off, or hard's own value (HARD_POP) already was the change, so they are searched.)
+  const inert: Field[] = ["vein", "crystalStop", "mageReserve", "counterCavalry", "chargeRest", "pushRatio"];
   for (const f of inert) {
     assert.equal(HARD_SPACE[f], undefined, `${f} is in the search space again`);
     assert.match(HARD_FIXED[f] ?? "", /D-135|measured/, `${f}: why it is fixed`);
   }
+  // A field measured to change no game must be one whose prerequisites are on in hard as it plays (else it was asleep, not inert),
+  // and its reason says what it was: the games, that the code ran, and when to measure again.
+  const prerequisites: Partial<Record<Field, Field[]>> = { counterCavalry: [], chargeRest: ["charge", "cavalryCounter"], pushRatio: [] };
+  for (const f of inert) {
+    const why = HARD_FIXED[f]!;
+    if (/D-135/.test(why)) continue;
+    assert.ok(f in prerequisites, `${f}: list what it needs`);
+    for (const n of prerequisites[f]!) assert.ok(active({ ...HARD_NOW } as HardPlan, n) && (HARD_NOW as unknown as Record<string, unknown>)[n] !== 0 && (HARD_NOW as unknown as Record<string, unknown>)[n] !== false, `${f} needs ${n}, off in hard`);
+    assert.match(why, /no game of \d+ differed/, f);
+    assert.match(why, /it ran in them \(.+\)/, f);
+    assert.match(why, /measure again/, f);
+  }
   assert.ok(inert.filter((f) => /D-135/.test(HARD_FIXED[f]!)).length === 3 && NO_CRYSTAL.on, "crystal back (NO_CRYSTAL off): measure vein, crystalStop and mageReserve again");
 });
 
+test("hard-space: the fields that were measured so but could not act, or were the change itself, are searched", () => {
+  for (const f of ["cityCap", "cityForget", "rescueRest", "towerFirst", "productionFirst"] as Field[]) {
+    assert.notEqual(HARD_SPACE[f], undefined, `${f}`);
+    assert.equal(HARD_FIXED[f], undefined, f);
+  }
+  // Their prerequisites: cityCap and cityForget need cityAgain, rescueRest rescue, towerFirst one of what makes a tower spot.
+  assert.deepEqual([HARD_SPACE.cityCap!.needs, HARD_SPACE.cityForget!.needs, HARD_SPACE.rescueRest!.needs, HARD_SPACE.towerFirst!.needsAny], [["cityAgain"], ["cityAgain"], ["rescue"], ["towers", "townTowers", "governTowers", "behind"]]);
+  const noGovern = { ...HARD_NOW, governTowers: 0, behind: false } as HardPlan;
+  assert.equal(active({ ...HARD_NOW } as HardPlan, "cityCap"), true, "cityAgain is on in hard as it plays (HARD_POP 120)");
+  assert.equal(active({ ...HARD_NOW, cityAgain: 0 } as HardPlan, "cityCap"), false);
+  assert.equal(active(noGovern, "towerFirst"), false);
+  assert.equal(active({ ...noGovern, towers: 1 }, "towerFirst"), true);
+});
+
+test("hard-space: hard as it plays is HARD with HARD_POP under the rules as they are (what a plan that sets nothing is)", () => {
+  const r = rules(generateMap());
+  // The overlay createHardAi lays on (ai.ts): only with population rules on, and what it takes from the caller (nothing here).
+  assert.ok((r.population?.town[TownSize.Small] ?? 0) > 0 && r.features?.keep === true, "the rules changed: measure the fields, and HARD_NOW, again");
+  for (const [k, v] of Object.entries(HARD_POP)) assert.equal((HARD_NOW as unknown as Record<string, unknown>)[k], v, k);
+  for (const k of Object.keys(HARD)) if (!(k in HARD_POP)) assert.equal((HARD_NOW as unknown as Record<string, unknown>)[k], (HARD as unknown as Record<string, unknown>)[k], k);
+  assert.deepEqual(normalize({ pushArmy: 48, cityAgain: 120 }), {}, "equal to hard as it plays: not a change");
+  assert.deepEqual(normalize({ pushArmy: 44 }), { pushArmy: 44 }, "hard's bare value is a change (the game plays 48)");
+  assert.equal(validateHard({ hideFar: true }), "", "hideFar is on in hard as it plays");
+  assert.match(validateHard({ hideFar: false }), /never changed/);
+});
+
 test("hard-space: a field that only acts with another on is changed only then (towerSpare with towers or townTowers)", () => {
-  const hard = { ...HARD } as HardPlan;
+  const hard = { ...HARD_NOW } as HardPlan;
   assert.equal(active(hard, "towerSpare"), false);
   assert.equal(active({ ...hard, towers: 1 }, "towerSpare"), true);
   assert.equal(active({ ...hard, townTowers: 2 }, "towerSpare"), true);
@@ -154,11 +196,11 @@ test("gen: proposals are valid, new, 1-3 fields from the champion, only fields t
     const a = propose(champion, 4, GEN, before);
     assert.deepEqual(propose(champion, 4, GEN, before), a, "the same from the same");
     assert.equal(a.plans.length, GEN.propose);
-    const c = { ...HARD, ...champion } as HardPlan;
+    const c = { ...HARD_NOW, ...champion } as HardPlan;
     for (const p of a.plans) {
       assert.equal(validateHard(p), "");
       assert.ok(!before.has(planHash(p)) && planHash(p) !== planHash(normalize(champion)));
-      const changed = (Object.keys(HARD) as Field[]).filter((f) => ({ ...HARD, ...p } as HardPlan)[f] !== c[f]);
+      const changed = (Object.keys(HARD) as Field[]).filter((f) => ({ ...HARD_NOW, ...p } as HardPlan)[f] !== c[f]);
       assert.ok(changed.length >= 1 && changed.length <= 3, JSON.stringify(p));
       // With cavalryCounter 0, what needs it does nothing: never changed.
       if (champion.cavalryCounter === 0) assert.ok(!changed.includes("cavalryWhen") && !changed.includes("charge"), JSON.stringify(p));
@@ -218,9 +260,16 @@ test("auto with gen: the list, then rounds made from the champion, one block eac
   assert.equal(rounds.length, GEN.rounds);
   assert.ok(rounds.every((b) => b.listed >= 1 && b.listed <= GEN.list));
   assert.equal(listedSum(s), s.blocks.reduce((a, b) => a + b.listed, 0));
-  assert.equal(listedSum(s), 1 + rounds.reduce((a, b) => a + b.listed, 0));
+  // A promotion in a round opens a block for what was left of it, listed again (the bound counts it twice: more, never less).
+  assert.ok(listedSum(s) >= 1 + rounds.reduce((a, b) => a + b.listed, 0));
+  const again = s.blocks.filter((b) => /升級$/.test(b.why) && b.n > s.blocks[0].n + 1 && b.champion !== s.baseline);
+  assert.equal(listedSum(s), s.blocks.reduce((a, b) => a + b.listed, 0));
+  assert.ok(again.length <= s.decided.filter((d) => d.verdict === "promote").length);
   // Every listed candidate examined in its round's block; no A/A on a block with no list, not even played.
-  for (const d of s.decided.slice(1)) assert.equal(s.blocks.find((b) => b.n === d.block)!.why, `第 ${d.id.slice(1, d.id.indexOf("-"))} 輪`);
+  for (const d of s.decided.slice(1)) {
+    const why = s.blocks.find((b) => b.n === d.block)!.why;
+    assert.ok(why === `第 ${d.id.slice(1, d.id.indexOf("-"))} 輪` || /升級$/.test(why), `${d.id} in block ${d.block} (${why})`);
+  }
   for (const b of s.blocks) assert.equal(s.aa[b.n] !== undefined, b.listed > 0, `block ${b.n}`);
   const empty = s.blocks.filter((b) => b.listed === 0).map((b) => blockBase(b.n));
   assert.ok(empty.length > 0);
