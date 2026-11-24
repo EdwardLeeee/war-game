@@ -10,7 +10,7 @@ import { counterLines } from "../../game/counters.ts";
 import type { Game } from "../../game/game.ts";
 import { tradedText } from "../../game/market.ts";
 import { pressable } from "../../input/pressable.ts";
-import type { PerfScenario } from "../../lab/lab.ts";
+import type { MeasureKind } from "../../lab/lab.ts";
 import {
   AUTO_TRAIN,
   BUILDING_STRIDE,
@@ -93,7 +93,7 @@ export interface HudLifecycle {
   /** 新手教學 (R25): leave this game (kept for 繼續上一局) and start the tutorial. */
   tutorial?(): void;
   /** Start a game of this perf scenario that measures itself (量測, D-083). */
-  perf(scenario: PerfScenario): void;
+  perf(kind: MeasureKind): void;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, parent: HTMLElement, cls = "", text = ""): HTMLElementTagNameMap[K] {

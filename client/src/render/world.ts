@@ -4,6 +4,7 @@
 // Terrain and fog are one small texture each (terrain one texel per cell, the fog
 // FOG_ROUND_SCALE for its round edge, scaled up), so they cost one sprite. Units, bars and buildings come from pools that only grow.
 
+import { prof } from "../lab/prof.ts";
 import { FOG_ROUND_SCALE, roundFog, roundFogChanged } from "./round-fog.ts";
 import { type Application, ColorMatrixFilter, Container, Graphics, type Renderer, Sprite, Text, Texture } from "pixi.js";
 import { GroundCache } from "./ground-cache.ts";
@@ -507,28 +508,41 @@ export class WorldRenderer {
     v.y1 = camera.y + camera.height / camera.scale + CULL_BELOW;
     const curr = this.view.curr;
     if (curr === null) return;
+    // 量測's breakdown (lab/prof.ts): the drawing's parts.
+    let t = prof.t0();
     this.drawTerrain();
     this.drawFog();
+    prof.add("d.fog", t);
+    t = prof.t0();
     this.drawNodes();
+    prof.add("d.nodes", t);
+    t = prof.t0();
     this.drawBuildings();
     this.drawBrokenGates();
     this.drawTowns();
     this.drawEnterRings(now);
     this.castle.update();
+    prof.add("d.buildings", t);
+    t = prof.t0();
     this.terrain.update();
     this.updateGround();
     this.updateTownGround();
     this.groundDraw?.tick(now / 1000);
     this.groundCache.frame(camera, this.groundDraw, this.groundInner);
+    prof.add("d.ground", t);
     this.fx.clear();
     this.airFx.clear();
     this.overGround.clear();
+    t = prof.t0();
     this.drawUnits(now);
+    prof.add("d.units", t);
+    t = prof.t0();
     this.drawWarnings(now);
     this.drawSelectionExtras();
     this.drawMarkers(now);
     this.drawShots(now);
     this.drawGhost(placement, now);
+    prof.add("d.effects", t);
   }
 
   /** The units drawn in the last frame (their ids), and how many were left off as off the screen (tests). */
@@ -1080,6 +1094,7 @@ export class WorldRenderer {
     } else {
       const rects = roundFogChanged(this.fogCells, this.fogDrawn, size, this.fogPixels.data);
       if (rects.length === 0) return;
+      prof.count("fogRedraws");
       for (const q of rects) ctx.putImageData(this.fogPixels, 0, 0, q.x, q.y, q.w, q.h);
       this.fogDrawn.set(this.fogCells);
     }
@@ -1767,6 +1782,8 @@ export class WorldRenderer {
           .stroke({ width: 3, color: castTint(owner, view.me), alpha: 0.95 });
       }
     }
+    prof.count("unitsDrawn", this.unitsShown);
+    prof.count("unitsOff", this.unitsOff);
     this.artUnits?.drawCorpses(seconds);
     this.artUnits?.drawCrews(this.artStructures?.crews ?? [], seconds);
     this.ghostLayers.own.visible = ghosts.own > 0;
