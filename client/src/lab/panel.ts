@@ -586,16 +586,18 @@ const ms = (v: number): string => v.toFixed(2);
 /** A frame's time by part (lab/prof.ts), for the result box: a frame's own code, the drawing's parts, the counts. */
 export function profileRows(p: Profile, fpsMean: number): [string, string, null][] {
   const sec = (name: string) => p.sections.find((x) => x.name === name)?.perFrame ?? 0;
+  // ms a second too (ceo 2026-11-24: each part's ms/s, as the before/after of the PR).
+  const both = (name: string) => `${ms(sec(name))}（${Math.round(p.sections.find((x) => x.name === name)?.perSecond ?? 0)}/s）`;
   const per = (name: string) => p.counters.find((x) => x.name === name);
   const own = ["snapshot", "draw", "pixi", "hud", "other"].reduce((t, k) => t + sec(k), 0);
   const fog = per("fogRedraws");
   return [
     [
       "每張畫面",
-      `平均 ${ms(p.frameMs)} ms（平均 fps ${fpsMean}；60 fps 是 16.67）＝本頁程式 ${ms(own)}（收快照 ${ms(sec("snapshot"))}、畫圖 ${ms(sec("draw"))}、Pixi render ${ms(sec("pixi"))}、介面 ${ms(sec("hud"))}、其他 ${ms(sec("other"))}）＋程式以外（顯示卡、瀏覽器）${ms(p.outsideMs)}`,
+      `平均 ${ms(p.frameMs)} ms（平均 fps ${fpsMean}；60 fps 是 16.67）＝本頁程式 ${ms(own)}（收快照 ${both("snapshot")}、畫圖 ${both("draw")}、Pixi render ${both("pixi")}、介面 ${both("hud")}、其他 ${both("other")}）＋程式以外（顯示卡、瀏覽器）${ms(p.outsideMs)}`,
       null,
     ],
-    ["畫圖裡（每張 ms）", `迷霧 ${ms(sec("d.fog"))}、兵 ${ms(sec("d.units"))}、城和建築 ${ms(sec("d.buildings"))}、資源點 ${ms(sec("d.nodes"))}、地面 ${ms(sec("d.ground"))}、特效 ${ms(sec("d.effects"))}`, null],
+    ["畫圖裡（每張 ms，括號裡每秒 ms）", `迷霧 ${both("d.fog")}、兵 ${both("d.units")}、城和建築 ${both("d.buildings")}、資源點 ${both("d.nodes")}、地面 ${both("d.ground")}、特效 ${both("d.effects")}`, null],
     ["數量", `迷霧每秒重畫 ${(fog?.perSecond ?? 0).toFixed(1)} 次；每張畫面畫 ${Math.round(per("unitsDrawn")?.perFrame ?? 0)} 個兵、畫面外 ${Math.round(per("unitsOff")?.perFrame ?? 0)} 個`, null],
   ];
 }

@@ -17,16 +17,21 @@ test("量測大軍交戰：雙方都是電腦（困難）、一開始就打起�
   await openLab(page);
   await page.getByRole("button", { name: "量測大軍交戰" }).tap();
   await page.waitForFunction(() => window.__proto?.ready === true && (window.__proto?.game?.header().tick ?? 0) > 0, null, { timeout: 120_000 });
-  // Both sides the computer's: the page plays neither (watching), and they fight.
+  // Both sides the computer's at 困難, no person, no time limit, the fixed map (not saved: a perf scenario).
+  expect(await page.evaluate(() => window.__proto?.game?.init())).toMatchObject({ scenario: "perf360", human: null, ai: [true, true], difficulty: ["hard", "hard"], maxTicks: 0 });
+  expect((await page.evaluate(() => window.__proto?.game?.init()))?.map).toBeUndefined();
+  // And they fight.
   await expect.poll(async () => page.evaluate((a) => (window.__proto?.game?.units() ?? []).filter((u) => u.action === a).length, ATTACK), { timeout: 60_000 }).toBeGreaterThan(20);
+  // Both sides' soldiers in sight (and the neutral towns' guards, owner 2).
   const owners = await page.evaluate(() => [...new Set((window.__proto?.game?.units() ?? []).filter((u) => u.type !== 0).map((u) => u.owner))].sort());
-  expect(owners).toEqual([0, 1]);
+  expect(owners).toEqual(expect.arrayContaining([0, 1]));
   const result = page.locator(".lab-result");
   await expect(result).toBeVisible({ timeout: 120_000 });
   await expect(result).toContainText("場景：大軍交戰（雙方電腦困難）（perf360，第 10 秒起量 3 秒）");
   await expect(result).toContainText(/每張畫面：平均 [\d.]+ ms/);
-  await expect(result).toContainText(/本頁程式 [\d.]+（收快照 [\d.]+、畫圖 [\d.]+、Pixi render [\d.]+、介面 [\d.]+、其他 [\d.]+）＋程式以外（顯示卡、瀏覽器）[\d.]+/);
-  await expect(result).toContainText(/畫圖裡（每張 ms）：迷霧 [\d.]+、兵 [\d.]+、城和建築 [\d.]+、資源點 [\d.]+、地面 [\d.]+、特效 [\d.]+/);
+  const n = "[\\d.]+（\\d+/s）";
+  await expect(result).toContainText(new RegExp(`本頁程式 [\\d.]+（收快照 ${n}、畫圖 ${n}、Pixi render ${n}、介面 ${n}、其他 ${n}）＋程式以外（顯示卡、瀏覽器）[\\d.]+`));
+  await expect(result).toContainText(new RegExp(`畫圖裡（每張 ms，括號裡每秒 ms）：迷霧 ${n}、兵 ${n}、城和建築 ${n}、資源點 ${n}、地面 ${n}、特效 ${n}`));
   await expect(result).toContainText(/迷霧每秒重畫 [\d.]+ 次；每張畫面畫 \d+ 個兵、畫面外 \d+ 個/);
   await expect(result).toContainText("每 tick 模擬平均");
   // The camera on the battle: some drawn.

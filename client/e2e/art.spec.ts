@@ -8,6 +8,17 @@ import { expect, type Page, test } from "@playwright/test";
 import { openLab, shot, watchErrors } from "./helpers.ts";
 
 const art = (page: Page) => page.evaluate(() => window.__proto?.game?.art() ?? null);
+/**
+ * The units in sight (not in a building), those of them on the screen drawn from their atlas, the rest off it (鏡頭裁切,
+ * the user 2026-11-24): how many in sight, or -1 while a frame has not caught up with the snapshot.
+ */
+const inSightDrawnOrOff = (page: Page) =>
+  page.evaluate(() => {
+    const g = window.__proto?.game;
+    const d = g?.unitsDrawn();
+    const all = (g?.units() ?? []).filter((u) => u.action !== 7).length;
+    return d !== undefined && g?.art()?.units === d.ids.length && d.ids.length + d.off === all ? all : -1;
+  });
 
 async function start(page: Page, query: string): Promise<void> {
   await page.goto(`./?test=1&${query}`);
@@ -26,12 +37,14 @@ test("美術（測試圖）：兵從圖集畫，不再是幾何圖形；載入 1
   expect(a?.pages).toBe(10 * 3 + 2 + 2);
   // Drawn (the last frame) and in the snapshot (the latest), read together until a frame has caught
   // up with it: a unit trained in between is drawn on the next one (#358's webkit run 41684354391: 16 and 17).
+  // Those on the screen from their atlas; those off it not drawn (鏡頭裁切, the user 2026-11-24), the two together all.
   await expect
     .poll(() => page.evaluate(() => {
       const g = window.__proto?.game;
-      return (g?.art()?.units ?? -1) - (g?.units() ?? []).filter((u) => u.action !== 7).length;
+      const d = g?.unitsDrawn();
+      return [(g?.art()?.units ?? -1) - (d?.ids.length ?? 0), (d?.ids.length ?? 0) + (d?.off ?? 0) - (g?.units() ?? []).filter((u) => u.action !== 7).length];
     }))
-    .toBe(0);
+    .toEqual([0, 0]);
   check();
 });
 
@@ -129,7 +142,7 @@ test("你的陸（使用者 2026-10-19 自選）：開局畫面一列東陸／�
     await page.getByRole("button", { name: "開始" }).tap();
     await page.waitForFunction(() => window.__proto?.ready === true, null, { timeout: 60_000 });
     expect(await page.evaluate(() => window.__proto?.game?.culture())).toBe(name);
-    await expect.poll(async () => (await art(page))?.units ?? 0, { timeout: 30_000 }).toBeGreaterThan(100);
+    await expect.poll(() => inSightDrawnOrOff(page), { timeout: 30_000 }).toBeGreaterThan(100);
     await page.evaluate(() => window.__proto?.game?.centerOn(48, 52, 1.6));
     await page.waitForTimeout(3000);
     await shot(page, info, `art-culture-${name}`);
@@ -147,7 +160,7 @@ test("兵種展示（art-v1，3 倍）：兩陸每種兵的待機、走路、攻
   test.setTimeout(120_000);
   const check = watchErrors(page);
   await start(page, "mock=1&gallery=1&art=x3&tps=20");
-  await expect.poll(async () => (await art(page))?.units ?? 0, { timeout: 30_000 }).toBeGreaterThan(40);
+  await expect.poll(() => inSightDrawnOrOff(page), { timeout: 30_000 }).toBeGreaterThan(40);
   expect((await art(page))?.label).toBe("3 倍 ASTC");
   // The fallen gone at tick 20, a shield shattered at 30: the gallery stands still at 36, while both still show.
   await page.waitForFunction(() => window.__proto?.game?.header().tick === 36, null, { timeout: 30_000 });
