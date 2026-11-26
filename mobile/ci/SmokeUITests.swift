@@ -107,6 +107,34 @@ final class SmokeUITests: XCTestCase {
         return last
     }
 
+    /// The web view's screen (mobile-diag.js's "mobile-view" line) in both landscapes, for the
+    /// client's tests (2026-11-27). smoke.sh runs it on its own, after the smoke test, with
+    /// VIEW_LABEL saying the system's text size; testViewFactsSafari reads the same page in Safari.
+    private func readView(_ a: XCUIApplication, _ label: String) throws {
+        let e = a.descendants(matching: .staticText).matching(NSPredicate(format: "label BEGINSWITH %@", "mobile-view ")).firstMatch
+        if !e.waitForExistence(timeout: 180) { throw stop("no mobile-view line (\(label))") }
+        for (name, o) in [("left", UIDeviceOrientation.landscapeLeft), ("right", .landscapeRight), ("left again", .landscapeLeft)] {
+            XCUIDevice.shared.orientation = o
+            sleep(4)
+            log("VIEW \(label) landscape \(name): \(e.label)")
+            shot("view-\(label)-\(name.replacingOccurrences(of: " ", with: "-"))")
+        }
+    }
+
+    func testViewFacts() throws {
+        t0 = Date()
+        app.launch()
+        try readView(app, ProcessInfo.processInfo.environment["VIEW_LABEL"] ?? "app")
+    }
+
+    func testViewFactsSafari() throws {
+        t0 = Date()
+        // smoke.sh opened the smoke copy in Safari (simctl openurl) just before.
+        let safari = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari")
+        safari.activate()
+        try readView(safari, "safari")
+    }
+
     func testFreshInstallPlaySaveContinue() throws {
         t0 = Date()
 

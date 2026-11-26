@@ -158,12 +158,67 @@
     d.native = typeof window.Capacitor?.isNativePlatform === "function" ? window.Capacitor.isNativePlatform() : null;
     box.textContent = `mobile-diag ${JSON.stringify(d)}`;
   };
+  // The web view's screen, measured (client 2026-11-27: the app's numbers for its own tests, not
+  // looked up): a second line at the top-left corner, read by SmokeUITests.testViewFacts in each
+  // landscape, at the system's default and largest text size, and in Safari for comparison:
+  //   mobile-view {"iw":932,"ih":430,"vv":[932,430,1,0,0],"dpr":3,"safe":[0,59,21,59],...}
+  // safe: env(safe-area-inset-top, right, bottom, left) in CSS px; sysBody: -apple-system-body's
+  // size (Dynamic Type reaches the page only through it); w15: four 國 at 15px -apple-system (the
+  // client's font), wider than 60 when text is inflated.
+  const view = document.createElement("div");
+  view.id = "mobile-view";
+  view.style.cssText =
+    "position:fixed;left:2px;top:2px;z-index:2147483647;pointer-events:none;font:9px/1.2 monospace;color:#fff;background:rgba(0,0,0,.55);padding:1px 3px;max-width:70vw;white-space:normal";
+  const probes = document.createElement("div");
+  probes.style.cssText = "position:fixed;left:0;top:0;visibility:hidden;pointer-events:none";
+  const safe = document.createElement("div");
+  safe.style.cssText =
+    "position:fixed;inset:0;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)";
+  const sysBody = document.createElement("span");
+  sysBody.style.font = "-apple-system-body";
+  sysBody.textContent = "國";
+  const w15 = document.createElement("span");
+  w15.style.cssText = "font:15px -apple-system;white-space:nowrap";
+  w15.textContent = "國國國國";
+  probes.append(safe, sysBody, w15);
+  const r2 = (v) => Math.round(v * 100) / 100;
+  const facts = () => {
+    try {
+      const cs = getComputedStyle(safe);
+      const html = getComputedStyle(document.documentElement);
+      const body = getComputedStyle(document.body);
+      const vv = window.visualViewport;
+      const button = [...document.querySelectorAll("button")].find((b) => b.getClientRects().length > 0);
+      return {
+        iw: innerWidth,
+        ih: innerHeight,
+        cw: document.documentElement.clientWidth,
+        ch: document.documentElement.clientHeight,
+        vv: vv ? [r2(vv.width), r2(vv.height), r2(vv.scale), r2(vv.offsetLeft), r2(vv.offsetTop)] : null,
+        scr: [screen.width, screen.height, screen.availWidth, screen.availHeight],
+        dpr: devicePixelRatio,
+        safe: [cs.paddingTop, cs.paddingRight, cs.paddingBottom, cs.paddingLeft].map((v) => r2(parseFloat(v))),
+        orient: screen.orientation?.type ?? null,
+        wo: typeof window.orientation === "number" ? window.orientation : null,
+        tsa: [html.webkitTextSizeAdjust ?? null, body.webkitTextSizeAdjust ?? null],
+        fs: [html.fontSize, body.fontSize],
+        sysBody: getComputedStyle(sysBody).fontSize,
+        w15: r2(w15.getBoundingClientRect().width),
+        button: button ? [button.textContent.trim().slice(0, 8), getComputedStyle(button).fontSize, r2(button.getBoundingClientRect().height)] : null,
+        ua: navigator.userAgent,
+      };
+    } catch (e) {
+      return { failed: String(e) };
+    }
+  };
   const start = () => {
-    document.body.append(box);
+    document.body.append(box, view, probes);
     show();
+    view.textContent = `mobile-view ${JSON.stringify(facts())}`;
     setInterval(() => {
       void savedTick().then((t) => (d.saved = t));
       show();
+      view.textContent = `mobile-view ${JSON.stringify(facts())}`;
     }, 1000);
     navigator.serviceWorker
       ?.getRegistrations()
