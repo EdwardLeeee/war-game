@@ -253,6 +253,13 @@ for pc in job["pieces"]:
             (towns.tower_state if kind == "ttower" else castle.tower3_state)(root, c, st)
         finally:
             states.R8 = prev
+    # R27 (哨所轉向, the user 2026-11-27): a smaller look across the ground, height kept (xy_scale; the diagonal outpost
+    # fitted into its 3 x 3). The facing itself is turned by the camera's azimuth (job camera), so that the lights,
+    # which follow the camera (round2 lib), light it as every other building.
+    sxy = pc.get("xy_scale", 1.0)
+    if sxy != 1.0:
+        root.scale = (sxy, sxy, 1.0)
+        bpy.context.view_layer.update()
     if LOOK == "r8":
         realistic(root)
     pts = corners()
