@@ -176,6 +176,12 @@ final class SmokeUITests: XCTestCase {
             log("STABLE skipped: no stable-buttons line (this build has no client/src/lab/stable-buttons.ts)")
             return
         }
+        // The page's whole account, written at the end of each step (client, 2026-11-27): which boxes
+        // moved and by how much, where each tap landed, whether the reaction was right.
+        let detail = first(.staticText, "label BEGINSWITH %@", "stable-detail ")
+        let readDetail = { (when: String) in
+            if detail.exists { self.log("STABLE detail \(when): \(detail.label)") }
+        }
         let origin = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
         var tapped = -1
         var since = Date()
@@ -184,12 +190,14 @@ final class SmokeUITests: XCTestCase {
             let label = line.label
             guard let s = stable(label) else { throw stop("unreadable stable-buttons line: \(label)") }
             if s.done {
+                readDetail("at the end")
                 log("STABLE \(label)")
                 shot("stable-done")
                 if !s.ok { XCTFail("按鈕不動: \(label)") }
                 return
             }
             if let n = s.next, s.step != tapped {
+                if tapped >= 0 { readDetail("after step \(tapped)") }
                 for k in 0 ..< max(n.times, 1) {
                     if k > 0 { usleep(useconds_t(max(n.gap, 0) * 1000)) }
                     origin.withOffset(CGVector(dx: n.x, dy: n.y)).tap()
