@@ -55,13 +55,15 @@ final class SmokeUITests: XCTestCase {
     /// smoke/mobile-diag.js's line: page errors since the page opened, and the web view's facts.
     private func checkDiag(_ when: String) {
         let e = first(.staticText, "label BEGINSWITH %@", "mobile-diag ")
-        guard e.exists else {
+        guard e.waitForExistence(timeout: 10) else {
             findings.append("mobile-diag not found \(when)")
             log("diag \(when): not found")
             return
         }
-        log("diag \(when): \(e.label)")
-        if !e.label.contains("\"errors\":0") { findings.append("page errors \(when): \(e.label)") }
+        // Read once: each read is a new query of a line the page rewrites.
+        let label = e.label
+        log("diag \(when): \(label)")
+        if !label.contains("\"errors\":0") { findings.append("page errors \(when): \(label)") }
     }
 
     /// The game time the HUD shows (m:ss) in seconds; nil when none is on screen.

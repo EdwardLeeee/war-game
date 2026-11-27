@@ -149,6 +149,14 @@
   box.id = "mobile-diag";
   box.style.cssText =
     "position:fixed;left:2px;bottom:2px;z-index:2147483647;pointer-events:none;font:9px/1.2 monospace;color:#fff;background:rgba(0,0,0,.55);padding:1px 3px;max-width:70vw;white-space:normal";
+  /**
+   * Writes a line only when it changed: a text node replaced every second can be missing from the
+   * accessibility tree just when XCUITest reads it (PR #580's first run: "No matches found" for
+   * mobile-diag, read a second time right after the first).
+   */
+  const put = (el, text) => {
+    if (el.textContent !== text) el.textContent = text;
+  };
   const show = () => {
     try {
       d.now = JSON.parse(localStorage.getItem(LOG) ?? "[]").slice(-12);
@@ -156,7 +164,7 @@
       d.now = ["unreadable"];
     }
     d.native = typeof window.Capacitor?.isNativePlatform === "function" ? window.Capacitor.isNativePlatform() : null;
-    box.textContent = `mobile-diag ${JSON.stringify(d)}`;
+    put(box, `mobile-diag ${JSON.stringify(d)}`);
   };
   // The web view's screen, measured (client 2026-11-27: the app's numbers for its own tests, not
   // looked up): a second line at the top-left corner, read by SmokeUITests.testViewFacts in each
@@ -214,11 +222,11 @@
   const start = () => {
     document.body.append(box, view, probes);
     show();
-    view.textContent = `mobile-view ${JSON.stringify(facts())}`;
+    put(view, `mobile-view ${JSON.stringify(facts())}`);
     setInterval(() => {
       void savedTick().then((t) => (d.saved = t));
       show();
-      view.textContent = `mobile-view ${JSON.stringify(facts())}`;
+      put(view, `mobile-view ${JSON.stringify(facts())}`);
     }, 1000);
     navigator.serviceWorker
       ?.getRegistrations()
