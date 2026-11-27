@@ -65,6 +65,11 @@ interface StepRecord {
   moved: Move[];
   /** The tapped button's own largest move as seen (its pressed look). */
   pressed: number;
+  /**
+   * Why (the first time a button moved in this step): what in its panel was not as at the step's start, each part as
+   * "-" then and "+" now (tag.class, top, height, its own words): a line that came, a text that grew…
+   */
+  why: string[];
   /** exact: checked against what it should come to; changed: only that something one sees changed. */
   reaction: "ok" | "bad" | "unknown";
   reactionKind: "exact" | "changed" | "none";
@@ -231,8 +236,33 @@ function placesNow(): Map<string, { el: HTMLElement; at: Place }> {
  * every state that could be painted is read), each pointer event and each frame (WebKit drawing in software at 3 has a
  * few a second). Those there at the start, compared with where they were.
  */
-function watch(step: number, tapped: string, tappedKey: string): { stop: () => { moved: Move[]; pressed: number; otherScreen: boolean } } {
+/** A panel's parts, one line each: path, top, height, width and its own words (numbers kept). */
+function outline(root: Element): string[] {
+  const out: string[] = [];
+  const walk = (e: Element, path: string, depth: number) => {
+    if (!visible(e)) return;
+    const r = e.getBoundingClientRect();
+    const own = [...e.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent?.trim() ?? "").join("").slice(0, 24);
+    const me = `${path}/${e.tagName.toLowerCase()}.${e.className.toString().split(" ").filter((c) => c !== "is-pressed").join(".")}`;
+    out.push(`${me} y${Math.round(r.y)} h${Math.round(r.height)} w${Math.round(r.width)} ${own}`);
+    if (depth < 7) [...e.children].forEach((c, i) => walk(c, `${me}[${i}]`, depth + 1));
+  };
+  walk(root, "", 0);
+  return out;
+}
+const panelsNow = () => [...document.querySelectorAll(".sel-info, .sel-bar, .dialog-card")].filter(visible);
+
+/** Two outlines' differences, at most 24 lines ("-" then, "+" now). */
+function outlineDiff(a: string[], b: string[]): string[] {
+  const sa = new Set(a);
+  const sb = new Set(b);
+  return [...a.filter((l) => !sb.has(l)).map((l) => `- ${l}`), ...b.filter((l) => !sa.has(l)).map((l) => `+ ${l}`)].slice(0, 24);
+}
+
+function watch(step: number, tapped: string, tappedKey: string): { stop: () => { moved: Move[]; pressed: number; otherScreen: boolean; why: string[] } } {
   const base = placesNow();
+  const baseOutline = panelsNow().flatMap(outline);
+  let why: string[] = [];
   const ctx0 = context();
   let ctxChanged = false;
   const worst = new Map<string, Move>();
@@ -262,6 +292,7 @@ function watch(step: number, tapped: string, tappedKey: string): { stop: () => {
         if (v <= MOVE_PX) continue;
         const w = worst.get(`${kind}|${k}`);
         const judged = a.button && kind !== "size" && !other;
+        if (judged && why.length === 0) why = outlineDiff(baseOutline, panelsNow().flatMap(outline));
         // A judged move is kept over a bigger one on another screen.
         if (w === undefined || (judged && !w.judged) || (judged === w.judged && v > Math.max(Math.abs(w.dx), Math.abs(w.dy)))) worst.set(`${kind}|${k}`, { step, tapped, key: k, kind, dx: d.dx, dy: d.dy, judged, ...(other ? { otherScreen: true } : {}) });
       }
@@ -284,7 +315,7 @@ function watch(step: number, tapped: string, tappedKey: string): { stop: () => {
       on = false;
       mo.disconnect();
       for (const t of types) document.removeEventListener(t, onEvent, true);
-      return { moved: [...worst.values()], pressed, otherScreen: ctxChanged };
+      return { moved: [...worst.values()], pressed, otherScreen: ctxChanged, why };
     },
   };
 }
@@ -512,6 +543,14 @@ async function calm(): Promise<void> {
   const lab = document.querySelector<HTMLElement>('section.lab:not([hidden])');
   [...(lab?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find((b) => labelOf(b) === "關閉")?.click();
   const g = hook();
+  // A mode left on (攻擊, 移動, 進駐, 集結點, a building being placed): its 取消, or a tap on a building would set a rally
+  // point or an order instead of opening it.
+  for (let i = 0; i < 4 && g.mode() !== "normal"; i++) {
+    const cancel = [...document.querySelectorAll<HTMLButtonElement>("button")].find((b) => visible(b) && /^取消(攻擊|移動|進駐|集結點|$)|^✕$|^取消放置/.test(labelOf(b)) && b.closest(".dialog") === null);
+    if (cancel === undefined) break;
+    cancel.click();
+    await frame();
+  }
   if (g.header().paused) document.querySelector<HTMLButtonElement>('button[aria-label="繼續"], button[aria-label="暫停"]')?.click();
   g.select([]);
   await frame();
@@ -567,7 +606,7 @@ function buildingScene(type: number, name: string): Scene {
       const at = g.cellToScreen(mid.x, mid.y);
       const t = await tapStep(`setup:${name}`, at.x, at.y, 1, GAP_MS, null);
       for (let i = 0; i < 30 && g.selection().building !== id; i++) await sleep(100);
-      if (g.selection().building !== id) why = t.timedOut ? `點${name}沒有人點（逾時）` : `點了${name}（${Math.round(at.x)},${Math.round(at.y)}）沒選到它，選到 ${JSON.stringify(g.selection())}`;
+      if (g.selection().building !== id) why = t.timedOut ? `點${name}沒有人點（逾時）` : `點了${name}（${Math.round(at.x)},${Math.round(at.y)}）沒選到它，選到 ${JSON.stringify(g.selection())}，模式 ${g.mode()}`;
       return g.selection().building === id;
     },
     holds: () => hook().selection().building === id && dialogTitle() === "",
@@ -720,7 +759,7 @@ async function runScene(scene: Scene): Promise<void> {
     const w = watch(stepNo, norm(label), `${key}`);
     const tap = await tapStep(`${scene.name}:${norm(label)}`, x, y, times, GAP_MS, el);
     await sleep(AFTER_MS);
-    const { moved, pressed, otherScreen } = w.stop();
+    const { moved, pressed, otherScreen, why: whyMoved } = w.stop();
     const note = tap.timedOut ? "沒點滿（逾時）" : typeof reaction === "string" ? reaction : reaction.after(before, times);
     const rec: StepRecord = {
       step: stepNo,
@@ -734,6 +773,7 @@ async function runScene(scene: Scene): Promise<void> {
       otherScreen,
       moved,
       pressed,
+      why: whyMoved,
       reaction: typeof reaction === "string" ? "unknown" : note === "" ? "ok" : "bad",
       reactionKind: typeof reaction === "string" ? "none" : reaction.kind,
       reactionNote: note,
