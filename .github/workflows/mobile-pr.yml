@@ -2,18 +2,25 @@ name: Mobile PR
 
 # The iOS app (D-163, mobile/; brief docs/briefs/2026-11-ios-app.md): checked on pull requests that
 # change mobile/ or this file. Not a required check: the path filter would leave other pull requests
-# waiting. A client change does not run it; the release workflow runs the smoke test before every
-# upload instead.
+# waiting. A client pull request does not run it (its own WebKit tests stand in, at the app's 932 × 430
+# and safe area); a client change to the interface runs it once merged into main, for 按鈕不動 in the
+# real app (ceo 2026-11-27). The release workflow runs the smoke test before every upload as well.
 #   checks (ubuntu): Capacitor's versions agree (scripts/check-versions.ts), the icon, the plists.
 #   ios (macOS): the game built as pages.yml builds it, atlases included; the app as it ships, built
 #     unsigned for a device and checked (ci/check-app.sh); then the smoke copy on a fresh iPhone
-#     simulator (ci/smoke.sh): start a game, past 2 minutes, Home, killed, opened, 繼續上一局.
+#     simulator (ci/smoke.sh): start a game, past 2 minutes, Home, killed, opened, 繼續上一局; then
+#     按鈕不動 (client's stable-buttons page, tapped for real) and the web view's screen.
 # Artifacts: screenshots and logs only, never the .app (hundreds of MB; ceo 2026-11-24).
 on:
   pull_request:
     paths:
       - "mobile/**"
       - ".github/workflows/mobile-pr.yml"
+  push:
+    branches: [main]
+    paths:
+      - "client/src/ui/**"
+      - "client/src/**/*.css"
   workflow_dispatch:
 
 permissions:

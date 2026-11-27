@@ -219,14 +219,93 @@
       return { failed: String(e) };
     }
   };
+  /**
+   * A stand-in for client's stable-buttons page (only at ?test=1&mock=1&stable=fake), so the tapping
+   * side (SmokeUITests.testStableButtons) is checked without it: the start screen's choices as the
+   * targets, one of them tapped three times. Its "ok" is about the taps only (none missed, each step
+   * reached); whether a box moved is the client's page's question.
+   */
+  const fakeStable = () => {
+    const line = document.createElement("div");
+    line.style.cssText =
+      "position:fixed;left:2px;bottom:40px;z-index:2147483647;pointer-events:none;font:9px/1.2 monospace;color:#fff;background:rgba(0,0,0,.55);padding:1px 3px;max-width:70vw";
+    document.body.append(line);
+    const s = { step: 0, total: 0, next: null, miss: 0, misses: [], done: false, ok: false };
+    let targets = [];
+    let count = 0;
+    const publish = () => put(line, `stable-buttons ${JSON.stringify(s)}`);
+    const next = () => {
+      if (s.step >= targets.length) {
+        s.next = null;
+        s.done = true;
+        s.ok = s.miss === 0;
+      } else {
+        const b = targets[s.step];
+        const r = b.getBoundingClientRect();
+        s.next = { id: b.textContent.trim(), x: r2(r.x + r.width / 2), y: r2(r.y + r.height / 2), times: s.step === 1 ? 3 : 1, gap: 150 };
+      }
+      publish();
+    };
+    addEventListener(
+      "pointerup",
+      (e) => {
+        if (s.done || s.next === null) return;
+        if (!targets[s.step].contains(e.target)) {
+          s.miss += 1;
+          s.misses.push(`${Math.round(e.clientX)},${Math.round(e.clientY)} ${e.target.tagName} ${String(e.target.textContent).trim().slice(0, 8)}`);
+          publish();
+          return;
+        }
+        count += 1;
+        if (count < s.next.times) return;
+        count = 0;
+        s.step += 1;
+        setTimeout(next, 1000);
+      },
+      true,
+    );
+    // The start screen's choices (not 開始 or 新手教學, which leave it), once it is drawn.
+    const wait = setInterval(() => {
+      targets = [...document.querySelectorAll("#start button")].filter(
+        (b) => b.getClientRects().length > 0 && !["開始", "新手教學"].includes(b.textContent.trim()),
+      );
+      if (targets.length < 3) return;
+      clearInterval(wait);
+      targets = targets.slice(0, 4);
+      s.total = targets.length;
+      next();
+    }, 500);
+  };
   const start = () => {
-    document.body.append(box, view, probes);
+    // The way into client's 按鈕不動 page (client/src/lab/stable-buttons.ts; ceo 2026-11-27) for
+    // SmokeUITests.testStableButtons, which cannot type a URL into the web view: a small link at the
+    // top-right corner, only on the plain page's start screen (never over a button under test).
+    // A second link opens the stand-in below (stable=fake), which checks the tapping side alone.
+    const links = [
+      ["mobile-stable-buttons", "./?test=1&mock=1&stable=1", 2],
+      ["mobile-stable-fake", "./?test=1&mock=1&stable=fake", 34],
+    ].map(([name, href, top]) => {
+      const a = document.createElement("a");
+      a.id = a.textContent = name;
+      a.href = href;
+      a.style.cssText = `position:fixed;right:70px;top:${top}px;z-index:2147483647;font:11px/1.6 monospace;color:#fff;background:rgba(0,0,0,.7);padding:4px 8px`;
+      return a;
+    });
+    const showLink = () => {
+      const screen = document.getElementById("start");
+      const off = location.search !== "" || screen === null || screen.hidden || screen.getClientRects().length === 0;
+      for (const a of links) a.hidden = off;
+    };
+    showLink();
+    document.body.append(box, view, probes, ...links);
+    if (new URLSearchParams(location.search).get("stable") === "fake") fakeStable();
     show();
     put(view, `mobile-view ${JSON.stringify(facts())}`);
     setInterval(() => {
       void savedTick().then((t) => (d.saved = t));
       show();
       put(view, `mobile-view ${JSON.stringify(facts())}`);
+      showLink();
     }, 1000);
     navigator.serviceWorker
       ?.getRegistrations()
