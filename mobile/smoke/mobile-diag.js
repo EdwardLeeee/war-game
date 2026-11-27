@@ -231,6 +231,7 @@
       "position:fixed;left:2px;bottom:40px;z-index:2147483647;pointer-events:none;font:9px/1.2 monospace;color:#fff;background:rgba(0,0,0,.55);padding:1px 3px;max-width:70vw";
     document.body.append(line);
     const s = { step: 0, total: 0, next: null, miss: 0, misses: [], done: false, ok: false };
+    let seq = 0;
     let targets = [];
     let count = 0;
     const publish = () => put(line, `stable-buttons ${JSON.stringify(s)}`);
@@ -242,7 +243,8 @@
       } else {
         const b = targets[s.step];
         const r = b.getBoundingClientRect();
-        s.next = { id: b.textContent.trim(), x: r2(r.x + r.width / 2), y: r2(r.y + r.height / 2), times: s.step === 1 ? 3 : 1, gap: 150 };
+        seq += 1;
+        s.next = { id: b.textContent.trim(), x: r2(r.x + r.width / 2), y: r2(r.y + r.height / 2), times: s.step === 1 ? 3 : 1, gap: 150, seq };
       }
       publish();
     };
@@ -260,6 +262,9 @@
         if (count < s.next.times) return;
         count = 0;
         s.step += 1;
+        // As the client's page: no next while it measures, then a new seq.
+        s.next = null;
+        publish();
         setTimeout(next, 1000);
       },
       true,
