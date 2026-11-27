@@ -36,7 +36,8 @@ xcrun simctl bootstatus "${udid}" -b >/dev/null
 start=$SECONDS
 xcodebuild test -project "${project}" -scheme AppSmoke -configuration Debug \
     -destination "id=${udid}" -derivedDataPath "${dd}" -resultBundlePath "${result}" \
-    -parallel-testing-enabled NO >"${out}/xcodebuild.log" 2>&1
+    -parallel-testing-enabled NO -skip-testing:AppUITests/SmokeUITests/testViewFacts \
+    -skip-testing:AppUITests/SmokeUITests/testViewFactsSafari >"${out}/xcodebuild.log" 2>&1
 status=$?
 echo "xcodebuild test: exit ${status} after $((SECONDS - start)) s (build and test)"
 grep -E '^SMOKE |error:|Test Case .*(passed|failed)|XCTAssert|\*\* TEST' "${out}/xcodebuild.log" | tail -n 80
@@ -73,6 +74,46 @@ mkdir -p "${out}/screenshots"
 xcrun simctl terminate "${udid}" com.edwardleeee.wargame >/dev/null 2>&1 || true
 sleep 3
 xcrun simctl io "${udid}" screenshot "${out}/screenshots/06-home-screen.png" >/dev/null 2>&1 || echo "::warning::no Home Screen screenshot"
+
+# The web view's screen, measured (client 2026-11-27): mobile-diag.js's "mobile-view" line in both
+# landscapes, at the system's default and largest text size, and the same page in Safari. Each a
+# test run of its own on the built app (test-without-building); failures are warnings only.
+facts() { # facts <label> <test>
+    local r="${RUNNER_TEMP:-/tmp}/facts-$1.xcresult"
+    rm -rf "${r}"
+    TEST_RUNNER_VIEW_LABEL="$1" xcodebuild test-without-building -project "${project}" -scheme AppSmoke \
+        -configuration Debug -destination "id=${udid}" -derivedDataPath "${dd}" -resultBundlePath "${r}" \
+        -parallel-testing-enabled NO -only-testing:"AppUITests/SmokeUITests/$2" >"${out}/facts-$1.log" 2>&1 ||
+        echo "::warning::view facts $1: xcodebuild exit $?"
+    echo "text size: $(xcrun simctl ui "${udid}" content_size 2>&1)" | sed "s/^/SMOKE facts-$1 /" >>"${out}/facts.txt"
+    grep -o 'SMOKE .*' "${out}/facts-$1.log" >>"${out}/facts.txt" || true
+    if xcrun xcresulttool export attachments --path "${r}" --output-path "${r}.att" >/dev/null 2>&1; then
+        python3 - "${r}.att" "${out}/screenshots" <<'PY'
+import json, os, re, shutil, sys
+raw, out = sys.argv[1], sys.argv[2]
+for test in json.load(open(os.path.join(raw, "manifest.json"))):
+    for a in test.get("attachments", []):
+        name = re.sub(r"_\d+_[0-9A-F]{8}(-[0-9A-F]{4}){3}-[0-9A-F]{12}", "", a.get("suggestedHumanReadableName") or "")
+        name = re.sub(r'["`:<>|*?\r\n/\\]+', "_", name).strip()
+        if name.startswith("view-") and name.endswith(".png"):
+            shutil.copyfile(os.path.join(raw, a["exportedFileName"]), os.path.join(out, name))
+PY
+    fi
+}
+facts app-default testViewFacts
+xcrun simctl terminate "${udid}" com.edwardleeee.wargame >/dev/null 2>&1 || true
+xcrun simctl ui "${udid}" content_size accessibility-extra-extra-extra-large || echo "::warning::could not set the text size"
+facts app-largest-text testViewFacts
+xcrun simctl terminate "${udid}" com.edwardleeee.wargame >/dev/null 2>&1 || true
+xcrun simctl ui "${udid}" content_size large >/dev/null 2>&1 || true
+python3 -m http.server 8765 --bind 127.0.0.1 --directory "${here}/../ios/App/App/public" >/dev/null 2>&1 &
+server=$!
+sleep 2
+xcrun simctl openurl "${udid}" "http://127.0.0.1:8765/index.html" || echo "::warning::could not open Safari"
+sleep 10
+facts safari testViewFactsSafari
+kill "${server}" >/dev/null 2>&1 || true
+cat "${out}/facts.txt"
 ls "${out}/screenshots" "${out}/attachments" 2>/dev/null
 
 app="${dd}/Build/Products/Debug-iphonesimulator/App.app"
@@ -86,6 +127,12 @@ if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
         echo
         echo '```'
         cat "${out}/smoke.txt"
+        echo '```'
+        echo
+        echo "The web view's screen (mobile-view):"
+        echo
+        echo '```'
+        cat "${out}/facts.txt" 2>/dev/null
         echo '```'
     } >>"${GITHUB_STEP_SUMMARY}"
 fi

@@ -55,13 +55,15 @@ final class SmokeUITests: XCTestCase {
     /// smoke/mobile-diag.js's line: page errors since the page opened, and the web view's facts.
     private func checkDiag(_ when: String) {
         let e = first(.staticText, "label BEGINSWITH %@", "mobile-diag ")
-        guard e.exists else {
+        guard e.waitForExistence(timeout: 10) else {
             findings.append("mobile-diag not found \(when)")
             log("diag \(when): not found")
             return
         }
-        log("diag \(when): \(e.label)")
-        if !e.label.contains("\"errors\":0") { findings.append("page errors \(when): \(e.label)") }
+        // Read once: each read is a new query of a line the page rewrites.
+        let label = e.label
+        log("diag \(when): \(label)")
+        if !label.contains("\"errors\":0") { findings.append("page errors \(when): \(label)") }
     }
 
     /// The game time the HUD shows (m:ss) in seconds; nil when none is on screen.
@@ -105,6 +107,34 @@ final class SmokeUITests: XCTestCase {
             sleep(2)
         }
         return last
+    }
+
+    /// The web view's screen (mobile-diag.js's "mobile-view" line) in both landscapes, for the
+    /// client's tests (2026-11-27). smoke.sh runs it on its own, after the smoke test, with
+    /// VIEW_LABEL saying the system's text size; testViewFactsSafari reads the same page in Safari.
+    private func readView(_ a: XCUIApplication, _ label: String) throws {
+        let e = a.descendants(matching: .staticText).matching(NSPredicate(format: "label BEGINSWITH %@", "mobile-view ")).firstMatch
+        if !e.waitForExistence(timeout: 180) { throw stop("no mobile-view line (\(label))") }
+        for (name, o) in [("left", UIDeviceOrientation.landscapeLeft), ("right", .landscapeRight), ("left again", .landscapeLeft)] {
+            XCUIDevice.shared.orientation = o
+            sleep(4)
+            log("VIEW \(label) landscape \(name): \(e.label)")
+            shot("view-\(label)-\(name.replacingOccurrences(of: " ", with: "-"))")
+        }
+    }
+
+    func testViewFacts() throws {
+        t0 = Date()
+        app.launch()
+        try readView(app, ProcessInfo.processInfo.environment["VIEW_LABEL"] ?? "app")
+    }
+
+    func testViewFactsSafari() throws {
+        t0 = Date()
+        // smoke.sh opened the smoke copy in Safari (simctl openurl) just before.
+        let safari = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari")
+        safari.activate()
+        try readView(safari, "safari")
     }
 
     func testFreshInstallPlaySaveContinue() throws {
