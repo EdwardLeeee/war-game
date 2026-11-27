@@ -627,6 +627,24 @@ TARGETS["r8v7c"] = v7_choices() + [dict(kind="r9_main_city_v7", culture="E", opt
 CAMERA["r8v7c"] = proj.DIAMOND
 LOOK["r8v7c"] = "r8"
 FOLDER["r8v7c"] = "r8v7c"
+# art-v7.12 (R27; the user 2026-11-27 chose B, eight facings, and the diagonal ones fitted; ceo approved the plan
+# 2026-11-27 and numbered the facings as the sim does, 2026-11-28): the outpost in every state (v7_choices) and its
+# front layers in each facing f, 0-7 from the east, clockwise on the screen (design/r27/spec.md section 1): the yaw
+# of R27's renders is 360 - 45 f (the camera turned, so the lights stay where they are on the screen); the diagonal
+# ones (f odd) fitted into the 3 x 3 (R27_FIT). One CI job a culture and facing, named r8o12_* for the
+# buildings-atlas round's 'b1-r8*' download; the pieces outpost_<c>_<state>_f<f>, outpost_<c>_<look>_front_f<f>.
+def r27_yaw(f):
+    return (360 - 45 * f) % 360
+
+
+for _f in range(8):
+    for _c in CULTURES:
+        _t = f"r8o12_{_c}_{_f}"
+        TARGETS[_t] = [dict(pc, name=f"{pc['name']}_f{_f}", **({"xy_scale": R27_FIT} if _f % 2 else {}))
+                       for pc in v7_choices() if pc["culture"] == _c]
+        CAMERA[_t] = dict(proj.DIAMOND, az=proj.DIAMOND["az"] - r27_yaw(_f))
+        LOOK[_t] = "r8"
+        FOLDER[_t] = "r8o12"
 # art-v7.4 (the review 2026-11-04): the R9 city's damaged look again, its fire dimmer (main_city_r9: core 2, not 9)
 TARGETS["r8v74"] = [pc for pc in TARGETS["r8v7c"] if pc["name"] == "main_city_E_damaged"]
 CAMERA["r8v74"] = proj.DIAMOND
