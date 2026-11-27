@@ -129,6 +129,83 @@ final class SmokeUITests: XCTestCase {
         try readView(app, ProcessInfo.processInfo.environment["VIEW_LABEL"] ?? "app")
     }
 
+    /// client/src/lab/stable-buttons.ts's line: the client keeps these names (2026-11-27).
+    private struct Stable {
+        let step: Int
+        let total: Int
+        let done: Bool
+        let ok: Bool
+        let next: (id: String, x: Double, y: Double, times: Int, gap: Int)?
+    }
+
+    private func stable(_ label: String) -> Stable? {
+        guard let i = label.firstIndex(of: "{"),
+              let o = (try? JSONSerialization.jsonObject(with: Data(label[i...].utf8))) as? [String: Any]
+        else { return nil }
+        let num = { (v: Any?) in (v as? NSNumber)?.doubleValue }
+        var next: (id: String, x: Double, y: Double, times: Int, gap: Int)?
+        if let n = o["next"] as? [String: Any], let x = num(n["x"]), let y = num(n["y"]) {
+            next = (n["id"] as? String ?? "?", x, y, Int(num(n["times"]) ?? 1), Int(num(n["gap"]) ?? 150))
+        }
+        return Stable(step: Int(num(o["step"]) ?? -1), total: Int(num(o["total"]) ?? -1),
+                      done: o["done"] as? Bool ?? false, ok: o["ok"] as? Bool ?? false, next: next)
+    }
+
+    /// 按鈕不動 (ceo 2026-11-27; the user on TestFlight 0.1.0 (4): the boxes jump when a unit's + and −
+    /// are pressed). client's page (?test=1&mock=1&stable=1) lists the buttons, says where to tap next
+    /// and measures every box from the first touch to a second after the last; this test taps there
+    /// for real, as a finger does. The page's CSS px are this window's points (run 45970799576: 開始
+    /// at 446.19,189.5 on the page, 446,189 here). Fails when the page ends not ok: a box moved more
+    /// than 1 px, a tap landed elsewhere, or a button did the wrong thing. STABLE_REQUIRED (smoke.sh:
+    /// the build has the client's module) makes a page without the line a failure.
+    func testStableButtons() throws {
+        t0 = Date()
+        let env = ProcessInfo.processInfo.environment
+        let required = env["STABLE_REQUIRED"] == "1"
+        // mobile-stable-fake: mobile-diag.js's stand-in, checking this side alone (smoke.sh).
+        let which = env["STABLE_LINK"] ?? "mobile-stable-buttons"
+        app.launch()
+        let link = app.links[which].firstMatch
+        if !link.waitForExistence(timeout: 180) { throw stop("no \(which) link on the start screen") }
+        link.tap()
+        log("opened \(which)")
+        let line = first(.staticText, "label BEGINSWITH %@", "stable-buttons ")
+        if !line.waitForExistence(timeout: 120) {
+            shot("stable-no-line")
+            if required { throw stop("the page shows no stable-buttons line") }
+            log("STABLE skipped: no stable-buttons line (this build has no client/src/lab/stable-buttons.ts)")
+            return
+        }
+        let origin = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+        var tapped = -1
+        var since = Date()
+        let end = Date().addingTimeInterval(1500)
+        while Date() < end {
+            let label = line.label
+            guard let s = stable(label) else { throw stop("unreadable stable-buttons line: \(label)") }
+            if s.done {
+                log("STABLE \(label)")
+                shot("stable-done")
+                if !s.ok { XCTFail("按鈕不動: \(label)") }
+                return
+            }
+            if let n = s.next, s.step != tapped {
+                for k in 0 ..< max(n.times, 1) {
+                    if k > 0 { usleep(useconds_t(max(n.gap, 0) * 1000)) }
+                    origin.withOffset(CGVector(dx: n.x, dy: n.y)).tap()
+                }
+                log("STABLE step \(s.step)/\(s.total) \(n.id) at \(Int(n.x)),\(Int(n.y)) ×\(n.times)")
+                tapped = s.step
+                since = Date()
+            } else if Date().timeIntervalSince(since) > 60 {
+                throw stop("the page stayed at step \(s.step) for 60 s: \(label)")
+            } else {
+                usleep(300_000)
+            }
+        }
+        throw stop("not done in 25 minutes: \(line.label)")
+    }
+
     func testViewFactsSafari() throws {
         t0 = Date()
         // smoke.sh opened the smoke copy in Safari (simctl openurl) just before.
