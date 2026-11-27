@@ -61,8 +61,15 @@ def building_table(c, turn=False):
     # over the piece and under its front layer (fronts: what stands in front of a man on the walk), at stand_m (as the
     # castles' walls, D-096: metres from the anchor, x east, y south, z the walk; nearest the camera first)
     t["Outpost"] = dict(type=12, footprint=[3, 3],
-                        states={s: f"outpost_{c}_{s}" for s in ("build1", "build2", "build3", "done", "damaged", "rubble")},
+                        states={s: f"outpost_{c}_{s}" for s in OUTPOST_STATES},
                         fronts={s: f"outpost_{c}_{s}_front" for s in ("done", "damaged")})
+    # art-v7.12 (R27, design/r27/spec.md section 2): its eight facings, facings[f] the facing f of the sim (0 the east,
+    # clockwise on the screen), when their renders are here (run.py r8o12_*); the old fields are facing 0's, so that a
+    # client that has no facings yet draws it as before
+    if (SRC / f"outpost_{c}_done_f0_x3.json").exists():
+        fc = [dict(states={s: f"outpost_{c}_{s}_f{f}" for s in OUTPOST_STATES},
+                   fronts={s: f"outpost_{c}_{s}_front_f{f}" for s in ("done", "damaged")}) for f in range(OUTPOST_FACINGS)]
+        t["Outpost"] = dict(type=12, footprint=[3, 3], states=dict(fc[0]["states"]), fronts=dict(fc[0]["fronts"]), facings=fc)
     # art-v6 (D-100; core 2026-10-23: BuildingType 9 is the Keep now, the KEEP switch on in the same release, ceo): every
     # town's 3 x 3 keep, its states as the client shows them (damaged at half its hp or less; rubble once it falls, the
     # cells walk; repair: the rubble under scaffolding while the governed town counts down); the old 2 x 2 and 3 x 3
@@ -76,16 +83,41 @@ def building_table(c, turn=False):
     # art-v6: where arrows leave (shoot_at_<k> marks of the finished look, metres from the anchor, the sim's axes as the
     # gates' shoot_at_m: x east, y south, z up): the client flies an arrow from the one nearest the target
     for name, e in t.items():
-        m = _marks(e["states"].get("done", ""))
-        shots = [m[n] for n in sorted(m) if n.startswith("shoot_at_")]
-        pt = (lambda x, y, z: [*turn_point(x, -y), round(z, 2)]) if turn else (lambda x, y, z: [round(x, 2), round(-y, 2), round(z, 2)])
-        if shots:
-            e["shoot_at_m"] = [pt(x, y, z) for x, y, z in shots]
-        stands = [m[n] for n in sorted(m, key=lambda n: int(n.split("_")[-1]) if n.split("_")[-1].isdigit() else 0)
-                  if n.startswith("stand_at_") and n.split("_")[-1].isdigit()]
-        if stands and "fronts" in e:              # (the client's name, as the castles': stand_m)
-            e["stand_m"] = [pt(x, y, z) for x, y, z in stands]
+        _points(e, turn)
+        for f, fe in enumerate(e.get("facings", [])):
+            _points(fe, turn, facing_yaw(f))
     return dict(sorted(t.items(), key=lambda kv: kv[1]["type"]))
+
+
+OUTPOST_STATES = ("build1", "build2", "build3", "done", "damaged", "rubble")
+OUTPOST_FACINGS = 8
+
+
+def facing_yaw(f):
+    """The yaw of the outpost's facing f (run.py r27_yaw): its render's camera turned by -yaw."""
+    return (360 - 45 * f) % 360
+
+
+def _points(e, turn, yaw=0):
+    """shoot_at_m and stand_m of entry `e` (a building's, or one of the outpost's facings) from the marks of its done
+    look. A facing's render turned the camera by -yaw and left the model as it was (run.py r8o12_*), so its marks are
+    turned +yaw first: where the diamond camera sees them on the picture (R27 compose.cam checks the sign)."""
+    m = _marks(e["states"].get("done", ""))
+    t = math.radians(yaw)
+
+    def pt(x, y, z):
+        if yaw:
+            x, y = x * math.cos(t) - y * math.sin(t), x * math.sin(t) + y * math.cos(t)
+        return [*turn_point(x, -y), round(z, 2)] if turn else [round(x, 2), round(-y, 2), round(z, 2)]
+    shots = [m[n] for n in sorted(m) if n.startswith("shoot_at_")]
+    if shots:
+        e["shoot_at_m"] = [pt(x, y, z) for x, y, z in shots]
+    stands = [m[n] for n in sorted(m, key=lambda n: int(n.split("_")[-1]) if n.split("_")[-1].isdigit() else 0)
+              if n.startswith("stand_at_") and n.split("_")[-1].isdigit()]
+    if stands and "fronts" in e:              # (the client's name, as the castles': stand_m)
+        e["stand_m"] = [pt(x, y, z) for x, y, z in stands]
+        if yaw:                               # nearest the camera first, as facing 0's (the marks' order) is: the first
+            e["stand_m"].sort(key=lambda p: -(p[0] + p[1]))   # n stand where they are seen (client x + y: down the screen)
 
 
 def building_frames(b):
@@ -93,6 +125,8 @@ def building_frames(b):
     out = list(b["states"].values()) + b.get("crops", []) + list(b.get("fronts", {}).values())
     for v in b.get("sizes", {}).values():
         out += list(v["states"].values())
+    for v in b.get("facings", []):
+        out += list(v["states"].values()) + list(v.get("fronts", {}).values())
     return out
 
 
@@ -472,7 +506,12 @@ def view_of(frames):
     views = set()
     for n in frames:
         cam = json.loads((SRC / f"{n}_x3.json").read_text()).get("camera") or proj.DIAMOND
-        if cam == proj.OBLIQUE:
+        f = n.rsplit("_f", 1)
+        if n.startswith("outpost_") and len(f) == 2 and f[1].isdigit():   # art-v7.12: a facing, the diamond turned
+            if cam != dict(proj.DIAMOND, az=proj.DIAMOND["az"] - facing_yaw(int(f[1]))):
+                raise SystemExit(f"{n}: camera {cam} is not its facing's")
+            views.add("diamond")
+        elif cam == proj.OBLIQUE:
             views.add("oblique")
         elif cam == proj.DIAMOND:
             views.add("diamond")
