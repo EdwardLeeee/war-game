@@ -171,7 +171,7 @@ SCENE_TEXT = {k: v["what"] for k, v in C.SCENES.items()}
 LOOKS = [
     # (file, title, axis words, rows [(row label, scene, yaw, inset yaw)], what for)
     ("R27-01-方向-AB-南北向-phone", "南北向：路南北穿過，牆擋在東西兩邊（A、B 都有）",
-     [("橋頭（北邊的河，橋 3 格寬）：牆橫跨橋頭", "bridge", 270, 90), ("岩脊缺口（缺 3 格）：牆把缺口補起來", "ridge", 90, 270)]),
+     [("橋頭（北邊的河，橋 3 格寬）：牆橫跨橋頭", "bridge", 270, 90)]),
     ("R27-01-方向-AB-東西向-phone", "東西向：路東西穿過，牆擋在南北兩邊（A、B 都有；現在的哨所就是這個方向）",
      [("兩山之間（兩道懸崖夾出的山谷，東口）：牆橫跨谷口", "mouth", 0, 180)]),
     ("R27-01-方向-B-斜向西北東南-phone", "斜向（西北—東南）：只有 B 有。牆在畫面上是橫的",
@@ -190,7 +190,7 @@ def look_board(out, name, title, rows):
     rr = []
     for label, scene, yaw, inset in rows:
         e, w = facing_pair(scene, yaw, inset=inset)
-        rr.append((label, [("東陸", INK, e), ("西陸", INK, w)]))
+        rr.append((label, [("東陸（右下小圖：同一個位置轉 180°，前後一樣，只差旗子）", INK, e), ("西陸（右下小圖：轉 180°，前後一樣，只差旗子）", INK, w)]))
     W = 2 * 1300 + 3 * GAP
     img = board(name, [(title, 34, INK, True)] + lines, rr, [(REF, 22, DIM, False)], W)
     save(img, out / f"{name}.png")
@@ -254,28 +254,43 @@ def frame(scene, hud_png, yaw, ghost=None, crew=0, boxes=(), culture="E"):
     return boxed(im, boxes, k)
 
 
+def new_rects(dev, d, png="place-auto"):
+    """Where 「旋轉」 and the tag are (CSS px): 「旋轉」 took ✓'s place at the confirm row's left, as wide as it is high;
+    the tag: the interface layer's pixels in its place under the preview."""
+    x, y, w, h = d["confirm"]
+    hud = Image.open(HUD / f"hud-{dev}-{png}.png")
+    k = hud.width / d["size"]["width"]
+    cx, cy = d["centre"]["x"], d["centre"]["y"] + (118 if dev == "desk" else 88)
+    # (from just under ✓ and ✗, which are beside the preview, down to the tag's foot)
+    win = (round((cx - 130) * k), round((cy - (40 if dev == "desk" else 30)) * k), round((cx + 100) * k), round((cy + 4) * k))
+    bb = hud.crop(win).getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox()
+    tag = None if bb is None else [(win[0] + bb[0]) / k, (win[1] + bb[1]) / k, (bb[2] - bb[0]) / k, (bb[3] - bb[1]) / k]
+    return [[x, y, h, h], tag]
+
+
 def ui_boards(out):
     meta = json.loads((HUD / "hud.json").read_text())
     app, saf, desk = meta["app"], meta["safari"], meta["desk"]
+    app["new"], saf["new"], desk["new"] = new_rects("app", app), new_rects("safari", saf), new_rects("desk", desk)
     # phone: the app full screen; the frames at half size
     s = 0.5
     sm = lambda im: im.resize((round(im.width * s), round(im.height * s)), Image.LANCZOS)  # noqa: E731
-    p1 = sm(frame("ui-app", "hud-app-place-auto.png", 270, ghost=0.62, boxes=app["new"]))
-    p2 = sm(frame("ui-app", "hud-app-place-turned.png", 0, ghost=0.62, boxes=app["new"]))
+    p1 = sm(frame("ui-app", "hud-app-place-auto.png", 270, ghost=0.8, boxes=app["new"]))
+    p2 = sm(frame("ui-app", "hud-app-place-turned.png", 0, ghost=0.8, boxes=new_rects("app", app, "place-turned")))
     p3 = sm(frame("ui-app", "hud-app-plain.png", 0))
     p4 = sm(frame("ui-appUp", "hud-app-panel.png", 0, boxes=[app["turnBtn"]]))
     p5 = sm(frame("ui-appUp", "hud-app-panel-turned.png", 270, boxes=[app["turnBtn"]]))
-    p6 = sm(frame("ui-safari", "hud-safari-place-auto.png", 270, ghost=0.62, boxes=saf["new"]))
+    p6 = sm(frame("ui-safari", "hud-safari-place-auto.png", 270, ghost=0.8, boxes=saf["new"]))
     W = 2 * p1.width + 3 * GAP
     head = [
         ("放哨所時多一顆「旋轉」，蓋好以後點哨所，面板多一顆「轉向」（黃框是新加的）。", 32, INK, True),
         ("放下去時先照地形自動轉好：預覽下面寫「自動」和原因（例如擋住橋頭）。按「旋轉」每次轉 90°（選 B 時 45°），標籤變成「轉過」；轉一圈回到自動的方向，標籤又變回「自動」。", 26, GOLD, False),
-        ("「旋轉」放在 ✓ ✗ 旁邊，跟著預覽走，大小和 ✓ ✗ 一樣。蓋好以後按「轉向」馬上轉好、不花錢、牆頂的兵照站；訊息條說「已轉向」。", 26, GREY, False),
+        ("「旋轉」放在打勾、打叉旁邊，跟著預覽走，大小和打勾、打叉一樣。蓋好以後按「轉向」馬上轉好、不花錢、牆頂的兵照站；訊息條說「已轉向」。", 26, GREY, False),
         (SRC, 22, DIM, False),
     ]
     rows = [
         ("放的時候", [("① 剛放下：自動轉好（橋頭：路南北穿過）", INK, p1), ("② 按了「旋轉」：轉 90°", INK, p2)]),
-        (None, [("③ 按 ✓ 蓋下去：照轉好的方向蓋", INK, p3), ("Safari 有網址列時（932×336）：「旋轉」一樣在 ✓ ✗ 旁邊", INK, p6)]),
+        (None, [("③ 按打勾蓋下去：照轉好的方向蓋", INK, p3), ("Safari 有網址列時（932×336）：「旋轉」一樣在打勾、打叉旁邊", INK, p6)]),
         ("蓋好以後", [("④ 點自己的哨所：面板多一顆「轉向」", INK, p4), ("⑤ 按了「轉向」：轉 90°，訊息條「已轉向」", INK, p5)]),
     ]
     img = board("R27-02-放哨所介面-phone", head, rows, [("iPhone 14 Pro Max 橫放；安全區照實機（左右 59、下 21）。預覽是半透明的哨所加上綠色的 3×3，照遊戲現在放建築的樣子。", 22, DIM, False)], W)
@@ -284,8 +299,8 @@ def ui_boards(out):
     # desktop: 1920 x 950 (interface 1.5x), a mouse
     s = 0.72
     sm = lambda im: im.resize((round(im.width * s), round(im.height * s)), Image.LANCZOS)  # noqa: E731
-    d1 = sm(frame("ui-desk", "hud-desk-place-auto.png", 270, ghost=0.62, boxes=desk["new"]))
-    d2 = sm(frame("ui-desk", "hud-desk-place-turned.png", 0, ghost=0.62, boxes=desk["new"]))
+    d1 = sm(frame("ui-desk", "hud-desk-place-auto.png", 270, ghost=0.8, boxes=desk["new"]))
+    d2 = sm(frame("ui-desk", "hud-desk-place-turned.png", 0, ghost=0.8, boxes=new_rects("desk", desk, "place-turned")))
     d3 = sm(frame("ui-desk", "hud-desk-panel.png", 0, boxes=[desk["turnBtn"]]))
     d4 = sm(frame("ui-desk", "hud-desk-panel-turned.png", 270, boxes=[desk["turnBtn"]]))
     W = 2 * d1.width + 3 * GAP
@@ -301,3 +316,77 @@ def ui_boards(out):
     ]
     img = board("R27-02-放哨所介面-desktop", head, rows, [], W)
     save(img, out / "R27-02-放哨所介面-desktop.png")
+
+
+# --- item 3: the overview ----------------------------------------------------------------------------------------------
+
+def thumb(scene, yaw, w, h, fit=False, culture="E"):
+    im, ctr = C.shot(scene, culture, yaw, fit=fit)
+    cr, _ = C.crop_round(im, ctr)
+    return cr.resize((w, h), Image.LANCZOS)
+
+
+def tiled(ims, cols, gap=10, labels=None):
+    w, h = ims[0].width, ims[0].height
+    rows = (len(ims) + cols - 1) // cols
+    lab = 40 if labels else 0
+    o = Image.new("RGB", (cols * w + (cols - 1) * gap, rows * (h + lab) + (rows - 1) * gap), CELL)
+    d = ImageDraw.Draw(o)
+    for i, im in enumerate(ims):
+        x, y = (i % cols) * (w + gap), (i // cols) * (h + lab + gap)
+        if labels:
+            TEXTS.append(labels[i])
+            d.text((x + 4, y + 2), labels[i], font=font(26), fill=INK)
+        o.paste(im.convert("RGB"), (x, y + lab))
+    return o
+
+
+def overview(out):
+    tw, th = 620, 372
+    ns, ew = thumb("bridge", 270, tw, th), thumb("mouth", 0, tw, th)
+    d1, d2 = thumb("openSE", 315, tw, th), thumb("openNE", 45, tw, th)
+    a = tiled([ns, ew], 2, labels=["南北向", "東西向"])
+    b = tiled([ns, ew, d1, d2], 2, labels=["南北向", "東西向", "斜向（牆在畫面上是橫的）", "斜向（牆在畫面上是直的）"])
+    a_pad = Image.new("RGB", (a.width, b.height), CELL)
+    a_pad.paste(a, (0, 0))
+    draw_lines(ImageDraw.Draw(a_pad), 20, a.height + 30, lines_of([("每次轉 90°。門洞前後一樣，所以四個方向只有這兩種樣子（另外兩個只差旗子）。", 26, GREY, False)], a.width - 40), lead=12)
+    big, small = thumb("openSE", 315, 940, 560), thumb("openSE", 315, 940, 560, fit=True)
+    meta = json.loads((HUD / "hud.json").read_text())
+    for dev in ("app", "desk"):
+        meta[dev]["new"] = new_rects(dev, meta[dev])
+    p1 = frame("ui-app", "hud-app-place-auto.png", 270, ghost=0.8, boxes=meta["app"]["new"])
+    p1 = p1.resize((940, round(940 * p1.height / p1.width)), Image.LANCZOS)
+    q1 = frame("ui-desk", "hud-desk-place-auto.png", 270, ghost=0.8, boxes=meta["desk"]["new"])
+    q1 = q1.resize((940, round(940 * q1.height / q1.width)), Image.LANCZOS)
+    W = 2 * b.width + 3 * GAP
+    head = [
+        ("哨所蓋的時候照地形自動轉（牆橫跨窄處、門洞順著路；空曠地背對自己的主城），不滿意按「旋轉」；蓋好也能按「轉向」。只有外觀轉，擋路照舊是 3×3。", 30, GOLD, True),
+        ("要你選的：① 方向數量 A 或 B；② 選 B 的話，斜放的哨所照原尺寸還是縮小。介面兩張是「照這樣做可以嗎」。", 30, INK, True),
+        (SRC, 22, DIM, False),
+    ]
+    rows = [
+        ("① 方向數量（要你選）", [("A 四方向（每次轉 90°）：兩種樣子", GOLD, a_pad), ("B 八方向（每次轉 45°）：四種樣子，多了兩個斜的", GOLD, b)]),
+        ("② 斜放的哨所（選 B 才要選）", [("原尺寸：四個角凸出 3×3", GOLD, big), ("縮小塞進 3×3（ui 推薦）", GREEN, small)]),
+        ("介面（照這樣做可以嗎）", [("手機：「旋轉」在打勾、打叉旁邊，預覽下面標「自動」", INK, p1), ("電腦：一樣，按鈕和 R 鍵", INK, q1)]),
+    ]
+    img = board("R27-03-總覽-phone", head, rows, [("細的看 R27-01（方向、斜放對照）和 R27-02（介面）。" + REF, 22, DIM, False)], W)
+    save(img, out / "R27-03-總覽-phone.png")
+
+
+def main():
+    out = Path(sys.argv[1])
+    out.mkdir(parents=True, exist_ok=True)
+    only = set(sys.argv[2:])
+    if not only or "looks" in only:
+        for name, title, rows in LOOKS:
+            look_board(out, name, title, rows)
+    if not only or "fit" in only:
+        fit_board(out)
+    if not only or "ui" in only:
+        ui_boards(out)
+    if not only or "overview" in only:
+        overview(out)
+
+
+if __name__ == "__main__":
+    main()

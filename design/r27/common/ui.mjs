@@ -50,7 +50,9 @@ async function add(page, what, opts) {
       const t = document.createElement("div");
       t.className = `r27-tag${w.tag.manual ? " manual" : ""}`;
       t.innerHTML = w.tag.text;
-      Object.assign(t.style, { left: `${o.tagAt[0]}px`, top: `${o.tagAt[1]}px` });
+      // #hud is zoomed on a big window (R26 01: CSS zoom): what is placed in it is in its own, unzoomed px
+      const z = parseFloat(getComputedStyle(hud).zoom) || 1;
+      Object.assign(t.style, { left: `${o.tagAt[0] / z}px`, top: `${o.tagAt[1] / z}px` });
       hud.appendChild(t);
     }
     if (w.rotate) {

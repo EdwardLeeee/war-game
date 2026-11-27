@@ -6,18 +6,19 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { cells, chromium, DESKTOP, PHONE_APP, PHONE_SAFARI, twinRivers } from "./lib.mjs";
 
 const OUT = process.argv[2];
+const ONLY = process.argv.slice(3);
 const X0 = 30;
 const Y0 = 46;                                 // the bridge head (scenes.mjs "bridge")
 const SHOTS = [
   ["app", PHONE_APP, true, 1.6, null],
-  ["appUp", PHONE_APP, true, 1.6, [700, 128]],  // the footprint's middle there (CSS px): clear of the panel
+  ["appUp", PHONE_APP, true, 1.6, [650, 150]],  // the footprint's middle there (CSS px): clear of the panel and 1-4
   ["safari", PHONE_SAFARI, true, 1.6, null],
   ["desk", DESKTOP, false, 2.0, null],
 ];
 const browser = await chromium.launch();
 const meta = JSON.parse(readFileSync(`${OUT}/scenes.json`, "utf8"));
 try {
-  for (const [name, size, phone, zoom, at] of SHOTS) {
+  for (const [name, size, phone, zoom, at] of SHOTS.filter(([n]) => ONLY.length === 0 || ONLY.includes(n))) {
     const { ctx, page } = await twinRivers(browser, size, phone);
     await page.evaluate(() => { document.getElementById("hud").style.visibility = "hidden"; });
     const cx = X0 + 1.5;
