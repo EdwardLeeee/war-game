@@ -660,3 +660,19 @@ art-v6 所有建築、城牆、資源點、地形換成 R8 寫實的圖（使用
   - 建築的 `shoot_at_m`（`MainCity`、`ArrowTower`、`Keep`、`Outpost`）、哨所的 `stand_m`（順序不變）。
   - `walk_m`、`stand_in_m` 不受方向影響，不變。
 - 這些點只給 client 畫圖用，sim 沒有讀（`sim/` 裡沒有 `stand_m`、`shoot_at_m`、`stand_in_m`、`walk_m`）。
+
+## 15. art-v7.12：哨所的 8 個朝向（R27，使用者 2026-11-27 選 B 八方向、斜放縮小）
+
+- 規格在 `design/r27/spec.md`。朝向 f 是 0–7：從東開始，在畫面上順時針，每號差 45°，指穿過門洞的路朝外的方向。這個編號照 sim，ceo 2026-11-28 定。
+- `buildings_<c>.json` 的 `Outpost` 多 `facings`，是 8 個朝向的陣列，第 f 個就是朝向 f。每一個有：
+  - `states`：6 個狀態，圖名 `outpost_<c>_<狀態>_f<f>`；
+  - `fronts`：蓋好、受損兩張，圖名 `outpost_<c>_<狀態>_front_f<f>`；
+  - `stand_m`：9 個點，照舊離鏡頭近的排在前面；
+  - `shoot_at_m`。
+- 原本的 `states`、`fronts`、`stand_m`、`shoot_at_m` 留著，內容和 `facings[0]` 一樣（同樣的圖名），所以沒讀 `facings` 的 client 照舊畫朝向 0。art-v7.11 以前的 `outpost_<c>_<狀態>` 這些圖名不再出現。
+- 怎麼算的（`common/run.py` 的 `r8o12_<c>_<f>`，一個文化的一個朝向一個 CI job）：
+  - 模型不動，轉的是鏡頭：方位角是菱形的 −45 減 yaw，yaw＝360−45f。燈跟著鏡頭，所以每個朝向的光照、影子方向都和其他建築一樣。
+  - 斜的朝向（f 是奇數）長寬乘 0.816，高度不變。6×4.4 公尺的哨所轉 45° 要 7.4 公尺寬，縮小後整座在 3×3 裡面。施工的鷹架和瓦礫也一起縮。
+  - 站點和射點：算圖記的是模型上的點（世界座標），先轉 +yaw，再照第 14 節換到 client 的軸（`atlas_b1._points`）。
+- 圖集的鏡頭檢查（`view_of`）認得 `outpost_*_f<f>` 這些圖各自的鏡頭，`view` 照舊是 `diamond`。
+- 檢查板：`design/r27/common/facings_board.py`，從打包好的圖集照 client 的畫法畫：每個朝向的 6 個狀態，還有牆頂的兵。
