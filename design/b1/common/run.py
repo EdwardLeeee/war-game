@@ -466,7 +466,27 @@ for _c in CULTURES:
         CAMERA[f"r8p_{_c}_{_i // PROD_CHUNK}"] = proj.OBLIQUE
         LOOK[f"r8p_{_c}_{_i // PROD_CHUNK}"] = "r8"
 
+# R27 (哨所轉向, the user 2026-11-27): the art-v7 outpost done, and its front layer, in eight facings. The facing is
+# turned by the camera (az = the diamond's -45 minus the yaw), so the lights stay where they are on screen; the outpost
+# turned +yaw seen from above. "r27fit": a diagonal one fitted into its 3 x 3 (6 x 4.4 m at 45 degrees needs 7.4 m).
+R27_YAWS = (0, 45, 90, 135, 180, 225, 270, 315)
+R27_FIT = round((3 * 2.0 * 2 ** 0.5) / (6.0 + 4.4), 3)          # (W + D) / sqrt 2 <= 6 m: 0.816
+for _y in R27_YAWS:
+    TARGETS[f"r27y{_y:03d}"] = ([dict(kind="v7_outpost", culture=c, opts=dict(look="done"), name=f"r27_{c}_y{_y:03d}") for c in CULTURES]
+                               + [dict(kind="v7_outpost", culture=c, opts=dict(look="done", front=True), name=f"r27_{c}_y{_y:03d}_front")
+                                  for c in CULTURES])
+    CAMERA[f"r27y{_y:03d}"] = dict(elev=proj.DIAMOND["elev"], az=proj.DIAMOND["az"] - _y)
+    LOOK[f"r27y{_y:03d}"] = "r8"
+for _y in (45, 135, 225, 315):
+    TARGETS[f"r27fit{_y:03d}"] = [dict(pc, name=pc["name"].replace(f"y{_y:03d}", f"y{_y:03d}fit"), xy_scale=R27_FIT)
+                                  for pc in TARGETS[f"r27y{_y:03d}"]]
+    CAMERA[f"r27fit{_y:03d}"] = CAMERA[f"r27y{_y:03d}"]
+    LOOK[f"r27fit{_y:03d}"] = "r8"
+
 FOLDER = {t: t.split("_")[0] for t in TARGETS}
+for _t in TARGETS:
+    if _t.startswith("r27"):
+        FOLDER[_t] = "r27"
 FOLDER.update({t: "b101" for t in TARGETS if t.startswith("b101")})
 FOLDER.update({t: "states" for t in TARGETS if t.startswith(("states2", "states3"))})
 FOLDER.update({"b1b": "b1b", "teamfix_b101": "b101", "teamfix_core3": "core3", "teamfix_b104": "b104", "teamfix_states": "states"})
