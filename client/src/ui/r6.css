@@ -366,15 +366,19 @@
 
 /* More below (ceo 2026-11-07: the fifth kind out of sight): at the foot of what scrolls, while it is
    not scrolled to its end (panels.ts showMore), a fade into the panel's own ground, whole at its foot
-   over the rows cut there (ui 2026-11-07), and a ⌄ that scrolls a row down. */
+   over the rows cut there (ui 2026-11-07), and a ⌄ that scrolls a row down.
+   Over the panel, not in what scrolls (the user 2026-11-27 on the app: 「兵按加號減號還是會框框跳動」): as a line of
+   軍團畫面's grid it took the grid's 4 px gap, so the panel grew 4 px each time it came and every − and + moved;
+   and as it came and went with what fits, it came and went again. panels.ts puts its top at the body's foot. */
 :root[data-ui="r6"] .sel-info .sel-more {
-  position: sticky;
-  bottom: 0;
+  position: absolute;
   z-index: 2;
   height: 34px;
   /* Over the body's whole width, under the ✕'s column too (b2 2026-11-07: it stopped short of it, a
      straight edge on the wood), 10 in from either side of the panel as the rows. */
-  margin: -34px -46px 0 0;
+  left: 10px;
+  right: 10px;
+  margin: 0;
   pointer-events: none;
 }
 
@@ -458,13 +462,57 @@
   height: 14px;
 }
 
+/* After 只選 (R28-01 A, the user 2026-11-28): the kinds not kept, where they were, dimmed; a tap keeps only that one. */
+:root[data-ui="r6"] .sel-bar .bar-chip.dim {
+  opacity: 0.45;
+  filter: grayscale(0.7);
+}
+
 :root[data-ui="r6"] .sel-info .sel-close.b {
   position: absolute;
-  top: 6px;
+  /* At the foot of the right column (R28-02 A, the user 2026-11-28; was its top, D-155: it moved as the panel grew);
+     a panel with 收起 has ✕ over it (below). */
+  top: auto;
+  bottom: 8px;
   right: 6px;
   width: 44px;
   min-width: 44px;
   padding: 0;
+}
+
+/* ✕ over 收起 (R28-03 B, the user 2026-11-28): the bottom line's last button (派村民's ＋) has 收起 beside it, not ✕
+   (6 px apart: a finger off ＋ folds the panel, the selection kept; R28-02 A had 收起 over ✕). The same in every panel. */
+:root[data-ui="r6"] .sel-info:not(.collapsed):has(> .sel-fold.b) > .sel-close.b {
+  bottom: 56px;
+}
+
+/* 收起 under ✕ (R28-03 B): ⌃ over its word, as wide as ✕. */
+:root[data-ui="r6"] .sel-info > .sel-fold.b {
+  position: absolute;
+  right: 6px;
+  bottom: 8px;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  flex-direction: column;
+  gap: 0;
+  font-size: 11px;
+}
+
+/* Over the title line (kept at the top with a ground of its own, it was drawn over them where a short panel's or a
+   folded one's title line is: #585's run, 展開 and 收起 under DIV.sel-head). */
+:root[data-ui="r6"] .sel-info .sel-close.b,
+:root[data-ui="r6"] .sel-info > .sel-fold.b {
+  z-index: 3;
+}
+
+/* Folded (only the title line: no room for the two over each other): 展開 beside ✕ on the foot line, ✕ the rightmost
+   (the user 2026-11-28, with R28-03 B). */
+:root[data-ui="r6"] .sel-info.collapsed > .sel-fold.b {
+  bottom: 8px;
+  right: 56px;
 }
 
 :root[data-ui="r6"] .sel-info .sel-close .ic {
@@ -753,6 +801,22 @@
 :root[data-ui="r6"] .sel-info .outpost-coming {
   margin-left: 6px;
   font-size: 12px;
+}
+
+/* 「0/9」 beside the squares (R14-05) in the width left of 收起 and ✕ (R28-02 A: the row no longer under them): 「6 名正過來」
+   under 「0/9」 when the line has no room for both (the app's 300 px), on its line when it has. Each word whole. */
+:root[data-ui="r6"] .sel-info .seat-row .outpost-count {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 6px;
+  flex: 1 1 3em;
+  max-width: max-content;
+  white-space: nowrap;
+}
+
+:root[data-ui="r6"] .sel-info .seat-row .outpost-count .outpost-coming {
+  margin-left: 0;
 }
 
 /* 哨所 (R14-05): 「5 名出去打」 in a gold dashed box; what the mode on means; whose, with 召回, last. */
@@ -1196,10 +1260,6 @@
   display: none;
 }
 
-/* The fade over the last line while there is more below (a grid's own line, none high). */
-:root[data-ui="r6"] .sel-info.legion-pop .sel-more {
-  margin: -34px 0 0;
-}
 
 /* Three a line on a phone held sideways (491 across at 932); two where three do not fit (373 at 814). */
 :root[data-ui="r6"] .sel-info.legion-pop .sel-body {
@@ -2758,4 +2818,15 @@
 
 :root.ui-large[data-ui="r6"] #hud .sel-help {
   max-width: 640px;
+}
+
+/* ✕ and 收起 at the foot of the right column (R28-02 A, the user 2026-11-28): the rows laid under ✕ when it was at the
+   top (the body's width under it, margin-right: -46px) keep out of the column now, or the two would lie over their
+   buttons (#585's run: 賣 100 木 under 收起, 多派 under ✕). The life bar, at the top, still goes across it. */
+:root[data-ui="r6"] .sel-info .depot,
+:root[data-ui="r6"] .sel-info .market,
+:root[data-ui="r6"] .sel-info .seat-row,
+:root[data-ui="r6"] .sel-info .outpost-note,
+:root[data-ui="r6"] .sel-info .sel-chips:has(.now) {
+  margin-right: 0;
 }
