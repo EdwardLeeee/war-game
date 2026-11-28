@@ -110,6 +110,11 @@ if (formalUi()) {
   if (title !== null) title.textContent = "裂土稱王";
 }
 applyTheme(loadTheme());
+// R28 (mockups, test pages): the layouts to choose from (r6.css).
+if (params.test) {
+  const r28e = new URLSearchParams(location.search).get("r28e");
+  if (r28e === "a" || r28e === "c") document.documentElement.dataset.r28e = r28e;
+}
 // 介面放大 (R26-01): the interface bigger on a large window, as the window changes size too (ui/ui-scale.ts).
 watchUiScale();
 watchPresses();

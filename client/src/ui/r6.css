@@ -2759,3 +2759,46 @@
 :root.ui-large[data-ui="r6"] #hud .sel-help {
   max-width: 640px;
 }
+
+/* --- R28 mockups (test pages only; the user chooses, ceo 2026-11-28) ------------------------------------------- */
+/* R28-01 A: the kinds not kept, dimmed where they were. */
+:root[data-ui="r6"] .sel-bar .bar-chip.r28-dim {
+  opacity: 0.45;
+  filter: grayscale(0.7);
+}
+/* R28-02 A: 收起 over ✕ at the foot of the panel's right column (the panel's foot does not move). */
+:root[data-ui="r6"][data-r28e="a"] .sel-info .sel-close.b {
+  top: auto;
+  bottom: 8px;
+}
+:root[data-ui="r6"][data-r28e="a"] .sel-info > .sel-fold.b,
+:root[data-ui="r6"][data-r28e="c"] .sel-info > .sel-fold.b {
+  position: absolute;
+  right: 6px;
+  bottom: 56px;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  flex-direction: column;
+  gap: 0;
+  font-size: 11px;
+}
+/* R28-02 C: both outside the panel, at its foot on the left (on the right they lay over 訓練 at 932 × 430); the panel's
+   right column given back to what it shows. */
+:root[data-ui="r6"][data-r28e="c"] #hud .sel-info:not(.legion-pop) {
+  padding-right: 10px;
+  overflow: visible;
+}
+:root[data-ui="r6"][data-r28e="c"] .sel-info .sel-close.b {
+  top: auto;
+  bottom: 0;
+  right: auto;
+  left: -50px;
+}
+:root[data-ui="r6"][data-r28e="c"] .sel-info > .sel-fold.b {
+  right: auto;
+  left: -50px;
+  bottom: 48px;
+}

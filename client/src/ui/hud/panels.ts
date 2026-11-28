@@ -481,6 +481,8 @@ export class SelectionInfo {
   private readonly help: HTMLElement | null;
   /** The bar built for (the selection's key and its kinds), and what keeps it up to date. */
   private barKey = "";
+  /** R28-01 A (mockup): the selection 只選 was tapped from. */
+  private onlyFrom: { kinds: number[]; ids: number[] } | null = null;
   private barUpdaters: Updater[] = [];
   private barRow: HTMLElement | null = null;
   private qCell: HTMLButtonElement | null = null;
@@ -727,12 +729,22 @@ export class SelectionInfo {
     } else if (ids.length > 0) {
       // A cell a kind: a tap keeps only that kind (as the panel's chips did).
       const kinds = [...new Set(ids.map((id) => view.unitType(id)))].sort((a, b) => a - b);
-      for (const kind of kinds) {
+      // R28-01 A (mockup, ?test=1&r28d=a): after 只選, the other kinds stay where they were, dimmed; a tap keeps only that one.
+      const r28a = new URLSearchParams(location.search).get("r28d") === "a";
+      const from = r28a && this.onlyFrom !== null && ids.every((id) => this.onlyFrom?.ids.includes(id)) ? this.onlyFrom : null;
+      if (from === null) this.onlyFrom = null;
+      const shownKinds = from?.kinds ?? kinds;
+      for (const kind of shownKinds) {
         const name = UNIT_NAME[kind] ?? "單位";
-        const chip = cell(row, "bar-chip", `只選${name}`, () => this.host.selectOnly(this.barUnits(view).filter((id) => view.unitType(id) === kind)));
+        const pool = () => (from ?? this.onlyFrom)?.ids ?? this.barUnits(view);
+        const chip = cell(row, "bar-chip", `只選${name}`, () => {
+          if (r28a && this.onlyFrom === null) this.onlyFrom = { kinds, ids: this.barUnits(view) };
+          this.host.selectOnly(pool().filter((id) => view.unitRow(id) >= 0 && view.unitType(id) === kind));
+        });
+        if (!kinds.includes(kind)) chip.classList.add("r28-dim");
         el("span", chip, "", name);
         const cnt = el("span", chip, "cnt");
-        this.barUpdaters.push(() => setCount(cnt, `${this.barUnits(view).filter((id) => view.unitType(id) === kind).length}`));
+        this.barUpdaters.push(() => setCount(cnt, `${(kinds.includes(kind) ? this.barUnits(view) : pool()).filter((id) => view.unitRow(id) >= 0 && view.unitType(id) === kind).length}`));
       }
       // The kinds that do not fit (fitBar): how many more; a group's opens 軍團畫面.
       this.extraCell = group !== null ? cell(row, "bar-extra", "打開軍團畫面看全部兵種", () => this.openLegion()) : el("span", row, "bar-cell bar-extra");
@@ -847,6 +859,9 @@ export class SelectionInfo {
     if (this.formal) fold.prepend(icon("fold"));
     this.foldButton = fold;
     this.fold(fold);
+    // R28-02 A, C (mockup, ?test=1&r28e=a|c): 收起 with ✕, held to the panel's foot (r6.css).
+    const r28e = new URLSearchParams(location.search).get("r28e");
+    if (r28e === "a" || r28e === "c") this.frame.appendChild(fold);
   }
 
   /** Show the panel folded or not, as the game keeps it; the button says what a tap does. */
