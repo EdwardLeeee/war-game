@@ -76,6 +76,12 @@ interface StepRecord {
   /** exact: checked against what it should come to; changed: only that something one sees changed. */
   reaction: "ok" | "bad" | "unknown";
   reactionKind: "exact" | "changed" | "none";
+  /**
+   * How heavy the page was (mobile 2026-11-28: the app's taps slower and slower after step 100, then nothing for 7 min):
+   * the step's ms from asking for its taps to its record, its frames and their gaps (ms, the most and the middle one),
+   * the world's units and the page's elements at its end.
+   */
+  load?: { ms: number; frames: number; frameMax: number; frameMid: number; units: number; nodes: number };
   reactionNote: string;
 }
 
@@ -309,7 +315,7 @@ function outlineDiff(a: string[], b: string[]): string[] {
   return [...a.filter((l) => !sb.has(l)).map((l) => `- ${l}`), ...b.filter((l) => !sa.has(l)).map((l) => `+ ${l}`)].slice(0, 24);
 }
 
-function watch(step: number, tapped: string, tappedKey: string): { stop: () => { moved: Move[]; pressed: number; otherScreen: boolean; why: string[] } } {
+function watch(step: number, tapped: string, tappedKey: string): { stop: () => { moved: Move[]; pressed: number; otherScreen: boolean; why: string[]; gaps: number[] } } {
   const base = placesNow();
   const baseOutline = panelsNow().flatMap(outline);
   let why: string[] = [];
@@ -353,8 +359,13 @@ function watch(step: number, tapped: string, tappedKey: string): { stop: () => {
   const onEvent = () => queueMicrotask(sample);
   const types = ["pointerdown", "pointerup", "click", "touchstart", "touchend"];
   for (const t of types) document.addEventListener(t, onEvent, true);
+  const gaps: number[] = [];
+  let lastFrame = performance.now();
   const loop = () => {
     if (!on) return;
+    const t = performance.now();
+    gaps.push(t - lastFrame);
+    lastFrame = t;
     sample();
     requestAnimationFrame(loop);
   };
@@ -365,7 +376,7 @@ function watch(step: number, tapped: string, tappedKey: string): { stop: () => {
       on = false;
       mo.disconnect();
       for (const t of types) document.removeEventListener(t, onEvent, true);
-      return { moved: [...worst.values()], pressed, otherScreen: ctxChanged, why };
+      return { moved: [...worst.values()], pressed, otherScreen: ctxChanged, why, gaps };
     },
   };
 }
@@ -590,6 +601,19 @@ async function tapStep(id: string, x: number, y: number, times: number, gap: num
   document.removeEventListener("pointerup", up, true);
   setLine(null);
   return { missed, gone: goneTaps, timedOut: got < times };
+}
+
+/** The step's load (StepRecord.load). */
+function loadNow(t0: number, gaps: number[]): NonNullable<StepRecord["load"]> {
+  const sorted = [...gaps].sort((a, b) => a - b);
+  return {
+    ms: Math.round(performance.now() - t0),
+    frames: gaps.length,
+    frameMax: Math.round(sorted.at(-1) ?? 0),
+    frameMid: Math.round(sorted[sorted.length >> 1] ?? 0),
+    units: hook().units().length,
+    nodes: document.getElementsByTagName("*").length,
+  };
 }
 
 /** Closes what is open over the battlefield (a dialog, the lab panel), back to normal speed, unpaused, nothing selected. */
@@ -960,10 +984,11 @@ async function runScene(scene: Scene): Promise<void> {
     const before = typeof reaction === "string" ? null : reaction.before();
     stepNo++;
     planned = Math.max(planned, stepNo + 1);
+    const t0 = performance.now();
     const w = watch(stepNo, norm(label), `${key}`);
     const tap = await tapStep(`${scene.name}:${norm(label)}`, x, y, times, GAP_MS, el);
     await sleep(AFTER_MS);
-    const { moved, pressed, otherScreen, why: whyMoved } = w.stop();
+    const { moved, pressed, otherScreen, why: whyMoved, gaps } = w.stop();
     for (const m of moved) {
       if (!m.judged) continue;
       const px = Math.max(Math.abs(m.dx), Math.abs(m.dy));
@@ -989,6 +1014,7 @@ async function runScene(scene: Scene): Promise<void> {
       reaction: typeof reaction === "string" ? "unknown" : note === "" ? "ok" : "bad",
       reactionKind: typeof reaction === "string" ? "none" : reaction.kind,
       reactionNote: note,
+      load: loadNow(t0, gaps),
     };
     results.steps.push(rec);
     results.pressedList.push({ scene: scene.name, label, times });

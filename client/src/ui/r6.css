@@ -795,6 +795,22 @@
   font-size: 12px;
 }
 
+/* 「0/9」 beside the squares (R14-05) in the width left of 收起 and ✕ (R28-02 A: the row no longer under them): 「6 名正過來」
+   under 「0/9」 when the line has no room for both (the app's 300 px), on its line when it has. Each word whole. */
+:root[data-ui="r6"] .sel-info .seat-row .outpost-count {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 6px;
+  flex: 1 1 3em;
+  max-width: max-content;
+  white-space: nowrap;
+}
+
+:root[data-ui="r6"] .sel-info .seat-row .outpost-count .outpost-coming {
+  margin-left: 0;
+}
+
 /* 哨所 (R14-05): 「5 名出去打」 in a gold dashed box; what the mode on means; whose, with 召回, last. */
 :root[data-ui="r6"] .sel-info .outpost-out {
   padding: 1px 6px;
