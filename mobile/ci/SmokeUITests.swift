@@ -9,7 +9,30 @@
 // The main path stops at its first failure (with the accessibility tree printed, to see what the
 // test could see in the web view); page errors and the like are collected and fail the test at the end.
 
+import ObjectiveC
 import XCTest
+
+/// XCUITest waits for the app to go quiet before every tap, and the game draws every frame: in the
+/// 按鈕不動 test each tap took 6–7 s (client, run 46090502053: ten taps in 69 s). For that test only,
+/// the wait is skipped, WebDriverAgent's way: the test runner's XCUIApplicationProcess
+/// waitForQuiescenceIncludingAnimationsIdle: (and …:isPreEvent:) made to return at once. A private
+/// API of the test runner, never in the app; when Xcode renames it, nothing is skipped and taps are
+/// only slow. Returns the names it replaced.
+private enum Quiescence {
+    static func skip() -> [String] {
+        guard let cls = NSClassFromString("XCUIApplicationProcess") else { return [] }
+        let one: @convention(block) (AnyObject, Bool) -> Void = { _, _ in }
+        let two: @convention(block) (AnyObject, Bool, Bool) -> Void = { _, _, _ in }
+        var skipped: [String] = []
+        for (name, block) in [("waitForQuiescenceIncludingAnimationsIdle:", unsafeBitCast(one, to: AnyObject.self)),
+                              ("waitForQuiescenceIncludingAnimationsIdle:isPreEvent:", unsafeBitCast(two, to: AnyObject.self))] {
+            guard let m = class_getInstanceMethod(cls, NSSelectorFromString(name)) else { continue }
+            method_setImplementation(m, imp_implementationWithBlock(block))
+            skipped.append(name)
+        }
+        return skipped
+    }
+}
 
 final class SmokeUITests: XCTestCase {
     private let app = XCUIApplication()
@@ -184,6 +207,8 @@ final class SmokeUITests: XCTestCase {
         let readDetail = { (when: String) in
             if detail.exists { self.log("STABLE detail \(when): \(detail.label)") }
         }
+        let skipped = Quiescence.skip()
+        log("STABLE taps without waiting for the app to go quiet: \(skipped.isEmpty ? "not available, taps wait" : skipped.joined(separator: ", "))")
         let origin = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
         // A tap is asked for once: by next.seq (client 2026-11-28: run 46053784184 read a step's
         // finished next a second time and tapped the old place again, hitting another button), or
@@ -191,7 +216,7 @@ final class SmokeUITests: XCTestCase {
         var tapped: String?
         var seenStep = -1
         var since = Date()
-        let end = Date().addingTimeInterval(1500)
+        let end = Date().addingTimeInterval(3000)
         while Date() < end {
             let label = line.label
             guard let s = stable(label) else { throw stop("unreadable stable-buttons line: \(label)") }
@@ -208,11 +233,13 @@ final class SmokeUITests: XCTestCase {
             }
             let ask = s.next.map { n in n.seq.map { "seq \($0)" } ?? "step \(s.step)" }
             if let n = s.next, let ask, ask != tapped {
+                let t = Date()
                 for k in 0 ..< max(n.times, 1) {
                     if k > 0 { usleep(useconds_t(max(n.gap, 0) * 1000)) }
                     origin.withOffset(CGVector(dx: n.x, dy: n.y)).tap()
                 }
-                log("STABLE step \(s.step)/\(s.total) \(ask) \(n.id) at \(Int(n.x)),\(Int(n.y)) ×\(n.times)")
+                log(String(format: "STABLE step %d/%d %@ %@ at %d,%d ×%d in %.1f s", s.step, s.total, ask, n.id,
+                           Int(n.x), Int(n.y), n.times, Date().timeIntervalSince(t)))
                 tapped = ask
                 since = Date()
             } else if Date().timeIntervalSince(since) > 60 {
@@ -221,7 +248,7 @@ final class SmokeUITests: XCTestCase {
                 usleep(300_000)
             }
         }
-        throw stop("not done in 25 minutes: \(line.label)")
+        throw stop("not done in 50 minutes: \(line.label)")
     }
 
     func testViewFactsSafari() throws {
