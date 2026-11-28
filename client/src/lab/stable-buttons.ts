@@ -103,8 +103,11 @@ declare global {
 
 type Hook = NonNullable<NonNullable<Window["__proto"]>["game"]>;
 
-/** Taps in a row on those pressed again and again: 10, or ?reps=N (the app's XCUITest, a few seconds a tap). */
-const REPEAT = ((n) => (Number.isInteger(n) && n >= 2 && n <= 10 ? n : 10))(Number(new URLSearchParams(location.search).get("reps") ?? "10"));
+/**
+ * Taps in a row on those pressed again and again: 10, or ?reps=N (the app's XCUITest, a few seconds a tap). Read as the
+ * run starts (this module is imported in Node too: e2e/app-buttons.spec.ts reads KNOWN).
+ */
+let REPEAT = 10;
 const GAP_MS = 150;
 /** After the last tap, measured this long more (what a tap sets off comes after it). */
 const AFTER_MS = 1000;
@@ -1008,6 +1011,8 @@ export async function runStableButtons(): Promise<void> {
     return;
   }
   window.__stableButtons = results;
+  const reps = Number(q.get("reps") ?? "10");
+  REPEAT = Number.isInteger(reps) && reps >= 2 && reps <= 10 ? reps : 10;
   window.addEventListener("error", (e) => results.errors.push(`error: ${e.message}`));
   window.addEventListener("unhandledrejection", (e) => results.errors.push(`rejection: ${String(e.reason)}`));
   const error = console.error.bind(console);
