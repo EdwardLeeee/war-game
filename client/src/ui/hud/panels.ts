@@ -422,7 +422,9 @@ export class SelectionInfo {
     // so that it is over no button (b2 2026-11-07: over the row above, a + tapped low scrolled
     // instead): at the end of the pinned row (軍團畫面), else on a foot row of its own while there is
     // more below.
-    this.more = this.formal ? el("div", this.el, "sel-more") : null;
+    // Over the panel, not in what scrolls (r6.css .sel-more: in it, it took room and moved the rows, the user
+    // 2026-11-27): placed at the body's foot by showMore.
+    this.more = this.formal ? el("div", this.frame, "sel-more") : null;
     this.more?.setAttribute("aria-hidden", "true");
     this.foot = this.formal ? document.createElement("div") : null;
     if (this.foot !== null) this.foot.className = "sel-foot";
@@ -479,6 +481,8 @@ export class SelectionInfo {
   private readonly help: HTMLElement | null;
   /** The bar built for (the selection's key and its kinds), and what keeps it up to date. */
   private barKey = "";
+  /** The selection 只選 was tapped from: its kinds stay on the bar, dimmed (R28-01 A). */
+  private onlyFrom: { kinds: number[]; ids: number[] } | null = null;
   private barUpdaters: Updater[] = [];
   private barRow: HTMLElement | null = null;
   private qCell: HTMLButtonElement | null = null;
@@ -540,6 +544,11 @@ export class SelectionInfo {
     if (more === null) return;
     const below = this.el.scrollHeight - this.el.scrollTop - this.el.clientHeight > 2;
     if (more.hidden === below) more.hidden = !below;
+    // Its foot on the body's (the panel holds it; it takes no room, so its coming moves nothing).
+    if (below) {
+      const top = `${this.el.offsetTop + this.el.clientHeight - more.offsetHeight}px`;
+      if (more.style.top !== top) more.style.top = top;
+    }
     if (this.down !== null && this.down.hidden === below) this.down.hidden = !below;
     // The foot row only while its ⌄ shows (it takes no room otherwise).
     if (this.foot !== null && this.foot.hidden === (below && this.down?.parentElement === this.foot)) this.foot.hidden = !(below && this.down?.parentElement === this.foot);
@@ -622,8 +631,8 @@ export class SelectionInfo {
       }
     }
     if (this.foldButton !== null) this.fold(this.foldButton);
-    // Last in what scrolls (a new build fills the body anew), held at its foot; the ⌄ out of it.
-    if (this.more !== null && this.el.lastChild !== this.more) this.el.appendChild(this.more);
+    // The fade over the panel (a new build may have emptied it: frame.replaceChildren), the ⌄ out of what scrolls.
+    if (this.more !== null && this.more.parentElement !== this.frame) this.frame.appendChild(this.more);
     this.placeDown();
     this.showMore();
   }
@@ -720,12 +729,29 @@ export class SelectionInfo {
     } else if (ids.length > 0) {
       // A cell a kind: a tap keeps only that kind (as the panel's chips did).
       const kinds = [...new Set(ids.map((id) => view.unitType(id)))].sort((a, b) => a - b);
-      for (const kind of kinds) {
+      // After 只選 (R28-01 A, the user 2026-11-28; D-155: the kind tapped moved left as the others went), the kinds of the
+      // selection it was tapped from stay where they were, dimmed; a tap on one keeps only that kind of them. Another
+      // selection (not out of those) forgets them.
+      const from = this.onlyFrom !== null && ids.every((id) => this.onlyFrom?.ids.includes(id)) ? this.onlyFrom : null;
+      if (from === null) this.onlyFrom = null;
+      const alive = (list: number[]) => list.filter((id) => view.unitRow(id) >= 0);
+      for (const kind of from?.kinds ?? kinds) {
         const name = UNIT_NAME[kind] ?? "單位";
-        const chip = cell(row, "bar-chip", `只選${name}`, () => this.host.selectOnly(this.barUnits(view).filter((id) => view.unitType(id) === kind)));
+        const kept = kinds.includes(kind);
+        const ofKind = () => (kept ? this.barUnits(view) : alive(from?.ids ?? [])).filter((id) => view.unitType(id) === kind);
+        const chip = cell(row, "bar-chip", `只選${name}`, () => {
+          if (this.onlyFrom === null) this.onlyFrom = { kinds, ids: this.barUnits(view) };
+          this.host.selectOnly(alive(this.onlyFrom.ids).filter((id) => view.unitType(id) === kind));
+        });
+        chip.classList.toggle("dim", !kept);
         el("span", chip, "", name);
         const cnt = el("span", chip, "cnt");
-        this.barUpdaters.push(() => setCount(cnt, `${this.barUnits(view).filter((id) => view.unitType(id) === kind).length}`));
+        this.barUpdaters.push(() => {
+          const n = ofKind().length;
+          setCount(cnt, `${n}`);
+          // A kind left with none: nothing to keep.
+          if (!kept) chip.toggleAttribute("disabled", n === 0);
+        });
       }
       // The kinds that do not fit (fitBar): how many more; a group's opens 軍團畫面.
       this.extraCell = group !== null ? cell(row, "bar-extra", "打開軍團畫面看全部兵種", () => this.openLegion()) : el("span", row, "bar-cell bar-extra");
@@ -840,6 +866,9 @@ export class SelectionInfo {
     if (this.formal) fold.prepend(icon("fold"));
     this.foldButton = fold;
     this.fold(fold);
+    // 正式介面 (R28-02 A, the user 2026-11-28): 收起 over ✕ at the foot of the panel's right column (r6.css), which does
+    // not move as what comes and goes makes the panel taller (it grows upwards from its foot).
+    if (this.formal) this.frame.appendChild(fold);
   }
 
   /** Show the panel folded or not, as the game keeps it; the button says what a tap does. */
@@ -1210,7 +1239,7 @@ export class SelectionInfo {
     // 經濟分配 changed while paused (R6-31): the main city says what it will be on 繼續.
     const eco = own && type === BuildingType.MainCity && this.host.paused() ? this.host.pending().eco() : null;
     if (eco !== null) el("p", this.el, "sel-pend", `經濟分配改成 糧 ${eco.food}%・木 ${eco.wood}%・金 ${eco.gold}%${eco.on ? "" : "（自動分配關）"}：按繼續後生效`);
-    const depot = own ? this.depot(id) : null;
+    const depot = own ? this.depot(id, pressed) : null;
     this.updaters.push(() => {
       const o = view.buildingRow(id);
       const b = view.curr?.snap.buildings;
@@ -1407,10 +1436,14 @@ export class SelectionInfo {
    * line per resource (granary, lumber camp and mine take one each; the main city shows none,
    * D-070). Returns the update.
    */
-  private depot(id: number): (() => void) | null {
+  /** `pressed`: the rows pressed again and again, pinned at the panel's foot (its − + among them). */
+  private depot(id: number, pressed: HTMLElement[]): (() => void) | null {
     const resources = this.host.depotResources(id);
     if (resources.length === 0) return null;
     const box = el("div", this.el, "depot");
+    // − and + pressed again and again: at the foot with the others, under what comes and goes (D-155; the user 2026-11-27
+    // in the app: as 多派 sent one, a line came under them and they moved 44 px up).
+    pressed.push(box);
     const cells = resources.map((r) => {
       const word = DEPOT_WORD[r] ?? "";
       const cell = el("div", box, "depot-cell");

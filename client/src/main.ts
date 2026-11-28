@@ -1206,3 +1206,6 @@ function showError(err: unknown): void {
 
 // art-v7 量測 (D-128): a page its button opened goes straight into it (not one reloaded in the middle of one).
 if (measureNow !== null && cutShort === null) void newGame(ART_MEASURE_SCENARIO, true, measureNow).catch(loadFailed);
+// 按鈕不動 (the user 2026-11-27, ceo; lab/stable-buttons.ts): the test page that taps every button, for Playwright and the
+// app's XCUITest. Loaded only then.
+if (params.test && params.mock && new URLSearchParams(location.search).get("stable") === "1") void import("./lab/stable-buttons.ts").then((m) => m.runStableButtons());
