@@ -86,9 +86,14 @@ run() {
     local label="$1" test="$2" r="${RUNNER_TEMP:-/tmp}/$1.xcresult" code=0
     shift 2
     rm -rf "${r}" "${r}.att"
+    # The SMOKE lines go to the job's log as they come too: a run cancelled midway uploads no
+    # artifact (run 46110331648 lost 50 minutes of 按鈕不動 that way).
+    echo "${label}: ${test}"
     env "$@" xcodebuild test-without-building -project "${project}" -scheme AppSmoke \
         -configuration Debug -destination "id=${udid}" -derivedDataPath "${dd}" -resultBundlePath "${r}" \
-        -parallel-testing-enabled NO -only-testing:"AppUITests/SmokeUITests/${test}" >"${out}/${label}.log" 2>&1 || code=$?
+        -parallel-testing-enabled NO -only-testing:"AppUITests/SmokeUITests/${test}" 2>&1 |
+        tee "${out}/${label}.log" | grep --line-buffered -o 'SMOKE .*'
+    code=${PIPESTATUS[0]}
     grep -o 'SMOKE .*' "${out}/${label}.log" >"${out}/${label}.txt" || true
     if xcrun xcresulttool export attachments --path "${r}" --output-path "${r}.att" >/dev/null 2>&1; then
         python3 - "${r}.att" "${out}/screenshots" <<'PY'
