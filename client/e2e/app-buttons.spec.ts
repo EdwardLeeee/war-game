@@ -72,6 +72,9 @@ test("每顆按鈕都按（app 的畫面）：位置不動、點在它上面、�
     if (judged.length > 0 || s.missed.length > 0 || s.reaction === "bad") console.log(`STABLE step ${s.step} ${s.scene}/${s.label}×${s.times}: moved ${judged.map((m) => `${m.key} ${m.kind} ${m.dx},${m.dy}`).join("; ")} missed ${s.missed.join("; ")} gone ${s.gone.length} reaction ${s.reaction} ${s.reactionNote}${s.why.length > 0 ? `\n  why:\n    ${s.why.join("\n    ")}` : ""}`);
   }
   expect(r.errors, "no errors").toEqual([]);
+  expect(r.notPressed.filter((n) => /^(進不去|回不到)/.test(n.reason)).map((n) => `${n.scene}: ${n.reason}`), "every screen got into").toEqual([]);
+  // 軍團畫面's − and + (what the user saw jump) tapped, each kind's.
+  expect(r.pressedList.filter((p) => p.scene === "軍團" && /^(多要|少要) 1 名/.test(p.label)).length, "軍團畫面's − and +").toBeGreaterThanOrEqual(6);
   expect(r.steps.flatMap((s) => s.moved.filter((m) => m.judged && m.known === undefined).map((m) => `${s.scene}/${s.label}: ${m.key} ${m.kind} ${m.dx},${m.dy}`)), "no button moved over 1 px (but R28's known)").toEqual([]);
   expect(r.steps.flatMap((s) => s.missed.map((m) => `${s.scene}/${s.label}: ${m}`)), "every tap on its button").toEqual([]);
   expect(r.steps.filter((s) => s.reaction === "bad").map((s) => `${s.scene}/${s.label}: ${s.reactionNote}`), "reactions as they should be").toEqual([]);

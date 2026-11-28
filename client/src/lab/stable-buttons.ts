@@ -10,7 +10,8 @@
 //   stable-buttons {"step":3,"total":40,"next":{"seq":7,"id":"…","x":512.5,"y":300,"times":10,"gap":150},"moved":[…5],
 //                   "movedCount":0,"pressed":0,"miss":0,"bad":0,"errors":0,"ok":true,"done":false}
 //   step, next {x, y, times, gap} (CSS px from the screen's top left: XCUITest's points), done and ok keep their names
-//   and meaning (mobile reads only those); ok: nothing moved, no tap landed elsewhere, no reaction wrong, no error.
+//   and meaning (mobile reads only those); ok: nothing moved, no tap landed elsewhere, no reaction wrong, no error, and
+//   every screen got into (scenesMissed 0).
 //   next.seq grows by one each time: a runner taps a next once, then waits for null or another seq (the same place may
 //   be asked twice in a row: a building's panel opened again).
 // A second line, #stable-detail ("stable-detail {…}"), each step's full record, written as each step ends.
@@ -179,7 +180,7 @@ function writeLines(detail?: StepRecord): void {
 let stepNo = 0;
 let seq = 0;
 let planned = 0;
-const counts = { movedCount: 0, pressedPx: 0, miss: 0, bad: 0 };
+const counts = { movedCount: 0, pressedPx: 0, miss: 0, bad: 0, scenesMissed: 0 };
 function setLine(next: Next | null, done = false): void {
   const moved = results.steps.flatMap((s) => s.moved.filter((m) => m.judged && m.known === undefined)).slice(0, 5);
   // KNOWN's (R28), each with the most measured: never hidden (ceo 2026-11-28).
@@ -197,7 +198,9 @@ function setLine(next: Next | null, done = false): void {
     miss: counts.miss,
     bad: counts.bad,
     errors: results.errors.length,
-    ok: counts.movedCount === 0 && counts.miss === 0 && counts.bad === 0 && results.errors.length === 0,
+    // A screen it could not get into is buttons not tapped: not ok (its reason in notPressed).
+    scenesMissed: counts.scenesMissed,
+    ok: counts.movedCount === 0 && counts.miss === 0 && counts.bad === 0 && results.errors.length === 0 && counts.scenesMissed === 0,
     done,
   };
   results.done = done;
@@ -602,6 +605,16 @@ interface Scene {
 
 const click = (sel: string) => document.querySelector<HTMLElement>(sel)?.click();
 
+/** Till `ok` holds (polled each frame), at most `ms`: whether it did. */
+async function until(ok: () => boolean, ms = 3000): Promise<boolean> {
+  const t0 = performance.now();
+  while (!ok()) {
+    if (performance.now() - t0 > ms) return false;
+    await frame();
+  }
+  return true;
+}
+
 /** Till the buttons one sees stop changing (a panel is built over a few updates): the same for 300 ms, at most 3 s. */
 async function settle(): Promise<void> {
   let last = "";
@@ -701,8 +714,12 @@ function scenes(): Scene[] {
       enter: async () => {
         await calm();
         click(".army-btn");
-        await frame();
-        return hook().selection().units.length > 0;
+        if (!(await until(() => hook().selection().units.length > 0))) {
+          why = "按了全軍沒選到兵";
+          return false;
+        }
+        await settle();
+        return true;
       },
       holds: () => hook().selection().units.length > 0 && dialogTitle() === "" && document.querySelector(".sel-info .group-row") === null,
       roots: () => [...document.querySelectorAll(".sel-bar, .sel-info, .cmds")],
@@ -712,12 +729,24 @@ function scenes(): Scene[] {
       enter: async () => {
         await calm();
         click(".army-btn");
-        await frame();
+        if (!(await until(() => hook().selection().units.length > 0))) {
+          why = "按了全軍沒選到兵";
+          return false;
+        }
+        await settle();
         click(".groups > button");
-        await frame();
-        byLabel(/^改成剛才選的/)?.click();
-        await frame();
-        return document.querySelector(".sel-info .group-row") !== null;
+        if (!(await until(() => byLabel(/^改成剛才選的/) !== undefined))) {
+          why = `按了編隊 1 沒看到「改成剛才選的」：${labelsNow().join("、")}`;
+          return false;
+        }
+        const save = byLabel(/^改成剛才選的/);
+        if (save !== undefined && !save.disabled) save.click();
+        if (!(await until(() => document.querySelector(".sel-info .group-row") !== null))) {
+          why = "軍團畫面沒有兵種列";
+          return false;
+        }
+        await settle();
+        return true;
       },
       holds: () => document.querySelector(".sel-info .group-row") !== null && dialogTitle() === "",
       roots: () => [...document.querySelectorAll(".sel-info, .cmds")],
@@ -766,12 +795,14 @@ async function runScene(scene: Scene): Promise<void> {
   why = "";
   if (!(await scene.enter())) {
     results.notPressed.push({ scene: scene.name, label: "（整個畫面）", reason: `進不去${why === "" ? "" : `：${why}`}` });
+    counts.scenesMissed++;
     return;
   }
   const done = new Set<string>();
   for (let guard = 0; guard < 200; guard++) {
     if (!scene.holds() && !(await scene.enter())) {
       results.notPressed.push({ scene: scene.name, label: "（之後的按鈕）", reason: `回不到這個畫面${why === "" ? "" : `：${why}`}` });
+      counts.scenesMissed++;
       return;
     }
     await settle();
