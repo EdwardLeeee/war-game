@@ -114,13 +114,48 @@ PY
 # measures; SmokeUITests.testStableButtons taps. A box that moves, a tap that misses or a wrong
 # reaction fails the smoke test, and so the release (nothing is uploaded). Required once the game
 # built here has the client's module; before that, a page without it is only noted.
+# The page's processes (the app, its web content, the test runner): %CPU and memory, for the log.
+cpu() {
+    ps -Ao pcpu=,rss=,comm= | grep -E 'com\.apple\.WebKit\.WebContent$|/App\.app/App$|AppUITests-Runner' |
+        sed -E 's#^ *([0-9.]+) +([0-9]+) +.*/#\1 \2 #' | awk '{printf "%s %s%% %dMB; ", $3, $1, $2 / 1024}'
+}
+
+# A watchdog beside each 按鈕不動 run (ceo 2026-11-28: run 46116501545 went silent for 7 minutes
+# after step 117, stuck inside an XCUITest call, so the test's own 60 s rule never ran): the page's
+# CPU into the log every minute; no new SMOKE line for 120 s: a screenshot, the CPU, then the test
+# is stopped, and so fails. Its lines go to the job's log and to <label>-watchdog.txt.
+watchdog() { # watchdog <label> <test>
+    local log="${out}/$1.log" note="${out}/$1-watchdog.txt" last=-1 n since=$SECONDS beat=$SECONDS
+    while sleep 10; do
+        n=$(grep -c 'SMOKE ' "${log}" 2>/dev/null || true)
+        if [ "${n}" != "${last}" ]; then
+            last=${n}
+            since=$SECONDS
+        elif [ $((SECONDS - since)) -ge 120 ]; then
+            echo "SMOKE $1 watchdog: no SMOKE line for 120 s (stuck in the page or in XCUITest); stopping the test. cpu: $(cpu)" | tee -a "${note}"
+            xcrun simctl io "${udid}" screenshot "${out}/screenshots/$1-stuck.png" >/dev/null 2>&1
+            pkill -f "[x]codebuild test-without-building.*SmokeUITests/$2"
+            return
+        fi
+        if [ $((SECONDS - beat)) -ge 60 ]; then
+            beat=$SECONDS
+            echo "SMOKE $1 cpu at $((SECONDS - since)) s quiet: $(cpu)" | tee -a "${note}"
+        fi
+    done
+}
+
 # First the tapping side alone, on mobile-diag.js's stand-in (stable=fake): it must always pass.
 required=0
 [ -f "${here}/../../client/src/lab/stable-buttons.ts" ] && required=1
 for check in "stable-self-check mobile-stable-fake 1" "stable-buttons mobile-stable-buttons ${required}"; do
     set -- ${check}
     code=0
+    watchdog "$1" testStableButtons &
+    dog=$!
     run "$1" testStableButtons TEST_RUNNER_STABLE_LINK="$2" TEST_RUNNER_STABLE_REQUIRED="$3" || code=$?
+    kill "${dog}" >/dev/null 2>&1 || true
+    wait "${dog}" 2>/dev/null || true
+    cat "${out}/$1-watchdog.txt" >>"${out}/$1.txt" 2>/dev/null || true
     echo "SMOKE $1: exit ${code} (required $3)" >>"${out}/stable.txt"
     cat "${out}/$1.txt" >>"${out}/stable.txt"
     if [ "${code}" -ne 0 ]; then
@@ -129,6 +164,8 @@ for check in "stable-self-check mobile-stable-fake 1" "stable-buttons mobile-sta
         status=1
     fi
     xcrun simctl terminate "${udid}" com.edwardleeee.wargame >/dev/null 2>&1 || true
+    # After a watchdog stop the test runner may still be there.
+    xcrun simctl terminate "${udid}" com.edwardleeee.wargame.smoketests.xctrunner >/dev/null 2>&1 || true
 done
 cat "${out}/stable.txt"
 
