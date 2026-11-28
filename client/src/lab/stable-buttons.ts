@@ -383,8 +383,19 @@ interface Reaction {
   /** exact: the number or state it should come to; changed: only that something one sees changed (listed apart). */
   kind: "exact" | "changed";
   before: () => unknown;
-  /** "" when right, else what was wrong. */
-  after: (before: unknown, times: number) => string;
+  /** "" when right, else what was wrong (it may wait a moment: a panel being built anew). */
+  after: (before: unknown, times: number) => string | Promise<string>;
+}
+
+/** `check` till it says "" (a panel built anew over a few frames), at most 1.5 s: its last word. */
+async function settled(check: () => string): Promise<string> {
+  let last = check();
+  const t0 = performance.now();
+  while (last !== "" && performance.now() - t0 < 1500) {
+    await frame();
+    last = check();
+  }
+  return last;
 }
 
 /** Buttons visible now (in #hud and dialogs), by label with numbers as #. */
@@ -401,7 +412,7 @@ function seenState(): string {
   return JSON.stringify({ ctx: context(), labels: labelsNow(), on, paused: h.paused, speed: h.speed, groups: g.groupInfo().map((x) => [x.ids.length, x.want, x.refill]), words });
 }
 
-const exact = (before: () => unknown, after: (b: unknown, n: number) => string): Reaction => ({ kind: "exact", before, after });
+const exact = (before: () => unknown, after: (b: unknown, n: number) => string | Promise<string>): Reaction => ({ kind: "exact", before, after });
 
 const numberIn = (sel: string): number | null => {
   const t = document.querySelector(sel)?.textContent ?? "";
@@ -543,12 +554,12 @@ function reactionFor(label: string, el: HTMLElement): Reaction | string {
     [/^展開選取資訊$/, /^收起選取資訊$/],
   ];
   const flip = FLIPS.find(([a]) => a.test(label));
-  if (flip !== undefined) return exact(() => null, () => (hasLabel(flip[1]) ? "" : `按了應該出現「${flip[1].source.replace(/[\^$]/g, "")}」，沒有`));
+  if (flip !== undefined) return exact(() => null, () => settled(() => (hasLabel(flip[1]) ? "" : `按了應該出現「${flip[1].source.replace(/[\^$]/g, "")}」，沒有`)));
   m = /^(.+)：(開|關|暫停)$/.exec(label) ?? /^(.+目前)：(開|暫停)$/.exec(label);
   if (m !== null) {
     const head = m[1];
     const was = m[2];
-    return exact(() => null, () => (hasLabel(new RegExp(`^${escape(head)}：(?!${was}$)`)) ? "" : `「${label}」按了應該換成另一種，還是一樣`));
+    return exact(() => null, () => settled(() => (hasLabel(new RegExp(`^${escape(head)}：(?!${was}$)`)) ? "" : `「${label}」按了應該換成另一種，還是一樣`)));
   }
   if (el.getAttribute("aria-haspopup") === "dialog" || /^(選單|兵種相剋|設定|投降|經濟分配|預留)/.test(label)) {
     return exact(
@@ -967,7 +978,7 @@ async function runScene(scene: Scene): Promise<void> {
       m.known = k.r28;
       if (m.kind === "layout") results.knownSeen.push({ r28: k.r28, scene: scene.name, tapped: label, key: m.key, px });
     }
-    const note = tap.timedOut ? "沒點滿（逾時）" : typeof reaction === "string" ? reaction : reaction.after(before, times);
+    const note = tap.timedOut ? "沒點滿（逾時）" : typeof reaction === "string" ? reaction : await reaction.after(before, times);
     const rec: StepRecord = {
       step: stepNo,
       scene: scene.name,
