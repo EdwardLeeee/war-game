@@ -481,6 +481,8 @@ export class SelectionInfo {
   private readonly help: HTMLElement | null;
   /** The bar built for (the selection's key and its kinds), and what keeps it up to date. */
   private barKey = "";
+  /** The selection 只選 was tapped from: its kinds stay on the bar, dimmed (R28-01 A). */
+  private onlyFrom: { kinds: number[]; ids: number[] } | null = null;
   private barUpdaters: Updater[] = [];
   private barRow: HTMLElement | null = null;
   private qCell: HTMLButtonElement | null = null;
@@ -727,12 +729,29 @@ export class SelectionInfo {
     } else if (ids.length > 0) {
       // A cell a kind: a tap keeps only that kind (as the panel's chips did).
       const kinds = [...new Set(ids.map((id) => view.unitType(id)))].sort((a, b) => a - b);
-      for (const kind of kinds) {
+      // After 只選 (R28-01 A, the user 2026-11-28; D-155: the kind tapped moved left as the others went), the kinds of the
+      // selection it was tapped from stay where they were, dimmed; a tap on one keeps only that kind of them. Another
+      // selection (not out of those) forgets them.
+      const from = this.onlyFrom !== null && ids.every((id) => this.onlyFrom?.ids.includes(id)) ? this.onlyFrom : null;
+      if (from === null) this.onlyFrom = null;
+      const alive = (list: number[]) => list.filter((id) => view.unitRow(id) >= 0);
+      for (const kind of from?.kinds ?? kinds) {
         const name = UNIT_NAME[kind] ?? "單位";
-        const chip = cell(row, "bar-chip", `只選${name}`, () => this.host.selectOnly(this.barUnits(view).filter((id) => view.unitType(id) === kind)));
+        const kept = kinds.includes(kind);
+        const ofKind = () => (kept ? this.barUnits(view) : alive(from?.ids ?? [])).filter((id) => view.unitType(id) === kind);
+        const chip = cell(row, "bar-chip", `只選${name}`, () => {
+          if (this.onlyFrom === null) this.onlyFrom = { kinds, ids: this.barUnits(view) };
+          this.host.selectOnly(alive(this.onlyFrom.ids).filter((id) => view.unitType(id) === kind));
+        });
+        chip.classList.toggle("dim", !kept);
         el("span", chip, "", name);
         const cnt = el("span", chip, "cnt");
-        this.barUpdaters.push(() => setCount(cnt, `${this.barUnits(view).filter((id) => view.unitType(id) === kind).length}`));
+        this.barUpdaters.push(() => {
+          const n = ofKind().length;
+          setCount(cnt, `${n}`);
+          // A kind left with none: nothing to keep.
+          if (!kept) chip.toggleAttribute("disabled", n === 0);
+        });
       }
       // The kinds that do not fit (fitBar): how many more; a group's opens 軍團畫面.
       this.extraCell = group !== null ? cell(row, "bar-extra", "打開軍團畫面看全部兵種", () => this.openLegion()) : el("span", row, "bar-cell bar-extra");
@@ -847,6 +866,9 @@ export class SelectionInfo {
     if (this.formal) fold.prepend(icon("fold"));
     this.foldButton = fold;
     this.fold(fold);
+    // 正式介面 (R28-02 A, the user 2026-11-28): 收起 over ✕ at the foot of the panel's right column (r6.css), which does
+    // not move as what comes and goes makes the panel taller (it grows upwards from its foot).
+    if (this.formal) this.frame.appendChild(fold);
   }
 
   /** Show the panel folded or not, as the game keeps it; the button says what a tap does. */

@@ -18,12 +18,8 @@ test.describe.configure({ mode: "parallel" });
 
 type Line = { step: number; next: { seq: number; id: string; x: number; y: number; times: number; gap: number } | null; done: boolean; ok: boolean };
 
-test("已知、待使用者選的只有 R28 的兩項（ceo 2026-11-28：不拿來放行別的）", () => {
-  expect([...new Set(KNOWN.map((k) => k.r28))].sort()).toEqual(["R28-01", "R28-02"].filter((r) => KNOWN.some((k) => k.r28 === r)));
-  for (const k of KNOWN) {
-    expect(k.r28, k.item).toMatch(/^R28-0[12]$/);
-    expect(k.maxPx, k.item).toBeLessThanOrEqual(100);
-  }
+test("已知清單是空的（R28 的兩項已照使用者 2026-11-28 選的修好；ceo：不拿來放行別的）", () => {
+  expect(KNOWN.map((k) => `${k.r28} ${k.item}`)).toEqual([]);
 });
 
 const PARTS = 4;

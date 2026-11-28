@@ -462,13 +462,42 @@
   height: 14px;
 }
 
+/* After 只選 (R28-01 A, the user 2026-11-28): the kinds not kept, where they were, dimmed; a tap keeps only that one. */
+:root[data-ui="r6"] .sel-bar .bar-chip.dim {
+  opacity: 0.45;
+  filter: grayscale(0.7);
+}
+
 :root[data-ui="r6"] .sel-info .sel-close.b {
   position: absolute;
-  top: 6px;
+  /* At the foot of the right column (R28-02 A, the user 2026-11-28; was its top, D-155: it moved as the panel grew). */
+  top: auto;
+  bottom: 8px;
   right: 6px;
   width: 44px;
   min-width: 44px;
   padding: 0;
+}
+
+/* 收起 over ✕ (R28-02 A): ⌃ over its word, as wide as ✕. */
+:root[data-ui="r6"] .sel-info > .sel-fold.b {
+  position: absolute;
+  right: 6px;
+  bottom: 56px;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  flex-direction: column;
+  gap: 0;
+  font-size: 11px;
+}
+
+/* Folded (only the title line: no room for the two over each other): 展開 beside ✕ on the foot line. */
+:root[data-ui="r6"] .sel-info.collapsed > .sel-fold.b {
+  bottom: 8px;
+  right: 56px;
 }
 
 :root[data-ui="r6"] .sel-info .sel-close .ic {

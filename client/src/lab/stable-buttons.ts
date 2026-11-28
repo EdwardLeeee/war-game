@@ -141,9 +141,9 @@ export const NOT_COVERED: { panel: string; reason: string }[] = [
 ];
 
 /**
- * Known, waiting for the user's choice (R28, ceo 2026-11-28): measured and listed (the line's known), not failed — only
+ * Known, waiting for the user's choice (ceo 2026-11-28): measured and listed (the line's known), not failed — only
  * these buttons, in this panel, when this is tapped, by at most the most measured + 2 px. Anything else, or more, fails.
- * Only R28's items may be here (e2e/app-buttons.spec.ts checks it); the PR that fixes them takes them out.
+ * Only R28's items might ever be here, and they are fixed: e2e/app-buttons.spec.ts checks it is empty.
  */
 export interface Known {
   r28: "R28-01" | "R28-02";
@@ -153,17 +153,8 @@ export interface Known {
   moved: RegExp;
   maxPx: number;
 }
-const KEYS = /^sel-info\|(取消選取|收起選取資訊)\|0$/;
 export const KNOWN: readonly Known[] = [
-  { r28: "R28-01", item: "只選遠程兵：別的兵種格消失，它往左移（量到 63 px）", scene: "全軍", tapped: /^只選遠程兵$/, moved: /^sel-bar\|只選遠程兵\|0$/, maxPx: 65 },
-  { r28: "R28-02", item: "✕ 和收起跟著面板長高、變矮移（主城：叫兵躲進來，量到 48 px）", scene: "主城", tapped: /^叫 1 名(遠程兵|法師)躲進來$/, moved: KEYS, maxPx: 50 },
-  { r28: "R28-02", item: "✕ 和收起（主城：召回、全部離開，量到 48 px）", scene: "主城", tapped: /^(沒編隊的 [0-9]+ 名召回|全部離開)$/, moved: KEYS, maxPx: 50 },
-  { r28: "R28-02", item: "✕ 和收起（主城：訓練村民、取消，佇列兩排，量到 77.2 px）", scene: "主城", tapped: /^(訓練村民|取消訓練第 [0-9]+ 個：村民$)/, moved: KEYS, maxPx: 79.2 },
-  { r28: "R28-02", item: "✕ 和收起（兵營：訓練、取消，佇列兩排，量到 93 px）", scene: "兵營", tapped: /^(訓練槍兵|取消訓練第 [0-9]+ 個：槍兵$)/, moved: KEYS, maxPx: 95 },
-  { r28: "R28-02", item: "✕ 和收起（靶場：訓練、取消，量到 93 px）", scene: "靶場", tapped: /^(訓練遠程兵|取消訓練第 [0-9]+ 個：遠程兵$)/, moved: KEYS, maxPx: 95 },
-  { r28: "R28-02", item: "✕ 和收起（法師館：訓練、取消，量到 93 px）", scene: "法師館", tapped: /^(訓練法師|取消訓練第 [0-9]+ 個：法師$)/, moved: KEYS, maxPx: 95 },
-  { r28: "R28-02", item: "✕ 和收起（馬廄：訓練、取消，量到 93 px）", scene: "馬廄", tapped: /^(訓練騎兵|取消訓練第 [0-9]+ 個：騎兵$)/, moved: KEYS, maxPx: 95 },
-  { r28: "R28-02", item: "✕ 和收起（箭塔：叫兵躲進來、召回、全部離開，量到 48 px）", scene: "箭塔", tapped: /^(叫 1 名(遠程兵|法師)躲進來|沒編隊的 [0-9]+ 名召回|全部離開)$/, moved: KEYS, maxPx: 50 },
+  // R28-01 (只選遠程兵) and R28-02 (✕ and 收起), the user's choices 2026-11-28, fixed in this PR: none left.
 ];
 
 const results: Results = { line: {}, knownSeen: [], notCovered: [], steps: [], pressedList: [], notPressed: [], noReaction: [], changedOnly: [], errors: [], done: false };
