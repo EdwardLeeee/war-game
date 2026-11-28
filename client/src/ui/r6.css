@@ -366,15 +366,19 @@
 
 /* More below (ceo 2026-11-07: the fifth kind out of sight): at the foot of what scrolls, while it is
    not scrolled to its end (panels.ts showMore), a fade into the panel's own ground, whole at its foot
-   over the rows cut there (ui 2026-11-07), and a ⌄ that scrolls a row down. */
+   over the rows cut there (ui 2026-11-07), and a ⌄ that scrolls a row down.
+   Over the panel, not in what scrolls (the user 2026-11-27 on the app: 「兵按加號減號還是會框框跳動」): as a line of
+   軍團畫面's grid it took the grid's 4 px gap, so the panel grew 4 px each time it came and every − and + moved;
+   and as it came and went with what fits, it came and went again. panels.ts puts its top at the body's foot. */
 :root[data-ui="r6"] .sel-info .sel-more {
-  position: sticky;
-  bottom: 0;
+  position: absolute;
   z-index: 2;
   height: 34px;
   /* Over the body's whole width, under the ✕'s column too (b2 2026-11-07: it stopped short of it, a
      straight edge on the wood), 10 in from either side of the panel as the rows. */
-  margin: -34px -46px 0 0;
+  left: 10px;
+  right: 10px;
+  margin: 0;
   pointer-events: none;
 }
 
@@ -1196,10 +1200,6 @@
   display: none;
 }
 
-/* The fade over the last line while there is more below (a grid's own line, none high). */
-:root[data-ui="r6"] .sel-info.legion-pop .sel-more {
-  margin: -34px 0 0;
-}
 
 /* Three a line on a phone held sideways (491 across at 932); two where three do not fit (373 at 814). */
 :root[data-ui="r6"] .sel-info.legion-pop .sel-body {

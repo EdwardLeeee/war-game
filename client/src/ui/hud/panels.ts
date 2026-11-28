@@ -422,7 +422,9 @@ export class SelectionInfo {
     // so that it is over no button (b2 2026-11-07: over the row above, a + tapped low scrolled
     // instead): at the end of the pinned row (軍團畫面), else on a foot row of its own while there is
     // more below.
-    this.more = this.formal ? el("div", this.el, "sel-more") : null;
+    // Over the panel, not in what scrolls (r6.css .sel-more: in it, it took room and moved the rows, the user
+    // 2026-11-27): placed at the body's foot by showMore.
+    this.more = this.formal ? el("div", this.frame, "sel-more") : null;
     this.more?.setAttribute("aria-hidden", "true");
     this.foot = this.formal ? document.createElement("div") : null;
     if (this.foot !== null) this.foot.className = "sel-foot";
@@ -540,6 +542,11 @@ export class SelectionInfo {
     if (more === null) return;
     const below = this.el.scrollHeight - this.el.scrollTop - this.el.clientHeight > 2;
     if (more.hidden === below) more.hidden = !below;
+    // Its foot on the body's (the panel holds it; it takes no room, so its coming moves nothing).
+    if (below) {
+      const top = `${this.el.offsetTop + this.el.clientHeight - more.offsetHeight}px`;
+      if (more.style.top !== top) more.style.top = top;
+    }
     if (this.down !== null && this.down.hidden === below) this.down.hidden = !below;
     // The foot row only while its ⌄ shows (it takes no room otherwise).
     if (this.foot !== null && this.foot.hidden === (below && this.down?.parentElement === this.foot)) this.foot.hidden = !(below && this.down?.parentElement === this.foot);
@@ -622,8 +629,8 @@ export class SelectionInfo {
       }
     }
     if (this.foldButton !== null) this.fold(this.foldButton);
-    // Last in what scrolls (a new build fills the body anew), held at its foot; the ⌄ out of it.
-    if (this.more !== null && this.el.lastChild !== this.more) this.el.appendChild(this.more);
+    // The fade over the panel (a new build may have emptied it: frame.replaceChildren), the ⌄ out of what scrolls.
+    if (this.more !== null && this.more.parentElement !== this.frame) this.frame.appendChild(this.more);
     this.placeDown();
     this.showMore();
   }

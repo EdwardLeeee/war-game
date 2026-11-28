@@ -8,12 +8,21 @@
 // listed (attached, and in the log).
 import { writeFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
+import { KNOWN } from "../src/lab/stable-buttons.ts";
 
 const SAFE = { top: 0, right: 59, bottom: 20, left: 59 };
 
 test.use({ viewport: { width: 932, height: 430 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
 
 type Line = { step: number; next: { seq: number; id: string; x: number; y: number; times: number; gap: number } | null; done: boolean; ok: boolean };
+
+test("已知、待使用者選的只有 R28 的兩項（ceo 2026-11-28：不拿來放行別的）", () => {
+  expect([...new Set(KNOWN.map((k) => k.r28))].sort()).toEqual(["R28-01", "R28-02"].filter((r) => KNOWN.some((k) => k.r28 === r)));
+  for (const k of KNOWN) {
+    expect(k.r28, k.item).toMatch(/^R28-0[12]$/);
+    expect(k.maxPx, k.item).toBeLessThanOrEqual(100);
+  }
+});
 
 test("每顆按鈕都按（app 的畫面）：位置不動、點在它上面、反應對、沒有錯誤", async ({ page }, info) => {
   test.skip(info.project.name !== "webkit", "the app's WebKit; the computer's windows are stable-buttons.spec's");
@@ -53,16 +62,17 @@ test("每顆按鈕都按（app 的畫面）：位置不動、點在它上面、�
   writeFileSync(file, JSON.stringify(r, null, 1));
   await info.attach("stable-buttons.json", { path: file, contentType: "application/json" });
   console.log(`STABLE line ${JSON.stringify(r.line)}`);
+  console.log(`STABLE 已知（R28，待使用者選）：${JSON.stringify((r.line as { known?: unknown }).known ?? [])}`);
   console.log(`STABLE 按過 ${r.pressedList.length}：${r.pressedList.map((p) => `${p.scene}/${p.label}×${p.times}`).join("、")}`);
   console.log(`STABLE 沒按 ${r.notPressed.length}：${r.notPressed.map((p) => `${p.scene}/${p.label}（${p.reason}）`).join("、")}`);
   console.log(`STABLE 沒驗反應 ${r.noReaction.length}：${r.noReaction.map((p) => `${p.scene}/${p.label}（${p.reason}）`).join("、")}`);
   console.log(`STABLE 只驗了有變化 ${r.changedOnly.length}：${r.changedOnly.map((p) => `${p.scene}/${p.label}`).join("、")}`);
   for (const s of r.steps) {
-    const judged = s.moved.filter((m) => m.judged);
+    const judged = s.moved.filter((m) => m.judged && m.known === undefined);
     if (judged.length > 0 || s.missed.length > 0 || s.reaction === "bad") console.log(`STABLE step ${s.step} ${s.scene}/${s.label}×${s.times}: moved ${judged.map((m) => `${m.key} ${m.kind} ${m.dx},${m.dy}`).join("; ")} missed ${s.missed.join("; ")} gone ${s.gone.length} reaction ${s.reaction} ${s.reactionNote}${s.why.length > 0 ? `\n  why:\n    ${s.why.join("\n    ")}` : ""}`);
   }
   expect(r.errors, "no errors").toEqual([]);
-  expect(r.steps.flatMap((s) => s.moved.filter((m) => m.judged).map((m) => `${s.scene}/${s.label}: ${m.key} ${m.kind} ${m.dx},${m.dy}`)), "no button moved over 1 px").toEqual([]);
+  expect(r.steps.flatMap((s) => s.moved.filter((m) => m.judged && m.known === undefined).map((m) => `${s.scene}/${s.label}: ${m.key} ${m.kind} ${m.dx},${m.dy}`)), "no button moved over 1 px (but R28's known)").toEqual([]);
   expect(r.steps.flatMap((s) => s.missed.map((m) => `${s.scene}/${s.label}: ${m}`)), "every tap on its button").toEqual([]);
   expect(r.steps.filter((s) => s.reaction === "bad").map((s) => `${s.scene}/${s.label}: ${s.reactionNote}`), "reactions as they should be").toEqual([]);
   expect((r.line as { ok: boolean }).ok).toBe(true);

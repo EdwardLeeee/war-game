@@ -46,6 +46,8 @@ interface Move {
   dy: number;
   /** Judged (a button, its screen the same) or only reported (a panel, a text, or after the tap changed the screen). */
   judged: boolean;
+  /** One of KNOWN (R28), within its most: listed in the line's known, not counted. */
+  known?: string;
   /** The tap had changed the screen (context()) when it moved. */
   otherScreen?: boolean;
 }
@@ -78,6 +80,8 @@ interface StepRecord {
 
 interface Results {
   line: Record<string, unknown>;
+  /** KNOWN's moves as measured (the line's known). */
+  knownSeen: { r28: string; scene: string; tapped: string; key: string; px: number }[];
   steps: StepRecord[];
   pressedList: { scene: string; label: string; times: number }[];
   notPressed: { scene: string; label: string; reason: string }[];
@@ -117,7 +121,29 @@ const NOT_TAPPED: [RegExp, string][] = [
   [/^更新/, "會重新載入頁面"],
 ];
 
-const results: Results = { line: {}, steps: [], pressedList: [], notPressed: [], noReaction: [], changedOnly: [], errors: [], done: false };
+/**
+ * Known, waiting for the user's choice (R28, ceo 2026-11-28): measured and listed (the line's known), not failed — only
+ * these buttons, in this panel, when this is tapped, by at most the most measured + 2 px. Anything else, or more, fails.
+ * Only R28's items may be here (e2e/app-buttons.spec.ts checks it); the PR that fixes them takes them out.
+ */
+export interface Known {
+  r28: "R28-01" | "R28-02";
+  item: string;
+  scene: string;
+  tapped: RegExp;
+  moved: RegExp;
+  maxPx: number;
+}
+const KEYS = /^sel-info\|(取消選取|收起選取資訊)\|0$/;
+export const KNOWN: readonly Known[] = [
+  { r28: "R28-01", item: "只選遠程兵：別的兵種格消失，它往左移（量到 63 px）", scene: "全軍", tapped: /^只選遠程兵$/, moved: /^sel-bar\|只選遠程兵\|0$/, maxPx: 65 },
+  { r28: "R28-02", item: "✕ 和收起跟著面板長高、變矮移（主城：叫兵躲進來，量到 48 px）", scene: "主城", tapped: /^叫 1 名(遠程兵|法師)躲進來$/, moved: KEYS, maxPx: 50 },
+  { r28: "R28-02", item: "✕ 和收起（主城：召回、全部離開，量到 48 px）", scene: "主城", tapped: /^(沒編隊的 [0-9]+ 名召回|全部離開)$/, moved: KEYS, maxPx: 50 },
+  { r28: "R28-02", item: "✕ 和收起（主城：訓練村民、取消，佇列兩排，量到 77.2 px）", scene: "主城", tapped: /^(訓練村民|取消訓練第 [0-9]+ 個：村民$)/, moved: KEYS, maxPx: 79.2 },
+  { r28: "R28-02", item: "✕ 和收起（兵營：訓練、取消，佇列兩排，量到 93 px）", scene: "兵營", tapped: /^(訓練槍兵|取消訓練第 [0-9]+ 個：槍兵$)/, moved: KEYS, maxPx: 95 },
+];
+
+const results: Results = { line: {}, knownSeen: [], steps: [], pressedList: [], notPressed: [], noReaction: [], changedOnly: [], errors: [], done: false };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const frame = () => new Promise((r) => requestAnimationFrame(() => r(null)));
@@ -155,13 +181,18 @@ let seq = 0;
 let planned = 0;
 const counts = { movedCount: 0, pressedPx: 0, miss: 0, bad: 0 };
 function setLine(next: Next | null, done = false): void {
-  const moved = results.steps.flatMap((s) => s.moved.filter((m) => m.judged)).slice(0, 5);
+  const moved = results.steps.flatMap((s) => s.moved.filter((m) => m.judged && m.known === undefined)).slice(0, 5);
+  // KNOWN's (R28), each with the most measured: never hidden (ceo 2026-11-28).
+  const most = new Map<string, number>();
+  for (const k of results.knownSeen) most.set(`${k.r28} ${k.scene}/${norm(k.tapped)} ${k.key}`, Math.max(most.get(`${k.r28} ${k.scene}/${norm(k.tapped)} ${k.key}`) ?? 0, k.px));
+  const known = [...most].map(([what, px]) => ({ what, px }));
   results.line = {
     step: stepNo,
     total: Math.max(planned, stepNo),
     next,
     moved,
     movedCount: counts.movedCount,
+    known,
     pressed: counts.pressedPx,
     miss: counts.miss,
     bad: counts.bad,
@@ -177,13 +208,14 @@ function setLine(next: Next | null, done = false): void {
 
 const dialogTitle = () => document.querySelector(".dialog:not([hidden])")?.getAttribute("aria-label") ?? "";
 /**
- * Where the player is: what is selected, the dialog open, the panel open or folded, the lab. A tap that changes it
+ * Where the player is: what is selected, the dialog open, the panel open or folded, the lab, the mode. A tap that changes it
  * (another panel, another dialog) lays out another screen: what moves then is not a button moving under a finger, and
  * is reported, not judged.
  */
 function context(): string {
   const sel = hook().selection();
-  return JSON.stringify([sel.building, sel.units.length > 0, dialogTitle(), document.querySelector(".sel-info")?.className ?? "", document.querySelector("section.lab:not([hidden])") !== null]);
+  // The mode too: another mode is another prompt over the battlefield (its words, so its 取消, elsewhere).
+  return JSON.stringify([sel.building, sel.units.length > 0, dialogTitle(), document.querySelector(".sel-info")?.className ?? "", document.querySelector("section.lab:not([hidden])") !== null, hook().mode()]);
 }
 
 /** What is measured: every button, the panels and the legion's texts (only buttons judged). */
@@ -569,6 +601,21 @@ interface Scene {
 }
 
 const click = (sel: string) => document.querySelector<HTMLElement>(sel)?.click();
+
+/** Till the buttons one sees stop changing (a panel is built over a few updates): the same for 300 ms, at most 3 s. */
+async function settle(): Promise<void> {
+  let last = "";
+  let since = performance.now();
+  const t0 = performance.now();
+  while (performance.now() - t0 < 3000) {
+    await frame();
+    const now = labelsNow().join("|");
+    if (now !== last) {
+      last = now;
+      since = performance.now();
+    } else if (performance.now() - since >= 300) return;
+  }
+}
 /** Why the last scene could not be entered (its reason in notPressed). */
 let why = "";
 const byLabel = (re: RegExp) => [...document.querySelectorAll<HTMLButtonElement>("button")].find((b) => visible(b) && re.test(labelOf(b)));
@@ -606,8 +653,12 @@ function buildingScene(type: number, name: string): Scene {
       const at = g.cellToScreen(mid.x, mid.y);
       const t = await tapStep(`setup:${name}`, at.x, at.y, 1, GAP_MS, null);
       for (let i = 0; i < 30 && g.selection().building !== id; i++) await sleep(100);
-      if (g.selection().building !== id) why = t.timedOut ? `點${name}沒有人點（逾時）` : `點了${name}（${Math.round(at.x)},${Math.round(at.y)}）沒選到它，選到 ${JSON.stringify(g.selection())}，模式 ${g.mode()}`;
-      return g.selection().building === id;
+      if (g.selection().building !== id) {
+        why = t.timedOut ? `點${name}沒有人點（逾時）` : `點了${name}（${Math.round(at.x)},${Math.round(at.y)}）沒選到它，選到 ${JSON.stringify(g.selection())}，模式 ${g.mode()}`;
+        return false;
+      }
+      await settle();
+      return true;
     },
     holds: () => hook().selection().building === id && dialogTitle() === "",
     roots: () => [...document.querySelectorAll(".sel-info, .cmds")],
@@ -680,6 +731,7 @@ function scenes(): Scene[] {
     dialogScene("經濟分配", async () => {
       const s = buildingScene(MAIN, "主城");
       if (!(await s.enter())) return false;
+      for (let i = 0; i < 40 && byLabel(/^經濟分配$/) === undefined; i++) await sleep(50);
       const b = byLabel(/^經濟分配$/);
       if (b === undefined) {
         why = `主城的面板裡找不到「經濟分配」：${labelsNow().join("、")}`;
@@ -722,7 +774,7 @@ async function runScene(scene: Scene): Promise<void> {
       results.notPressed.push({ scene: scene.name, label: "（之後的按鈕）", reason: `回不到這個畫面${why === "" ? "" : `：${why}`}` });
       return;
     }
-    await frame();
+    await settle();
     const now = buttonsIn(scene);
     const next = [...now].find(([k]) => !done.has(k));
     if (next === undefined) return;
@@ -760,6 +812,14 @@ async function runScene(scene: Scene): Promise<void> {
     const tap = await tapStep(`${scene.name}:${norm(label)}`, x, y, times, GAP_MS, el);
     await sleep(AFTER_MS);
     const { moved, pressed, otherScreen, why: whyMoved } = w.stop();
+    for (const m of moved) {
+      if (!m.judged) continue;
+      const px = Math.max(Math.abs(m.dx), Math.abs(m.dy));
+      const k = KNOWN.find((e) => e.scene === scene.name && e.tapped.test(label) && e.moved.test(m.key) && px <= e.maxPx);
+      if (k === undefined) continue;
+      m.known = k.r28;
+      if (m.kind === "layout") results.knownSeen.push({ r28: k.r28, scene: scene.name, tapped: label, key: m.key, px });
+    }
     const note = tap.timedOut ? "沒點滿（逾時）" : typeof reaction === "string" ? reaction : reaction.after(before, times);
     const rec: StepRecord = {
       step: stepNo,
@@ -783,7 +843,7 @@ async function runScene(scene: Scene): Promise<void> {
     if (typeof reaction === "string") results.noReaction.push({ scene: scene.name, label, reason: reaction });
     else if (reaction.kind === "changed" && rec.reaction === "ok") results.changedOnly.push({ scene: scene.name, label });
     else if (reaction.kind === "changed") results.noReaction.push({ scene: scene.name, label, reason: "不知道該有什麼反應，按了也看不到任何變化" });
-    counts.movedCount += moved.filter((m) => m.judged).length;
+    counts.movedCount += moved.filter((m) => m.judged && m.known === undefined).length;
     counts.pressedPx = Math.max(counts.pressedPx, pressed);
     counts.miss += tap.missed.length + (tap.timedOut ? 1 : 0);
     if (rec.reaction === "bad" && rec.reactionKind === "changed") rec.reaction = "unknown";
