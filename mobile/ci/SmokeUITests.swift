@@ -135,7 +135,8 @@ final class SmokeUITests: XCTestCase {
         let total: Int
         let done: Bool
         let ok: Bool
-        let next: (id: String, x: Double, y: Double, times: Int, gap: Int)?
+        /// seq: one more for every tap the page asks for (the same place may be asked twice in a row).
+        let next: (id: String, x: Double, y: Double, times: Int, gap: Int, seq: Int?)?
     }
 
     private func stable(_ label: String) -> Stable? {
@@ -143,9 +144,10 @@ final class SmokeUITests: XCTestCase {
               let o = (try? JSONSerialization.jsonObject(with: Data(label[i...].utf8))) as? [String: Any]
         else { return nil }
         let num = { (v: Any?) in (v as? NSNumber)?.doubleValue }
-        var next: (id: String, x: Double, y: Double, times: Int, gap: Int)?
+        var next: (id: String, x: Double, y: Double, times: Int, gap: Int, seq: Int?)?
         if let n = o["next"] as? [String: Any], let x = num(n["x"]), let y = num(n["y"]) {
-            next = (n["id"] as? String ?? "?", x, y, Int(num(n["times"]) ?? 1), Int(num(n["gap"]) ?? 150))
+            next = (n["id"] as? String ?? "?", x, y, Int(num(n["times"]) ?? 1), Int(num(n["gap"]) ?? 150),
+                    num(n["seq"]).map { Int($0) })
         }
         return Stable(step: Int(num(o["step"]) ?? -1), total: Int(num(o["total"]) ?? -1),
                       done: o["done"] as? Bool ?? false, ok: o["ok"] as? Bool ?? false, next: next)
@@ -183,7 +185,11 @@ final class SmokeUITests: XCTestCase {
             if detail.exists { self.log("STABLE detail \(when): \(detail.label)") }
         }
         let origin = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
-        var tapped = -1
+        // A tap is asked for once: by next.seq (client 2026-11-28: run 46053784184 read a step's
+        // finished next a second time and tapped the old place again, hitting another button), or
+        // by step on a page without seq. Nothing is tapped again until the page asks anew.
+        var tapped: String?
+        var seenStep = -1
         var since = Date()
         let end = Date().addingTimeInterval(1500)
         while Date() < end {
@@ -196,17 +202,21 @@ final class SmokeUITests: XCTestCase {
                 if !s.ok { XCTFail("按鈕不動: \(label)") }
                 return
             }
-            if let n = s.next, s.step != tapped {
-                if tapped >= 0 { readDetail("after step \(tapped)") }
+            if s.step != seenStep {
+                if seenStep >= 0 { readDetail("after step \(seenStep)") }
+                seenStep = s.step
+            }
+            let ask = s.next.map { n in n.seq.map { "seq \($0)" } ?? "step \(s.step)" }
+            if let n = s.next, let ask, ask != tapped {
                 for k in 0 ..< max(n.times, 1) {
                     if k > 0 { usleep(useconds_t(max(n.gap, 0) * 1000)) }
                     origin.withOffset(CGVector(dx: n.x, dy: n.y)).tap()
                 }
-                log("STABLE step \(s.step)/\(s.total) \(n.id) at \(Int(n.x)),\(Int(n.y)) ×\(n.times)")
-                tapped = s.step
+                log("STABLE step \(s.step)/\(s.total) \(ask) \(n.id) at \(Int(n.x)),\(Int(n.y)) ×\(n.times)")
+                tapped = ask
                 since = Date()
             } else if Date().timeIntervalSince(since) > 60 {
-                throw stop("the page stayed at step \(s.step) for 60 s: \(label)")
+                throw stop("the page asked nothing new for 60 s (step \(s.step), last \(tapped ?? "none")): \(label)")
             } else {
                 usleep(300_000)
             }
