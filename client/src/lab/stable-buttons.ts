@@ -103,13 +103,17 @@ declare global {
 
 type Hook = NonNullable<NonNullable<Window["__proto"]>["game"]>;
 
-const REPEAT = 10;
+/** Taps in a row on those pressed again and again: 10, or ?reps=N (the app's XCUITest, a few seconds a tap). */
+const REPEAT = ((n) => (Number.isInteger(n) && n >= 2 && n <= 10 ? n : 10))(Number(new URLSearchParams(location.search).get("reps") ?? "10"));
 const GAP_MS = 150;
 /** After the last tap, measured this long more (what a tap sets off comes after it). */
 const AFTER_MS = 1000;
 const MOVE_PX = 1;
-/** A step not tapped in this long is given up (a runner gone, a tap that never came). */
-const STEP_TIMEOUT_MS = 60_000;
+/**
+ * A step not tapped in this long is given up (a runner gone, a tap that never came): 30 s and 15 s a tap (the app's
+ * XCUITest takes 6–7 s a tap in CI's simulator: run 46090502053's ten took 69 s, past the 60 s this was).
+ */
+const stepTimeoutMs = (times: number) => 30_000 + 15_000 * times;
 
 /** Pressed again and again: − and +, 訓練, 買賣, 叫 1 名, 取消訓練, 村民目標. */
 const REPEATED = /^(多要|少要) 1 名|^村民目標(多|少)|^(糧|木|金)(多|少)一點|^訓練|^取消訓練|^買 |^賣 |^叫 1 名/;
@@ -575,7 +579,7 @@ async function tapStep(id: string, x: number, y: number, times: number, gap: num
   await sleep(250);
   setLine({ seq: ++seq, id, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, times, gap });
   const t0 = performance.now();
-  while (got < times && performance.now() - t0 < STEP_TIMEOUT_MS) await sleep(30);
+  while (got < times && performance.now() - t0 < stepTimeoutMs(times)) await sleep(30);
   document.removeEventListener("pointerup", up, true);
   setLine(null);
   return { missed, gone: goneTaps, timedOut: got < times };
