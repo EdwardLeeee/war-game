@@ -470,7 +470,8 @@
 
 :root[data-ui="r6"] .sel-info .sel-close.b {
   position: absolute;
-  /* At the foot of the right column (R28-02 A, the user 2026-11-28; was its top, D-155: it moved as the panel grew). */
+  /* At the foot of the right column (R28-02 A, the user 2026-11-28; was its top, D-155: it moved as the panel grew);
+     a panel with 收起 has ✕ over it (below). */
   top: auto;
   bottom: 8px;
   right: 6px;
@@ -479,11 +480,17 @@
   padding: 0;
 }
 
-/* 收起 over ✕ (R28-02 A): ⌃ over its word, as wide as ✕. */
+/* ✕ over 收起 (R28-03 B, the user 2026-11-28): the bottom line's last button (派村民's ＋) has 收起 beside it, not ✕
+   (6 px apart: a finger off ＋ folds the panel, the selection kept; R28-02 A had 收起 over ✕). The same in every panel. */
+:root[data-ui="r6"] .sel-info:not(.collapsed):has(> .sel-fold.b) > .sel-close.b {
+  bottom: 56px;
+}
+
+/* 收起 under ✕ (R28-03 B): ⌃ over its word, as wide as ✕. */
 :root[data-ui="r6"] .sel-info > .sel-fold.b {
   position: absolute;
   right: 6px;
-  bottom: 56px;
+  bottom: 8px;
   width: 44px;
   min-width: 44px;
   height: 44px;
@@ -501,7 +508,8 @@
   z-index: 3;
 }
 
-/* Folded (only the title line: no room for the two over each other): 展開 beside ✕ on the foot line. */
+/* Folded (only the title line: no room for the two over each other): 展開 beside ✕ on the foot line, ✕ the rightmost
+   (the user 2026-11-28, with R28-03 B). */
 :root[data-ui="r6"] .sel-info.collapsed > .sel-fold.b {
   bottom: 8px;
   right: 56px;

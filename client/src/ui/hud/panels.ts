@@ -866,8 +866,8 @@ export class SelectionInfo {
     if (this.formal) fold.prepend(icon("fold"));
     this.foldButton = fold;
     this.fold(fold);
-    // 正式介面 (R28-02 A, the user 2026-11-28): 收起 over ✕ at the foot of the panel's right column (r6.css), which does
-    // not move as what comes and goes makes the panel taller (it grows upwards from its foot).
+    // 正式介面 (R28-02 A and R28-03 B, the user 2026-11-28): ✕ over 收起 at the foot of the panel's right column (r6.css),
+    // which do not move as what comes and goes makes the panel taller (it grows upwards from its foot).
     if (this.formal) this.frame.appendChild(fold);
   }
 
