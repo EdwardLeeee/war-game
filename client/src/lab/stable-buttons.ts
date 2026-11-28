@@ -87,6 +87,8 @@ interface Results {
   pressedList: { scene: string; label: string; times: number }[];
   notPressed: { scene: string; label: string; reason: string }[];
   noReaction: { scene: string; label: string; reason: string }[];
+  /** Panels this fake world cannot show (NOT_COVERED). */
+  notCovered: { panel: string; reason: string }[];
   /** Checked only that something one sees changed (not what it should be). */
   changedOnly: { scene: string; label: string }[];
   errors: string[];
@@ -112,14 +114,23 @@ const STEP_TIMEOUT_MS = 60_000;
 /** Pressed again and again: − and +, 訓練, 買賣, 叫 1 名, 取消訓練, 村民目標. */
 const REPEATED = /^(多要|少要) 1 名|^村民目標(多|少)|^(糧|木|金)(多|少)一點|^訓練|^取消訓練|^買 |^賣 |^叫 1 名/;
 
-/** Not tapped, and why (they end or leave the game, or start another). */
-const NOT_TAPPED: [RegExp, string][] = [
-  [/^重來/, "會結束這一局、開新局"],
-  [/^回開局畫面/, "會離開這一局"],
-  [/^新手教學/, "會離開這一局、開新手教學"],
-  [/^量測/, "會另開一局量測"],
-  [/^確定性檢查/, "會跑很久的檢查，不是玩家的按鈕"],
-  [/^更新/, "會重新載入頁面"],
+/** Not tapped, and why (they end or leave the game, or start another); `scene`: only there. */
+const NOT_TAPPED: { re: RegExp; reason: string; scene?: string }[] = [
+  { re: /^重來/, reason: "會結束這一局、開新局" },
+  { re: /^回開局畫面/, reason: "會離開這一局" },
+  { re: /^新手教學/, reason: "會離開這一局、開新手教學" },
+  { re: /^量測/, reason: "會另開一局量測" },
+  { re: /^確定性檢查/, reason: "會跑很久的檢查，不是玩家的按鈕" },
+  { re: /^更新/, reason: "會重新載入頁面" },
+  { re: /^投降$/, reason: "會結束這一局（確定投降）", scene: "確定投降？" },
+];
+
+/** Panels this page cannot open in its fake world (?mock=1&market=1), and why: listed with the results. */
+export const NOT_COVERED: { panel: string; reason: string }[] = [
+  { panel: "哨所", reason: "這個假世界（市場）沒有哨所；哨所的假世界是 ?outpost=1，另一套規則" },
+  { panel: "攻城工坊", reason: "這個假世界（市場）沒有攻城；攻城的假世界是 ?siege=1，另一套規則" },
+  { panel: "搶還是治理（攻下城鎮時）", reason: "要真的打下一座城才會出來，假世界裡測試頁沒有辦法讓它出來" },
+  { panel: "中立城鎮、敵方城鎮", reason: "面板只有字、沒有按鈕（panels.ts town：搶／治理只在我方攻下時，留守只在我方的城）" },
 ];
 
 /**
@@ -142,9 +153,13 @@ export const KNOWN: readonly Known[] = [
   { r28: "R28-02", item: "✕ 和收起（主城：召回、全部離開，量到 48 px）", scene: "主城", tapped: /^(沒編隊的 [0-9]+ 名召回|全部離開)$/, moved: KEYS, maxPx: 50 },
   { r28: "R28-02", item: "✕ 和收起（主城：訓練村民、取消，佇列兩排，量到 77.2 px）", scene: "主城", tapped: /^(訓練村民|取消訓練第 [0-9]+ 個：村民$)/, moved: KEYS, maxPx: 79.2 },
   { r28: "R28-02", item: "✕ 和收起（兵營：訓練、取消，佇列兩排，量到 93 px）", scene: "兵營", tapped: /^(訓練槍兵|取消訓練第 [0-9]+ 個：槍兵$)/, moved: KEYS, maxPx: 95 },
+  { r28: "R28-02", item: "✕ 和收起（靶場：訓練、取消，量到 93 px）", scene: "靶場", tapped: /^(訓練遠程兵|取消訓練第 [0-9]+ 個：遠程兵$)/, moved: KEYS, maxPx: 95 },
+  { r28: "R28-02", item: "✕ 和收起（法師館：訓練、取消，量到 93 px）", scene: "法師館", tapped: /^(訓練法師|取消訓練第 [0-9]+ 個：法師$)/, moved: KEYS, maxPx: 95 },
+  { r28: "R28-02", item: "✕ 和收起（馬廄：訓練、取消，量到 93 px）", scene: "馬廄", tapped: /^(訓練騎兵|取消訓練第 [0-9]+ 個：騎兵$)/, moved: KEYS, maxPx: 95 },
+  { r28: "R28-02", item: "✕ 和收起（箭塔：叫兵躲進來、召回、全部離開，量到 48 px）", scene: "箭塔", tapped: /^(叫 1 名(遠程兵|法師)躲進來|沒編隊的 [0-9]+ 名召回|全部離開)$/, moved: KEYS, maxPx: 50 },
 ];
 
-const results: Results = { line: {}, knownSeen: [], steps: [], pressedList: [], notPressed: [], noReaction: [], changedOnly: [], errors: [], done: false };
+const results: Results = { line: {}, knownSeen: [], notCovered: [], steps: [], pressedList: [], notPressed: [], noReaction: [], changedOnly: [], errors: [], done: false };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const frame = () => new Promise((r) => requestAnimationFrame(() => r(null)));
@@ -375,7 +390,8 @@ function seenState(): string {
   const g = hook();
   const h = g.header();
   const on = [...document.querySelectorAll<HTMLButtonElement>("button.active, button[aria-pressed=true], button.is-active")].filter(visible).map((b) => norm(labelOf(b)));
-  return JSON.stringify({ ctx: context(), labels: labelsNow(), on, paused: h.paused, speed: h.speed, groups: g.groupInfo().map((x) => [x.ids.length, x.want, x.refill]) });
+  const words = [...document.querySelectorAll(".sel-info:not([hidden]) output, .sel-info:not([hidden]) .depot-count, .dialog:not([hidden]) output, .dialog:not([hidden]) .ratio-value, .dialog:not([hidden]) b, .dialog:not([hidden]) span")].map((e) => e.textContent ?? "");
+  return JSON.stringify({ ctx: context(), labels: labelsNow(), on, paused: h.paused, speed: h.speed, groups: g.groupInfo().map((x) => [x.ids.length, x.want, x.refill]), words });
 }
 
 const exact = (before: () => unknown, after: (b: unknown, n: number) => string): Reaction => ({ kind: "exact", before, after });
@@ -663,11 +679,21 @@ function buildingScene(type: number, name: string): Scene {
       const mid = { x: b.cx + b.size / 2 - 0.5, y: b.cy + b.size / 2 - 0.5 };
       g.centerOn(mid.x, mid.y, 1);
       await sleep(300);
-      const at = g.cellToScreen(mid.x, mid.y);
-      const t = await tapStep(`setup:${name}`, at.x, at.y, 1, GAP_MS, null);
-      for (let i = 0; i < 30 && g.selection().building !== id; i++) await sleep(100);
+      // Its middle, then other points of it: a soldier standing on it is picked first (tap rules, #534).
+      const q = Math.max(0, b.size / 2 - 0.8);
+      const spots = [mid, { x: mid.x - q, y: mid.y - q }, { x: mid.x + q, y: mid.y + q }, { x: mid.x - q, y: mid.y + q }, { x: mid.x + q, y: mid.y - q }];
+      let tried = "";
+      for (const spot of spots) {
+        const at = g.cellToScreen(spot.x, spot.y);
+        const t = await tapStep(`setup:${name}`, at.x, at.y, 1, GAP_MS, null);
+        await until(() => g.selection().building === id || g.selection().units.length > 0, 3000);
+        if (g.selection().building === id) break;
+        tried += `${t.timedOut ? "沒有人點" : `點了（${Math.round(at.x)},${Math.round(at.y)}）選到 ${JSON.stringify(g.selection())}`}；`;
+        g.select([]);
+        await frame();
+      }
       if (g.selection().building !== id) {
-        why = t.timedOut ? `點${name}沒有人點（逾時）` : `點了${name}（${Math.round(at.x)},${Math.round(at.y)}）沒選到它，選到 ${JSON.stringify(g.selection())}，模式 ${g.mode()}`;
+        why = `點${name}選不到它：${tried}模式 ${g.mode()}`;
         return false;
       }
       await settle();
@@ -691,11 +717,73 @@ function dialogScene(name: string, open: () => Promise<boolean>): Scene {
 }
 
 const MAIN = 0;
+/** Every building of ours this fake world has (round 7's and the market: BuildingType in sim/src/protocol.ts). */
 const BUILDINGS: [number, string][] = [
   [MAIN, "主城"],
+  [1, "民居"],
+  [2, "伐木場"],
+  [3, "礦場"],
+  [4, "糧倉"],
+  [5, "農田"],
   [6, "兵營"],
+  [7, "靶場"],
+  [8, "法師館"],
+  [10, "箭塔"],
+  [11, "馬廄"],
   [15, "市場"],
 ];
+
+/** A town (ours, or one no one holds), tapped on the battlefield (a setup tap): its panel. */
+function townScene(name: string, pick: (t: { owner: number }, me: number) => boolean): Scene {
+  let head = "";
+  return {
+    name,
+    enter: async () => {
+      await calm();
+      const g = hook();
+      const t = g.towns().find((x) => pick(x, g.me()));
+      if (t === undefined) {
+        why = "這個假世界沒有這種城鎮";
+        return false;
+      }
+      g.centerOn(t.cx, t.cy, 1);
+      await sleep(300);
+      const at = g.cellToScreen(t.cx, t.cy);
+      const tap = await tapStep(`setup:${name}`, at.x, at.y, 1, GAP_MS, null);
+      if (!(await until(() => document.querySelector(".sel-info:not([hidden]) .sel-head") !== null))) {
+        why = tap.timedOut ? `點${name}沒有人點（逾時）` : `點了${name}（${Math.round(at.x)},${Math.round(at.y)}）沒有打開它的面板`;
+        return false;
+      }
+      await settle();
+      head = document.querySelector(".sel-info .sel-head")?.textContent ?? "";
+      return true;
+    },
+    holds: () => dialogTitle() === "" && head !== "" && (document.querySelector(".sel-info:not([hidden]) .sel-head")?.textContent ?? "") === head,
+    roots: () => [...document.querySelectorAll(".sel-info, .cmds")],
+  };
+}
+
+/** The menu (選單), then `open` in it: that dialog. */
+const fromMenu = (open: RegExp) => async () => {
+  byLabel(/^選單$/)?.click();
+  if (!(await until(() => dialogTitle() !== ""))) {
+    why = "按了選單沒有打開";
+    return false;
+  }
+  const b = byLabel(open);
+  if (b === undefined) {
+    why = `選單裡找不到 ${open.source}`;
+    return false;
+  }
+  const before = dialogTitle();
+  b.click();
+  if (!(await until(() => dialogTitle() !== "" && dialogTitle() !== before))) {
+    why = `按了 ${open.source} 沒有打開`;
+    return false;
+  }
+  await settle();
+  return true;
+};
 
 function scenes(): Scene[] {
   const list: Scene[] = [
@@ -757,6 +845,25 @@ function scenes(): Scene[] {
       for (let i = 0; i < 40 && dialogTitle() === ""; i++) await sleep(50);
       return dialogTitle() !== "";
     }),
+    townScene("我方城鎮", (t, me) => t.owner === me),
+    dialogScene("兵種相剋", fromMenu(/^兵種相剋$/)),
+    dialogScene("確定投降？", fromMenu(/^投降$/)),
+    dialogScene("預留", async () => {
+      const s = buildingScene(MAIN, "主城");
+      if (!(await s.enter())) return false;
+      const b = byLabel(/^預留/);
+      if (b === undefined) {
+        why = "主城的面板裡找不到「預留」";
+        return false;
+      }
+      b.click();
+      if (!(await until(() => dialogTitle() !== ""))) {
+        why = "按了預留沒有打開對話框";
+        return false;
+      }
+      await settle();
+      return true;
+    }),
     dialogScene("經濟分配", async () => {
       const s = buildingScene(MAIN, "主城");
       if (!(await s.enter())) return false;
@@ -771,6 +878,8 @@ function scenes(): Scene[] {
       if (dialogTitle() === "") why = "按了經濟分配，沒有打開對話框";
       return dialogTitle() !== "";
     }),
+    // Last: 介面風格 B changes the theme for what follows (put back to A at the end).
+    dialogScene("設定", fromMenu(/^設定$/)),
   ];
   return list;
 }
@@ -812,9 +921,9 @@ async function runScene(scene: Scene): Promise<void> {
     const [key, el] = next;
     done.add(key);
     const label = labelOf(el);
-    const skip = NOT_TAPPED.find(([re]) => re.test(label));
+    const skip = NOT_TAPPED.find((n) => n.re.test(label) && (n.scene === undefined || n.scene === scene.name));
     if (skip !== undefined) {
-      results.notPressed.push({ scene: scene.name, label, reason: skip[1] });
+      results.notPressed.push({ scene: scene.name, label, reason: skip.reason });
       continue;
     }
     if (el.disabled) {
@@ -903,16 +1012,32 @@ export async function runStableButtons(): Promise<void> {
     error(...a);
   };
   setLine(null);
+  let themeBefore = "a";
+  try {
+    themeBefore = localStorage.getItem("war-game.proto.theme") ?? "a";
+  } catch {
+    // Unreadable: A.
+  }
   // The game from 開始 (not under test).
   for (let i = 0; i < 600 && document.getElementById("start-game") === null; i++) await sleep(50);
   document.getElementById("start-game")?.click();
   for (let i = 0; i < 1200 && window.__proto?.ready !== true; i++) await sleep(50);
   for (let i = 0; i < 200 && (window.__proto?.game?.header().tick ?? 0) < 5; i++) await sleep(50);
   hook().stock({ food: 99999, wood: 99999, gold: 99999, crystal: 999 });
-  const list = scenes();
+  // ?part=k/m (Playwright's tests, in parts): every m-th screen from the k-th, so that each is a short test. The app: all.
+  const part = /^([0-9]+)\/([0-9]+)$/.exec(new URLSearchParams(location.search).get("part") ?? "");
+  const all = scenes();
+  const list = part === null ? all : all.filter((_, i) => i % Number(part[2]) === Number(part[1]) - 1);
   planned = list.length;
   for (const s of list) await runScene(s);
   await calm();
+  // 主題 put back as it was (介面風格 B may have been tapped in 設定): this device's choice, not the test's.
+  try {
+    localStorage.setItem("war-game.proto.theme", themeBefore);
+  } catch {
+    // Not kept: nothing to put back.
+  }
+  results.notCovered = NOT_COVERED;
   setLine(null, true);
   writeLines(results.steps.at(-1));
 }

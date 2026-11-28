@@ -1217,7 +1217,7 @@ export class SelectionInfo {
     // 經濟分配 changed while paused (R6-31): the main city says what it will be on 繼續.
     const eco = own && type === BuildingType.MainCity && this.host.paused() ? this.host.pending().eco() : null;
     if (eco !== null) el("p", this.el, "sel-pend", `經濟分配改成 糧 ${eco.food}%・木 ${eco.wood}%・金 ${eco.gold}%${eco.on ? "" : "（自動分配關）"}：按繼續後生效`);
-    const depot = own ? this.depot(id) : null;
+    const depot = own ? this.depot(id, pressed) : null;
     this.updaters.push(() => {
       const o = view.buildingRow(id);
       const b = view.curr?.snap.buildings;
@@ -1414,10 +1414,14 @@ export class SelectionInfo {
    * line per resource (granary, lumber camp and mine take one each; the main city shows none,
    * D-070). Returns the update.
    */
-  private depot(id: number): (() => void) | null {
+  /** `pressed`: the rows pressed again and again, pinned at the panel's foot (its − + among them). */
+  private depot(id: number, pressed: HTMLElement[]): (() => void) | null {
     const resources = this.host.depotResources(id);
     if (resources.length === 0) return null;
     const box = el("div", this.el, "depot");
+    // − and + pressed again and again: at the foot with the others, under what comes and goes (D-155; the user 2026-11-27
+    // in the app: as 多派 sent one, a line came under them and they moved 44 px up).
+    pressed.push(box);
     const cells = resources.map((r) => {
       const word = DEPOT_WORD[r] ?? "";
       const cell = el("div", box, "depot-cell");
