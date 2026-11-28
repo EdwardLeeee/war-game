@@ -75,6 +75,7 @@ for (let k = 1; k <= PARTS; k++) {
     }
     expect(r.errors, "no errors").toEqual([]);
     expect(r.notPressed.filter((n) => /^(進不去|回不到)/.test(n.reason)).map((n) => `${n.scene}: ${n.reason}`), "every screen got into").toEqual([]);
+    expect(r.notPressed.filter((n) => /^被蓋住/.test(n.reason)).map((n) => `${n.scene}/${n.label}: ${n.reason}`), "no button covered").toEqual([]);
     // 軍團畫面's − and + (what the user saw jump), each kind's, where this part has it.
     if (r.pressedList.some((p) => p.scene === "軍團")) expect(r.pressedList.filter((p) => p.scene === "軍團" && /^(多要|少要) 1 名/.test(p.label)).length, "軍團畫面's − and +").toBeGreaterThanOrEqual(6);
     expect(r.steps.flatMap((s) => s.moved.filter((m) => m.judged && m.known === undefined).map((m) => `${s.scene}/${s.label}: ${m.key} ${m.kind} ${m.dx},${m.dy}`)), "no button moved over 1 px (but R28's known)").toEqual([]);

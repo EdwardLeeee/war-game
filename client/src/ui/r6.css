@@ -494,6 +494,13 @@
   font-size: 11px;
 }
 
+/* Over the title line (kept at the top with a ground of its own, it was drawn over them where a short panel's or a
+   folded one's title line is: #585's run, 展開 and 收起 under DIV.sel-head). */
+:root[data-ui="r6"] .sel-info .sel-close.b,
+:root[data-ui="r6"] .sel-info > .sel-fold.b {
+  z-index: 3;
+}
+
 /* Folded (only the title line: no room for the two over each other): 展開 beside ✕ on the foot line. */
 :root[data-ui="r6"] .sel-info.collapsed > .sel-fold.b {
   bottom: 8px;
@@ -2787,4 +2794,15 @@
 
 :root.ui-large[data-ui="r6"] #hud .sel-help {
   max-width: 640px;
+}
+
+/* ✕ and 收起 at the foot of the right column (R28-02 A, the user 2026-11-28): the rows laid under ✕ when it was at the
+   top (the body's width under it, margin-right: -46px) keep out of the column now, or the two would lie over their
+   buttons (#585's run: 賣 100 木 under 收起, 多派 under ✕). The life bar, at the top, still goes across it. */
+:root[data-ui="r6"] .sel-info .depot,
+:root[data-ui="r6"] .sel-info .market,
+:root[data-ui="r6"] .sel-info .seat-row,
+:root[data-ui="r6"] .sel-info .outpost-note,
+:root[data-ui="r6"] .sel-info .sel-chips:has(.now) {
+  margin-right: 0;
 }

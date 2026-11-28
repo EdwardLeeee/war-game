@@ -193,7 +193,7 @@ function writeLines(detail?: StepRecord): void {
 let stepNo = 0;
 let seq = 0;
 let planned = 0;
-const counts = { movedCount: 0, pressedPx: 0, miss: 0, bad: 0, scenesMissed: 0 };
+const counts = { movedCount: 0, pressedPx: 0, miss: 0, bad: 0, scenesMissed: 0, covered: 0 };
 function setLine(next: Next | null, done = false): void {
   const moved = results.steps.flatMap((s) => s.moved.filter((m) => m.judged && m.known === undefined)).slice(0, 5);
   // KNOWN's (R28), each with the most measured: never hidden (ceo 2026-11-28).
@@ -213,7 +213,9 @@ function setLine(next: Next | null, done = false): void {
     errors: results.errors.length,
     // A screen it could not get into is buttons not tapped: not ok (its reason in notPressed).
     scenesMissed: counts.scenesMissed,
-    ok: counts.movedCount === 0 && counts.miss === 0 && counts.bad === 0 && results.errors.length === 0 && counts.scenesMissed === 0,
+    // A button one sees and cannot tap (something over its middle): not ok (#585: 收起 moved over 賣 100 木).
+    covered: counts.covered,
+    ok: counts.movedCount === 0 && counts.miss === 0 && counts.bad === 0 && results.errors.length === 0 && counts.scenesMissed === 0 && counts.covered === 0,
     done,
   };
   results.done = done;
@@ -946,6 +948,7 @@ async function runScene(scene: Scene): Promise<void> {
     if (top !== el) {
       const what = document.elementFromPoint(x, y);
       results.notPressed.push({ scene: scene.name, label, reason: `被蓋住（中間是 ${top !== null && top !== undefined ? labelOf(top) : `${what?.tagName ?? "?"}.${String(what?.className ?? "")}`}）` });
+      counts.covered++;
       continue;
     }
     if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) {
