@@ -236,7 +236,12 @@ final class SmokeUITests: XCTestCase {
                 let t = Date()
                 for k in 0 ..< max(n.times, 1) {
                     if k > 0 { usleep(useconds_t(max(n.gap, 0) * 1000)) }
+                    let one = Date()
                     origin.withOffset(CGVector(dx: n.x, dy: n.y)).tap()
+                    // A tap waits until the app has taken the touch: a slow one says the page is busy
+                    // (run 46116501545: 14.8 s a tap at step 116), and keeps smoke.sh's watchdog fed.
+                    let took = Date().timeIntervalSince(one)
+                    if took > 5 { log(String(format: "STABLE slow tap %d/%d of step %d: %.1f s", k + 1, n.times, s.step, took)) }
                 }
                 log(String(format: "STABLE step %d/%d %@ %@ at %d,%d ×%d in %.1f s", s.step, s.total, ask, n.id,
                            Int(n.x), Int(n.y), n.times, Date().timeIntervalSince(t)))
